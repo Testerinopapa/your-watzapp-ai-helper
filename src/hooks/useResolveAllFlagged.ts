@@ -59,29 +59,37 @@ export function useResolveAllFlagged() {
       } = await supabase.auth.getSession();
       if (!session) throw new Error("Not signed in");
 
-      const all = await fetchAllFlaggedIds(session.access_token);
-      if (all.length === 0) return { cleared: 0, failed: 0, total: 0 };
-
       let cleared = 0;
       let failed = 0;
+      let total = 0;
 
-      // Process with limited concurrency to avoid hammering the backend.
-      for (let i = 0; i < all.length; i += RESOLVE_CONCURRENCY) {
-        const batch = all.slice(i, i + RESOLVE_CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map((item) => resolveOne(item, session.access_token)),
-        );
-        for (const r of results) {
-          if (r.status === "fulfilled" && r.value) cleared++;
-          else failed++;
+      // The backend currently exposes only the first 50 review items and does
+      // not honor offset pagination, so drain the queue by repeatedly fetching
+      // the next visible page after each batch is resolved.
+      for (let pass = 0; pass < MAX_DRAIN_PASSES; pass++) {
+        const page = await fetchFlaggedPage(session.access_token);
+        if (page.length === 0) break;
+        total += page.length;
+
+        for (let i = 0; i < page.length; i += RESOLVE_CONCURRENCY) {
+          const batch = page.slice(i, i + RESOLVE_CONCURRENCY);
+          const results = await Promise.allSettled(
+            batch.map((item) => resolveOne(item, session.access_token)),
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled" && r.value) cleared++;
+            else failed++;
+          }
         }
+
+        if (page.length < PAGE_SIZE) break;
       }
 
       if (cleared === 0 && failed > 0) {
         throw new Error("Failed to clear messages.");
       }
 
-      return { cleared, failed, total: all.length };
+      return { cleared, failed, total };
     },
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ["review-list"] });
