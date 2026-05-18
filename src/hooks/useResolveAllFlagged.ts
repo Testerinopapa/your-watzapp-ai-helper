@@ -8,6 +8,7 @@ const REVIEW_LIST_URL = `${SEND_SMART_URL}/functions/v1/review-list`;
 
 const PAGE_SIZE = 50;
 const RESOLVE_CONCURRENCY = 10;
+const MAX_DRAIN_PASSES = 100;
 
 interface RawItem {
   id: string;
@@ -15,43 +16,19 @@ interface RawItem {
   provider?: string;
 }
 
-async function fetchAllFlaggedIds(accessToken: string): Promise<RawItem[]> {
-  const all: RawItem[] = [];
-  const seen = new Set<string>();
-  let offset = 0;
+async function fetchFlaggedPage(accessToken: string): Promise<RawItem[]> {
+  const url = new URL(REVIEW_LIST_URL);
+  url.searchParams.set("limit", String(PAGE_SIZE));
 
-  // Hard cap to avoid infinite loops if backend ignores pagination.
-  for (let page = 0; page < 50; page++) {
-    const url = new URL(REVIEW_LIST_URL);
-    url.searchParams.set("limit", String(PAGE_SIZE));
-    url.searchParams.set("offset", String(offset));
-
-    const res = await fetch(url.toString(), {
-      headers: {
-        apikey: SEND_SMART_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    if (!res.ok) throw new Error(`Failed to load flagged messages (${res.status})`);
-    const body = (await res.json()) as { items?: RawItem[] };
-    const items = body.items ?? [];
-    if (items.length === 0) break;
-
-    let added = 0;
-    for (const it of items) {
-      if (!it?.id || seen.has(it.id)) continue;
-      seen.add(it.id);
-      all.push(it);
-      added++;
-    }
-
-    // Stop if the backend ignored pagination (returned same page again) or
-    // we got the final short page.
-    if (added === 0 || items.length < PAGE_SIZE) break;
-    offset += items.length;
-  }
-
-  return all;
+  const res = await fetch(url.toString(), {
+    headers: {
+      apikey: SEND_SMART_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to load flagged messages (${res.status})`);
+  const body = (await res.json()) as { items?: RawItem[] };
+  return body.items ?? [];
 }
 
 async function resolveOne(item: RawItem, accessToken: string): Promise<boolean> {
