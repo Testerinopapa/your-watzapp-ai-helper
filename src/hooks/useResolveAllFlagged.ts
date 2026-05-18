@@ -6,7 +6,7 @@ import type { FlaggedEmail } from "./useFlaggedEmails";
 const RESOLVE_URL = `${SEND_SMART_URL}/functions/v1/review-resolve`;
 const REVIEW_LIST_URL = `${SEND_SMART_URL}/functions/v1/review-list`;
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 50;
 const RESOLVE_CONCURRENCY = 10;
 
 interface RawItem {
@@ -46,7 +46,7 @@ async function fetchAllFlaggedIds(accessToken: string): Promise<RawItem[]> {
     }
 
     // Stop if the backend ignored pagination (returned same page again) or
-    // we got a short page.
+    // we got the final short page.
     if (added === 0 || items.length < PAGE_SIZE) break;
     offset += items.length;
   }
