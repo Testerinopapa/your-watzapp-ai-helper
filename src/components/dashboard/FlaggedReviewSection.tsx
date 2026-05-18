@@ -29,7 +29,7 @@ export default function FlaggedReviewSection() {
   const [open, setOpen] = useState(false);
 
   const handleClearAll = () => {
-    resolveAll.mutate(items, {
+    resolveAll.mutate(undefined, {
       onSuccess: (res) => {
         toast({
           title: "Cleared",
