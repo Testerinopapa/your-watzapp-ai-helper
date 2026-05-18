@@ -54,6 +54,8 @@ export function useFlaggedEmails() {
   const query = useQuery({
     queryKey: ["review-list"],
     staleTime: 0,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     queryFn: async (): Promise<{ items: FlaggedEmail[] }> => {
       const {
