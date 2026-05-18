@@ -1,10 +1,24 @@
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, CheckCircle2, RefreshCw, Flag } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { AlertTriangle, CheckCircle2, RefreshCw, Flag, Trash2 } from "lucide-react";
 import { useFlaggedEmails } from "@/hooks/useFlaggedEmails";
+import { useResolveAllFlagged } from "@/hooks/useResolveAllFlagged";
+import { useToast } from "@/hooks/use-toast";
 import FlaggedEmailCard from "./FlaggedEmailCard";
 import { cn } from "@/lib/utils";
 
