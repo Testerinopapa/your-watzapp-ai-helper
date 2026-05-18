@@ -24,6 +24,28 @@ import { cn } from "@/lib/utils";
 
 export default function FlaggedReviewSection() {
   const { items, isLoading, error, refetch, isFetching } = useFlaggedEmails();
+  const resolveAll = useResolveAllFlagged();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+
+  const handleClearAll = () => {
+    resolveAll.mutate(items, {
+      onSuccess: (res) => {
+        toast({
+          title: "Cleared",
+          description: `${res.cleared} message${res.cleared === 1 ? "" : "s"} removed from review.`,
+        });
+        setOpen(false);
+      },
+      onError: (err) => {
+        toast({
+          title: "Couldn't clear messages",
+          description: err instanceof Error ? err.message : "Try again.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
 
   return (
     <section className="space-y-4">
@@ -37,16 +59,50 @@ export default function FlaggedReviewSection() {
             </Badge>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching}
-          className="gap-1.5"
-        >
-          <RefreshCw size={14} className={cn(isFetching && "animate-spin")} />
-          <span className="hidden sm:inline">Refresh</span>
-        </Button>
+        <div className="flex items-center gap-1">
+          {!isLoading && !error && items.length > 0 && (
+            <AlertDialog open={open} onOpenChange={setOpen}>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-destructive hover:text-destructive"
+                >
+                  <Trash2 size={14} />
+                  <span className="hidden sm:inline">Clear all</span>
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Clear all flagged messages?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This will remove all {items.length} message{items.length === 1 ? "" : "s"} from your review queue. You won&apos;t be able to undo this.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleClearAll}
+                    disabled={resolveAll.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    {resolveAll.isPending ? "Clearing..." : "Clear all"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="gap-1.5"
+          >
+            <RefreshCw size={14} className={cn(isFetching && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+        </div>
       </div>
 
       {error && (
