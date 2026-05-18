@@ -15,43 +15,22 @@ interface RawItem {
   provider?: string;
 }
 
-async function fetchAllFlaggedIds(accessToken: string): Promise<RawItem[]> {
-  const all: RawItem[] = [];
-  const seen = new Set<string>();
-  let offset = 0;
+async function fetchFlaggedPage(accessToken: string): Promise<RawItem[]> {
+  const url = new URL(REVIEW_LIST_URL);
+  url.searchParams.set("limit", String(PAGE_SIZE));
+  url.searchParams.set("_", Date.now().toString());
 
-  // Hard cap to avoid infinite loops if backend ignores pagination.
-  for (let page = 0; page < 50; page++) {
-    const url = new URL(REVIEW_LIST_URL);
-    url.searchParams.set("limit", String(PAGE_SIZE));
-    url.searchParams.set("offset", String(offset));
-
-    const res = await fetch(url.toString(), {
-      headers: {
-        apikey: SEND_SMART_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-    if (!res.ok) throw new Error(`Failed to load flagged messages (${res.status})`);
-    const body = (await res.json()) as { items?: RawItem[] };
-    const items = body.items ?? [];
-    if (items.length === 0) break;
-
-    let added = 0;
-    for (const it of items) {
-      if (!it?.id || seen.has(it.id)) continue;
-      seen.add(it.id);
-      all.push(it);
-      added++;
-    }
-
-    // Stop if the backend ignored pagination (returned same page again) or
-    // we got the final short page.
-    if (added === 0 || items.length < PAGE_SIZE) break;
-    offset += items.length;
-  }
-
-  return all;
+  const res = await fetch(url.toString(), {
+    cache: "no-store",
+    headers: {
+      apikey: SEND_SMART_ANON_KEY,
+      Authorization: `Bearer ${accessToken}`,
+      "Cache-Control": "no-cache",
+    },
+  });
+  if (!res.ok) throw new Error(`Failed to load flagged messages (${res.status})`);
+  const body = (await res.json()) as { items?: RawItem[] };
+  return (body.items ?? []).filter((item) => Boolean(item?.id));
 }
 
 async function resolveOne(item: RawItem, accessToken: string): Promise<boolean> {
@@ -82,29 +61,42 @@ export function useResolveAllFlagged() {
       } = await supabase.auth.getSession();
       if (!session) throw new Error("Not signed in");
 
-      const all = await fetchAllFlaggedIds(session.access_token);
-      if (all.length === 0) return { cleared: 0, failed: 0, total: 0 };
-
       let cleared = 0;
       let failed = 0;
+      let total = 0;
 
-      // Process with limited concurrency to avoid hammering the backend.
-      for (let i = 0; i < all.length; i += RESOLVE_CONCURRENCY) {
-        const batch = all.slice(i, i + RESOLVE_CONCURRENCY);
-        const results = await Promise.allSettled(
-          batch.map((item) => resolveOne(item, session.access_token)),
-        );
-        for (const r of results) {
-          if (r.status === "fulfilled" && r.value) cleared++;
-          else failed++;
+      // The backend caps review-list at 50 and may ignore offset, so clear the
+      // current page, then fetch again until no flagged messages remain.
+      for (let page = 0; page < 100; page++) {
+        const items = await fetchFlaggedPage(session.access_token);
+        if (items.length === 0) break;
+
+        let clearedThisPage = 0;
+        total += items.length;
+
+        for (let i = 0; i < items.length; i += RESOLVE_CONCURRENCY) {
+          const batch = items.slice(i, i + RESOLVE_CONCURRENCY);
+          const results = await Promise.allSettled(
+            batch.map((item) => resolveOne(item, session.access_token)),
+          );
+          for (const r of results) {
+            if (r.status === "fulfilled" && r.value) {
+              cleared++;
+              clearedThisPage++;
+            } else {
+              failed++;
+            }
+          }
         }
+
+        if (clearedThisPage === 0) break;
       }
 
       if (cleared === 0 && failed > 0) {
         throw new Error("Failed to clear messages.");
       }
 
-      return { cleared, failed, total: all.length };
+      return { cleared, failed, total };
     },
     onMutate: async () => {
       await qc.cancelQueries({ queryKey: ["review-list"] });
