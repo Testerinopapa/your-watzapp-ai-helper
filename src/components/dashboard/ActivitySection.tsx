@@ -2,8 +2,51 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
-import { Activity, AlertCircle, RefreshCw, MessageSquare } from "lucide-react";
+import { Activity, AlertCircle, RefreshCw, MessageSquare, Mic } from "lucide-react";
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
+
+// Parses voice rows. Handles both "[Voice message 0:05] transcript..." and
+// legacy/truncated "0:05" rows. Returns null when the row isn't a voice note.
+const parseVoice = (text: string) => {
+  const tagged = text.match(/^\[Voice message\s+(\d+:\d{2})\]\s*([\s\S]*)$/i);
+  if (tagged) return { duration: tagged[1], transcript: tagged[2].trim() };
+  const bareDuration = text.match(/^(\d+:\d{2})\s*([\s\S]*)$/);
+  if (bareDuration) return { duration: bareDuration[1], transcript: bareDuration[2].trim() };
+  return null;
+};
+
+// Static waveform bars — purely decorative, deterministic per duration so it
+// doesn't reshuffle on every render.
+const WAVEFORM_BARS = [3, 6, 10, 7, 12, 5, 9, 14, 8, 11, 6, 13, 9, 5, 10, 7, 12, 4, 8, 6];
+
+const VoicePreview = ({ duration, transcript }: { duration: string; transcript: string }) => (
+  <div className="mt-1.5 space-y-1.5">
+    <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 pl-2 pr-3 py-1">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+        <Mic size={11} strokeWidth={2.5} />
+      </span>
+      <div className="flex items-center gap-[2px] h-4">
+        {WAVEFORM_BARS.map((h, idx) => (
+          <span
+            key={idx}
+            className="w-[2px] rounded-full bg-primary/70"
+            style={{ height: `${h}px` }}
+          />
+        ))}
+      </div>
+      <span className="text-[11px] font-medium text-primary tabular-nums">{duration}</span>
+    </div>
+    {transcript && (
+      <p
+        className="text-sm text-muted-foreground italic line-clamp-2 pl-1 border-l-2 border-primary/30 ml-0.5"
+        title={transcript}
+      >
+        “{transcript}”
+      </p>
+    )}
+  </div>
+);
+
 
 const formatPeriod = (period?: string) => {
   if (!period) return "";
