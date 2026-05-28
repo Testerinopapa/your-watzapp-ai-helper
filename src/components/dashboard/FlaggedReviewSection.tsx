@@ -164,17 +164,24 @@ export default function FlaggedReviewSection() {
                   </div>
 
                   <div className="space-y-1">
-                    <p className="font-semibold text-sm leading-snug line-clamp-1">
-                      {item.subject ?? "(no subject)"}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.intent_category && (
+                        <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                          {item.intent_category}
+                          {typeof item.intent_confidence === "number" &&
+                            ` · ${Math.round(item.intent_confidence * 100)}%`}
+                        </Badge>
+                      )}
+                      <p className="font-semibold text-sm leading-snug line-clamp-1">
+                        {item.subject ?? "(no subject)"}
+                      </p>
+                    </div>
                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                       {snippet}
                     </p>
                     {item.intent_reason && (
                       <p className="text-[11px] text-muted-foreground/80 italic line-clamp-2 pt-1">
-                        Flagged: {item.intent_reason}
-                        {typeof item.intent_confidence === "number" &&
-                          ` · ${(item.intent_confidence * 100).toFixed(0)}% ${item.intent_category}`}
+                        {item.intent_reason}
                       </p>
                     )}
                   </div>
