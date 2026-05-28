@@ -1,7 +1,8 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Flag, MessageCircle, Clock } from "lucide-react";
+import { Flag, MessageCircle, Clock, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
