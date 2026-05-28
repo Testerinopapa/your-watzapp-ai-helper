@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Flag, MessageCircle, Clock, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
+import {
+  useFlaggedMessages,
+  getFlaggedRealtimeClient,
+  type FlaggedMessage,
+} from "@/hooks/useFlaggedMessages";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Tone = "fresh" | "stale";
 
@@ -29,13 +35,43 @@ const truncate = (s: string | null, n = 160) =>
   !s ? "" : s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 export default function FlaggedReviewSection() {
+  const { user } = useAuth();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
+
+  // Realtime: re-fetch whenever thread_states changes for this user.
+  useEffect(() => {
+    if (!user?.id) return;
+    const client = getFlaggedRealtimeClient();
+    const channel = client
+      .channel(`flagged-thread-states-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "thread_states",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          refetch();
+        },
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [user?.id, refetch]);
+
   const all: FlaggedMessage[] = data ?? [];
   // De-dupe by sender — thread_id contains rotating WhatsApp avatar URL tokens,
-  // so the same conversation can produce multiple rows. Keep the newest per sender.
+  // so the same conversation can produce multiple rows. Sort by updated_at desc
+  // and keep the newest row per sender.
+  const sorted = [...all].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
   const seen = new Set<string>();
   const items: FlaggedMessage[] = [];
-  for (const m of all) {
+  for (const m of sorted) {
     const key = m.sender ?? m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -82,9 +118,7 @@ export default function FlaggedReviewSection() {
           Couldn't load flagged messages: {(error as Error).message}
         </p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No messages need review right now.
-        </p>
+        <p className="text-sm text-muted-foreground">No flagged threads</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((item) => {
@@ -130,17 +164,24 @@ export default function FlaggedReviewSection() {
                   </div>
 
                   <div className="space-y-1">
-                    <p className="font-semibold text-sm leading-snug line-clamp-1">
-                      {item.subject ?? "(no subject)"}
-                    </p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {item.intent_category && (
+                        <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                          {item.intent_category}
+                          {typeof item.intent_confidence === "number" &&
+                            ` · ${Math.round(item.intent_confidence * 100)}%`}
+                        </Badge>
+                      )}
+                      <p className="font-semibold text-sm leading-snug line-clamp-1">
+                        {item.subject ?? "(no subject)"}
+                      </p>
+                    </div>
                     <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
                       {snippet}
                     </p>
                     {item.intent_reason && (
                       <p className="text-[11px] text-muted-foreground/80 italic line-clamp-2 pt-1">
-                        Flagged: {item.intent_reason}
-                        {typeof item.intent_confidence === "number" &&
-                          ` · ${(item.intent_confidence * 100).toFixed(0)}% ${item.intent_category}`}
+                        {item.intent_reason}
                       </p>
                     )}
                   </div>
