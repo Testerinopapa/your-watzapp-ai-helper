@@ -31,8 +31,6 @@ const toneFor = (updatedAt: string): Tone => {
   return age < 24 * 60 * 60 * 1000 ? "fresh" : "stale";
 };
 
-const truncate = (s: string | null, n = 160) =>
-  !s ? "" : s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 export default function FlaggedReviewSection() {
   const { user } = useAuth();
@@ -128,7 +126,6 @@ export default function FlaggedReviewSection() {
           {items.map((item) => {
             const tone = toneFor(item.updated_at);
             const styles = toneStyles[tone];
-            const snippet = truncate(item.latest_message ?? item.preview ?? "");
             const age = formatDistanceToNow(new Date(item.updated_at), {
               addSuffix: true,
             });
@@ -168,23 +165,15 @@ export default function FlaggedReviewSection() {
                   </div>
 
                   <div className="space-y-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      {item.intent_category && (
-                        <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                          {item.intent_category}
-                          {typeof item.intent_confidence === "number" &&
-                            ` · ${Math.round(item.intent_confidence * 100)}%`}
-                        </Badge>
-                      )}
-                      <p className="font-semibold text-sm leading-snug line-clamp-1">
-                        {item.subject ?? "(no subject)"}
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                      {snippet}
-                    </p>
+                    {item.intent_category && (
+                      <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                        {item.intent_category}
+                        {typeof item.intent_confidence === "number" &&
+                          ` · ${Math.round(item.intent_confidence * 100)}%`}
+                      </Badge>
+                    )}
                     {item.intent_reason && (
-                      <p className="text-[11px] text-muted-foreground/80 italic line-clamp-2 pt-1">
+                      <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
                         {item.intent_reason}
                       </p>
                     )}
