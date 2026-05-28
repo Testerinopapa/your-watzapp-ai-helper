@@ -1,10 +1,24 @@
 import { useQuery } from "@tanstack/react-query";
+import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-const FLAGGED_LIST_URL =
-  "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/flagged-list";
-const FLAGGED_ANON_KEY =
+export const FLAGGED_SUPABASE_URL = "https://ocpphyjkstvfespxrajk.supabase.co";
+export const FLAGGED_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jcHBoeWprc3R2ZmVzcHhyYWprIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcxODExMzUsImV4cCI6MjA5Mjc1NzEzNX0.wcqrpSVkgDZRPet_4yLcF5YYISsWqRacVNOHf_eW8uY";
+const FLAGGED_LIST_URL = `${FLAGGED_SUPABASE_URL}/functions/v1/flagged-list`;
+
+// External project client used only for realtime subscription on thread_states.
+// (flagged-list / thread_states live on a different Supabase project than the
+// app's main client, so we need a dedicated client to subscribe.)
+let externalClient: ReturnType<typeof createClient> | null = null;
+export function getFlaggedRealtimeClient() {
+  if (!externalClient) {
+    externalClient = createClient(FLAGGED_SUPABASE_URL, FLAGGED_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  }
+  return externalClient;
+}
 
 export interface FlaggedMessage {
   thread_id: string;
