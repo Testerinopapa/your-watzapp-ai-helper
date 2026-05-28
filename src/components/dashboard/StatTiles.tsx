@@ -1,11 +1,9 @@
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
-import { useFlaggedEmails } from "@/hooks/useFlaggedEmails";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, Flag, Cpu, Clock } from "lucide-react";
 
 const StatTiles = () => {
   const { data, isLoading } = useSendSmartUsage();
-  const { items } = useFlaggedEmails();
 
   const replied = data?.used.emails ?? 0;
   const tokens = (data?.used.inputTokens ?? 0) + (data?.used.outputTokens ?? 0);
