@@ -32,6 +32,7 @@ export function useFlaggedMessages(limit = 20) {
     queryKey: ["flagged-messages", limit],
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+    refetchInterval: 15_000,
     queryFn: async () => {
       const {
         data: { session },
