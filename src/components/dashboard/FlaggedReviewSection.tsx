@@ -118,9 +118,7 @@ export default function FlaggedReviewSection() {
           Couldn't load flagged messages: {(error as Error).message}
         </p>
       ) : items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          No messages need review right now.
-        </p>
+        <p className="text-sm text-muted-foreground">No flagged threads</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((item) => {
