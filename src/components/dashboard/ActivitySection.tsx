@@ -109,31 +109,38 @@ const ActivitySection = () => {
                 </div>
               ) : (
                 <ol className="relative border-l border-border ml-2 space-y-4">
-                  {data.recent.slice(0, 8).map((r, i) => (
-                    <li key={`${r.createdAt}-${i}`} className="pl-4 relative">
-                      <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <span className="text-sm font-medium truncate max-w-[60%]" title={r.senderEmail}>
-                          {r.senderEmail}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                              decisionTone[r.decision] ?? "bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {r.decision}
+                  {data.recent.slice(0, 8).map((r, i) => {
+                    const previewText =
+                      r.latestMessage?.trim() ||
+                      r.preview?.trim() ||
+                      "(no message preview)";
+                    const isVoice = /^\[Voice message\b/.test(previewText);
+                    return (
+                      <li key={`${r.createdAt}-${i}`} className="pl-4 relative">
+                        <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <span className="text-sm font-medium truncate max-w-[60%]" title={r.senderEmail ?? undefined}>
+                            {r.senderEmail}
                           </span>
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {formatDate(r.createdAt)}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                decisionTone[r.decision] ?? "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {r.decision}
+                            </span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {formatDate(r.createdAt)}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <p className="text-sm text-muted-foreground mt-1 line-clamp-1" title={r.subject}>
-                        {r.subject || "(no message preview)"}
-                      </p>
-                    </li>
-                  ))}
+                        <p className="text-sm text-muted-foreground mt-1 line-clamp-1" title={previewText}>
+                          {isVoice ? `🎙 ${previewText}` : previewText}
+                        </p>
+                      </li>
+                    );
+                  })}
                 </ol>
               )}
             </div>

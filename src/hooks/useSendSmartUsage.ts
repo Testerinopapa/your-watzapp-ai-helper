@@ -8,9 +8,11 @@ const SEND_SMART_ANON_KEY =
 
 export interface SendSmartUsageRecent {
   createdAt: string;
-  subject: string;
-  senderEmail: string;
+  subject: string | null;
+  senderEmail: string | null;
   decision: string;
+  latestMessage: string | null;
+  preview: string | null;
 }
 
 export interface SendSmartUsageData {

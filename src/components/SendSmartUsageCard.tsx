@@ -150,20 +150,26 @@ const SendSmartUsageCard = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {data.recent.map((r, i) => (
+                      {data.recent.map((r, i) => {
+                        const previewText =
+                          r.latestMessage?.trim() ||
+                          r.preview?.trim() ||
+                          "(no message preview)";
+                        const isVoice = /^\[Voice message\b/.test(previewText);
+                        return (
                         <TableRow key={`${r.createdAt}-${i}`}>
                           <TableCell className="text-muted-foreground whitespace-nowrap">
                             {formatDate(r.createdAt)}
                           </TableCell>
                           <TableCell
                             className="max-w-[240px] truncate"
-                            title={r.subject}
+                            title={previewText}
                           >
-                            {r.subject || "(no message preview)"}
+                            {isVoice ? `🎙 ${previewText}` : previewText}
                           </TableCell>
                           <TableCell
                             className="max-w-[180px] truncate text-muted-foreground"
-                            title={r.senderEmail}
+                            title={r.senderEmail ?? undefined}
                           >
                             {r.senderEmail}
                           </TableCell>
@@ -171,7 +177,8 @@ const SendSmartUsageCard = () => {
                             {r.decision}
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
