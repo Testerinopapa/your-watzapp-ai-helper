@@ -1,9 +1,11 @@
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
+import { useFlaggedEmails } from "@/hooks/useFlaggedEmails";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, Cpu, Clock } from "lucide-react";
+import { MessageSquare, Flag, Cpu, Clock } from "lucide-react";
 
 const StatTiles = () => {
   const { data, isLoading } = useSendSmartUsage();
+  const { items } = useFlaggedEmails();
 
   const replied = data?.used.emails ?? 0;
   const tokens = (data?.used.inputTokens ?? 0) + (data?.used.outputTokens ?? 0);
@@ -23,6 +25,12 @@ const StatTiles = () => {
       tint: "from-primary/15 to-primary/5 text-primary",
     },
     {
+      label: "In review",
+      value: items.length.toLocaleString(),
+      icon: Flag,
+      tint: "from-accent/15 to-accent/5 text-accent",
+    },
+    {
       label: "AI tokens",
       value: tokens > 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens.toString(),
       icon: Cpu,
@@ -38,7 +46,7 @@ const StatTiles = () => {
 
   if (isLoading && !data) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[0, 1, 2, 3].map((i) => (
           <Skeleton key={i} className="h-24 rounded-2xl" />
         ))}
@@ -47,7 +55,7 @@ const StatTiles = () => {
   }
 
   return (
-    <div id="usage" className="grid grid-cols-2 lg:grid-cols-3 gap-3 scroll-mt-20">
+    <div id="usage" className="grid grid-cols-2 lg:grid-cols-4 gap-3 scroll-mt-20">
       {tiles.map((t) => (
         <div
           key={t.label}
