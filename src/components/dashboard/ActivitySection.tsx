@@ -179,73 +179,73 @@ const ActivitySection = () => {
                   }
                 }
 
+                const voiceGroups = groups.filter((g) => g.voices.length > 0).slice(0, 8);
+
+                if (voiceGroups.length === 0) {
+                  return (
+                    <div className="rounded-xl border border-dashed py-10 flex flex-col items-center justify-center text-center">
+                      <Mic className="h-7 w-7 text-muted-foreground mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        No voice replies yet this month.
+                      </p>
+                    </div>
+                  );
+                }
+
                 return (
                   <ol className="relative border-l border-border ml-2 space-y-4">
-                    {groups.slice(0, 8).map((g, gi) => {
-                      const hasVoice = g.voices.length > 0;
-                      const transcript = g.transcript || "(no message preview)";
-                      return (
-                        <li key={`${g.createdAt}-${gi}`} className="pl-4 relative">
-                          <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-                          <div className="flex items-center justify-between gap-3 flex-wrap">
-                            <span
-                              className="text-sm font-medium truncate max-w-[60%]"
-                              title={g.sender ?? undefined}
-                            >
-                              {g.sender}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {g.decisions.map((d) => (
-                                <span
-                                  key={d}
-                                  className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                                    decisionTone[d] ?? "bg-muted text-muted-foreground"
-                                  }`}
-                                >
-                                  {d}
-                                </span>
-                              ))}
-                              <span className="text-xs text-muted-foreground tabular-nums">
-                                {formatDate(g.createdAt)}
+                    {voiceGroups.map((g, gi) => (
+                      <li key={`${g.createdAt}-${gi}`} className="pl-4 relative">
+                        <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
+                        <div className="flex items-center justify-between gap-3 flex-wrap">
+                          <span
+                            className="text-sm font-medium truncate max-w-[60%]"
+                            title={g.sender ?? undefined}
+                          >
+                            {g.sender}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {g.decisions.map((d) => (
+                              <span
+                                key={d}
+                                className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                  decisionTone[d] ?? "bg-muted text-muted-foreground"
+                                }`}
+                              >
+                                {d}
                               </span>
-                            </div>
+                            ))}
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {formatDate(g.createdAt)}
+                            </span>
                           </div>
+                        </div>
 
-                          {hasVoice ? (
-                            <div className="mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-2.5 space-y-2">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {g.voices.map((v, vi) => (
-                                  <VoicePill key={vi} duration={v.duration} />
-                                ))}
-                                {g.voices.length > 1 && (
-                                  <span className="text-[11px] text-muted-foreground">
-                                    {g.voices.length} voice messages
-                                  </span>
-                                )}
-                              </div>
-                              {g.transcript && (
-                                <div className="flex gap-2 pl-1">
-                                  <span className="w-0.5 rounded-full bg-primary/40 shrink-0" />
-                                  <p
-                                    className="text-sm text-muted-foreground italic line-clamp-2"
-                                    title={g.transcript}
-                                  >
-                                    “{g.transcript}”
-                                  </p>
-                                </div>
-                              )}
+                        <div className="mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-2.5 space-y-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {g.voices.map((v, vi) => (
+                              <VoicePill key={vi} duration={v.duration} />
+                            ))}
+                            {g.voices.length > 1 && (
+                              <span className="text-[11px] text-muted-foreground">
+                                {g.voices.length} voice messages
+                              </span>
+                            )}
+                          </div>
+                          {g.transcript && (
+                            <div className="flex gap-2 pl-1">
+                              <span className="w-0.5 rounded-full bg-primary/40 shrink-0" />
+                              <p
+                                className="text-sm text-muted-foreground italic line-clamp-2"
+                                title={g.transcript}
+                              >
+                                “{g.transcript}”
+                              </p>
                             </div>
-                          ) : (
-                            <p
-                              className="text-sm text-muted-foreground mt-1 line-clamp-1"
-                              title={transcript}
-                            >
-                              {transcript}
-                            </p>
                           )}
-                        </li>
-                      );
-                    })}
+                        </div>
+                      </li>
+                    ))}
                   </ol>
                 );
               })()}
