@@ -15,35 +15,20 @@ const parseVoice = (text: string) => {
   return null;
 };
 
-// Static waveform bars — purely decorative, deterministic per duration so it
-// doesn't reshuffle on every render.
+// Static waveform bars — purely decorative.
 const WAVEFORM_BARS = [3, 6, 10, 7, 12, 5, 9, 14, 8, 11, 6, 13, 9, 5, 10, 7, 12, 4, 8, 6];
 
-const VoicePreview = ({ duration, transcript }: { duration: string; transcript: string }) => (
-  <div className="mt-1.5 space-y-1.5">
-    <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 pl-2 pr-3 py-1">
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        <Mic size={11} strokeWidth={2.5} />
-      </span>
-      <div className="flex items-center gap-[2px] h-4">
-        {WAVEFORM_BARS.map((h, idx) => (
-          <span
-            key={idx}
-            className="w-[2px] rounded-full bg-primary/70"
-            style={{ height: `${h}px` }}
-          />
-        ))}
-      </div>
-      <span className="text-[11px] font-medium text-primary tabular-nums">{duration}</span>
+const VoicePill = ({ duration }: { duration: string }) => (
+  <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 pl-1.5 pr-2.5 py-1">
+    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+      <Mic size={11} strokeWidth={2.5} />
+    </span>
+    <div className="flex items-center gap-[2px] h-4">
+      {WAVEFORM_BARS.map((h, idx) => (
+        <span key={idx} className="w-[2px] rounded-full bg-primary/70" style={{ height: `${h}px` }} />
+      ))}
     </div>
-    {transcript && (
-      <p
-        className="text-sm text-muted-foreground italic line-clamp-2 pl-1 border-l-2 border-primary/30 ml-0.5"
-        title={transcript}
-      >
-        “{transcript}”
-      </p>
-    )}
+    <span className="text-[11px] font-medium text-primary tabular-nums">{duration}</span>
   </div>
 );
 
