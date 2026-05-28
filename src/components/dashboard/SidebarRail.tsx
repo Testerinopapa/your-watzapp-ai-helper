@@ -94,13 +94,6 @@ const SidebarRail = () => {
               </p>
             </div>
 
-            <div className="flex items-center justify-between border-t pt-3">
-              <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                <Flag size={13} className="text-primary" />
-                In review
-              </span>
-              <span className="text-sm font-semibold tabular-nums">{items.length}</span>
-            </div>
           </>
         )}
       </div>
