@@ -157,7 +157,7 @@ const ActivitySection = () => {
                       r.latestMessage?.trim() ||
                       r.preview?.trim() ||
                       "(no message preview)";
-                    const isVoice = /^\[Voice message\b/.test(previewText);
+                    const voice = parseVoice(previewText);
                     return (
                       <li key={`${r.createdAt}-${i}`} className="pl-4 relative">
                         <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
@@ -178,9 +178,13 @@ const ActivitySection = () => {
                             </span>
                           </div>
                         </div>
-                        <p className="text-sm text-muted-foreground mt-1 line-clamp-1" title={previewText}>
-                          {isVoice ? `🎙 ${previewText}` : previewText}
-                        </p>
+                        {voice ? (
+                          <VoicePreview duration={voice.duration} transcript={voice.transcript} />
+                        ) : (
+                          <p className="text-sm text-muted-foreground mt-1 line-clamp-1" title={previewText}>
+                            {previewText}
+                          </p>
+                        )}
                       </li>
                     );
                   })}
