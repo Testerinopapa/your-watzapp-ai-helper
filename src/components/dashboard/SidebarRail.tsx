@@ -1,13 +1,11 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
-import { useFlaggedEmails } from "@/hooks/useFlaggedEmails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   CheckCircle2,
-  Flag,
   MessageSquare,
   Sparkles,
   Download,
@@ -20,7 +18,6 @@ import { useExtensionDownload } from "@/hooks/use-extension-download";
 
 const navItems = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "review", label: "Review queue", icon: Flag },
   { id: "activity", label: "Activity", icon: Activity },
   { id: "extension", label: "Connect", icon: KeyRound },
   { id: "setup", label: "Install guide", icon: Download },
@@ -30,7 +27,6 @@ const navItems = [
 const SidebarRail = () => {
   const { user } = useAuth();
   const { data, isLoading } = useSendSmartUsage();
-  const { items } = useFlaggedEmails();
   const { handleDownload } = useExtensionDownload();
 
   const initials =
