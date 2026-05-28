@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -5,7 +6,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Flag, MessageCircle, Clock, RefreshCw } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
+import {
+  useFlaggedMessages,
+  getFlaggedRealtimeClient,
+  type FlaggedMessage,
+} from "@/hooks/useFlaggedMessages";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Tone = "fresh" | "stale";
 
@@ -29,13 +35,43 @@ const truncate = (s: string | null, n = 160) =>
   !s ? "" : s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 export default function FlaggedReviewSection() {
+  const { user } = useAuth();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
+
+  // Realtime: re-fetch whenever thread_states changes for this user.
+  useEffect(() => {
+    if (!user?.id) return;
+    const client = getFlaggedRealtimeClient();
+    const channel = client
+      .channel(`flagged-thread-states-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "thread_states",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          refetch();
+        },
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [user?.id, refetch]);
+
   const all: FlaggedMessage[] = data ?? [];
   // De-dupe by sender — thread_id contains rotating WhatsApp avatar URL tokens,
-  // so the same conversation can produce multiple rows. Keep the newest per sender.
+  // so the same conversation can produce multiple rows. Sort by updated_at desc
+  // and keep the newest row per sender.
+  const sorted = [...all].sort(
+    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+  );
   const seen = new Set<string>();
   const items: FlaggedMessage[] = [];
-  for (const m of all) {
+  for (const m of sorted) {
     const key = m.sender ?? m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
