@@ -1,6 +1,6 @@
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MessageSquare, Flag, Cpu, Clock } from "lucide-react";
+import { MessageSquare, Cpu, Clock } from "lucide-react";
 
 const StatTiles = () => {
   const { data, isLoading } = useSendSmartUsage();
@@ -21,12 +21,6 @@ const StatTiles = () => {
       value: replied.toLocaleString(),
       icon: MessageSquare,
       tint: "from-primary/15 to-primary/5 text-primary",
-    },
-    {
-      label: "In review",
-      value: items.length.toLocaleString(),
-      icon: Flag,
-      tint: "from-accent/15 to-accent/5 text-accent",
     },
     {
       label: "AI tokens",
