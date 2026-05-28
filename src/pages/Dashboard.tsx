@@ -11,11 +11,9 @@ import AppointmentsSection from "@/components/dashboard/AppointmentsSection";
 import doodleBg from "@/assets/dashboard-doodles.jpg";
 import doodleBgDark from "@/assets/dashboard-doodles-dark.jpg";
 import { useTheme } from "@/components/ThemeProvider";
-import { useThreadStatesRealtime } from "@/hooks/useThreadStatesRealtime";
 
 const Dashboard = () => {
   const { theme } = useTheme();
-  useThreadStatesRealtime();
   const bg = theme === "dark" ? doodleBgDark : doodleBg;
   const overlay =
     theme === "dark"

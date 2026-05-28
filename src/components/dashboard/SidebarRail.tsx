@@ -1,6 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
-import { useFlaggedEmails } from "@/hooks/useFlaggedEmails";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -30,7 +29,6 @@ const navItems = [
 const SidebarRail = () => {
   const { user } = useAuth();
   const { data, isLoading } = useSendSmartUsage();
-  const { items } = useFlaggedEmails();
   const { handleDownload } = useExtensionDownload();
 
   const initials =
@@ -96,13 +94,6 @@ const SidebarRail = () => {
               </p>
             </div>
 
-            <div className="flex items-center justify-between border-t pt-3">
-              <span className="text-sm text-muted-foreground flex items-center gap-1.5">
-                <Flag size={13} className="text-primary" />
-                In review
-              </span>
-              <span className="text-sm font-semibold tabular-nums">{items.length}</span>
-            </div>
           </>
         )}
       </div>
