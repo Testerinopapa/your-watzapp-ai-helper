@@ -39,9 +39,6 @@ const Dashboard = () => {
             <OverviewHeader />
             <StatTiles />
 
-            <div id="review">
-              <FlaggedReviewSection />
-            </div>
 
             <div id="appointments">
               <AppointmentsSection />
