@@ -29,8 +29,18 @@ const truncate = (s: string | null, n = 160) =>
   !s ? "" : s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s;
 
 export default function FlaggedReviewSection() {
-  const { data, isLoading, error } = useFlaggedMessages(20);
-  const items: FlaggedMessage[] = data ?? [];
+  const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
+  const all: FlaggedMessage[] = data ?? [];
+  // De-dupe by sender — thread_id contains rotating WhatsApp avatar URL tokens,
+  // so the same conversation can produce multiple rows. Keep the newest per sender.
+  const seen = new Set<string>();
+  const items: FlaggedMessage[] = [];
+  for (const m of all) {
+    const key = m.sender ?? m.thread_id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(m);
+  }
 
   return (
     <section className="space-y-4">
@@ -42,6 +52,16 @@ export default function FlaggedReviewSection() {
             {items.length}
           </Badge>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="ml-auto gap-1.5"
+        >
+          <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} />
+          <span className="hidden sm:inline">Refresh</span>
+        </Button>
       </div>
 
       {isLoading ? (
