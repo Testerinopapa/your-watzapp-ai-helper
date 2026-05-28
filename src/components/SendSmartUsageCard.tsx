@@ -177,7 +177,8 @@ const SendSmartUsageCard = () => {
                             {r.decision}
                           </TableCell>
                         </TableRow>
-                      ))}
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
