@@ -15,35 +15,20 @@ const parseVoice = (text: string) => {
   return null;
 };
 
-// Static waveform bars — purely decorative, deterministic per duration so it
-// doesn't reshuffle on every render.
+// Static waveform bars — purely decorative.
 const WAVEFORM_BARS = [3, 6, 10, 7, 12, 5, 9, 14, 8, 11, 6, 13, 9, 5, 10, 7, 12, 4, 8, 6];
 
-const VoicePreview = ({ duration, transcript }: { duration: string; transcript: string }) => (
-  <div className="mt-1.5 space-y-1.5">
-    <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 pl-2 pr-3 py-1">
-      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-        <Mic size={11} strokeWidth={2.5} />
-      </span>
-      <div className="flex items-center gap-[2px] h-4">
-        {WAVEFORM_BARS.map((h, idx) => (
-          <span
-            key={idx}
-            className="w-[2px] rounded-full bg-primary/70"
-            style={{ height: `${h}px` }}
-          />
-        ))}
-      </div>
-      <span className="text-[11px] font-medium text-primary tabular-nums">{duration}</span>
+const VoicePill = ({ duration }: { duration: string }) => (
+  <div className="inline-flex items-center gap-2 rounded-full border border-primary/25 bg-primary/10 pl-1.5 pr-2.5 py-1">
+    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+      <Mic size={11} strokeWidth={2.5} />
+    </span>
+    <div className="flex items-center gap-[2px] h-4">
+      {WAVEFORM_BARS.map((h, idx) => (
+        <span key={idx} className="w-[2px] rounded-full bg-primary/70" style={{ height: `${h}px` }} />
+      ))}
     </div>
-    {transcript && (
-      <p
-        className="text-sm text-muted-foreground italic line-clamp-2 pl-1 border-l-2 border-primary/30 ml-0.5"
-        title={transcript}
-      >
-        “{transcript}”
-      </p>
-    )}
+    <span className="text-[11px] font-medium text-primary tabular-nums">{duration}</span>
   </div>
 );
 
@@ -150,46 +135,120 @@ const ActivitySection = () => {
                   <MessageSquare className="h-7 w-7 text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">No replies yet this month.</p>
                 </div>
-              ) : (
-                <ol className="relative border-l border-border ml-2 space-y-4">
-                  {data.recent.slice(0, 8).map((r, i) => {
-                    const previewText =
-                      r.latestMessage?.trim() ||
-                      r.preview?.trim() ||
-                      "(no message preview)";
-                    const voice = parseVoice(previewText);
-                    return (
-                      <li key={`${r.createdAt}-${i}`} className="pl-4 relative">
-                        <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
-                        <div className="flex items-center justify-between gap-3 flex-wrap">
-                          <span className="text-sm font-medium truncate max-w-[60%]" title={r.senderEmail ?? undefined}>
-                            {r.senderEmail}
-                          </span>
-                          <div className="flex items-center gap-2">
+              ) : (() => {
+                // Group consecutive items with the same senderEmail within ~2min.
+                // A group surfaces all its voice clips together with the shared transcript,
+                // making it visually obvious the clips belong with the reply text.
+                type Recent = (typeof data.recent)[number];
+                type Group = {
+                  sender: string | null;
+                  createdAt: string;
+                  decisions: string[];
+                  voices: { duration: string }[];
+                  transcript: string;
+                  items: Recent[];
+                };
+                const groups: Group[] = [];
+                for (const r of data.recent.slice(0, 16)) {
+                  const text = r.latestMessage?.trim() || r.preview?.trim() || "";
+                  const voice = parseVoice(text);
+                  const last = groups[groups.length - 1];
+                  const sameBatch =
+                    last &&
+                    last.sender === r.senderEmail &&
+                    Math.abs(new Date(last.createdAt).getTime() - new Date(r.createdAt).getTime()) <
+                      2 * 60 * 1000;
+                  const target: Group = sameBatch
+                    ? last!
+                    : (groups.push({
+                        sender: r.senderEmail,
+                        createdAt: r.createdAt,
+                        decisions: [],
+                        voices: [],
+                        transcript: "",
+                        items: [],
+                      }),
+                      groups[groups.length - 1]);
+                  target.items.push(r);
+                  if (!target.decisions.includes(r.decision)) target.decisions.push(r.decision);
+                  if (voice) {
+                    target.voices.push({ duration: voice.duration });
+                    if (voice.transcript && !target.transcript) target.transcript = voice.transcript;
+                  } else if (text && !target.transcript) {
+                    target.transcript = text;
+                  }
+                }
+
+                return (
+                  <ol className="relative border-l border-border ml-2 space-y-4">
+                    {groups.slice(0, 8).map((g, gi) => {
+                      const hasVoice = g.voices.length > 0;
+                      const transcript = g.transcript || "(no message preview)";
+                      return (
+                        <li key={`${g.createdAt}-${gi}`} className="pl-4 relative">
+                          <span className="absolute -left-1.5 top-2 h-3 w-3 rounded-full border-2 border-background bg-primary" />
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
                             <span
-                              className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                                decisionTone[r.decision] ?? "bg-muted text-muted-foreground"
-                              }`}
+                              className="text-sm font-medium truncate max-w-[60%]"
+                              title={g.sender ?? undefined}
                             >
-                              {r.decision}
+                              {g.sender}
                             </span>
-                            <span className="text-xs text-muted-foreground tabular-nums">
-                              {formatDate(r.createdAt)}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              {g.decisions.map((d) => (
+                                <span
+                                  key={d}
+                                  className={`text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    decisionTone[d] ?? "bg-muted text-muted-foreground"
+                                  }`}
+                                >
+                                  {d}
+                                </span>
+                              ))}
+                              <span className="text-xs text-muted-foreground tabular-nums">
+                                {formatDate(g.createdAt)}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        {voice ? (
-                          <VoicePreview duration={voice.duration} transcript={voice.transcript} />
-                        ) : (
-                          <p className="text-sm text-muted-foreground mt-1 line-clamp-1" title={previewText}>
-                            {previewText}
-                          </p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
+
+                          {hasVoice ? (
+                            <div className="mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-2.5 space-y-2">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {g.voices.map((v, vi) => (
+                                  <VoicePill key={vi} duration={v.duration} />
+                                ))}
+                                {g.voices.length > 1 && (
+                                  <span className="text-[11px] text-muted-foreground">
+                                    {g.voices.length} voice messages
+                                  </span>
+                                )}
+                              </div>
+                              {g.transcript && (
+                                <div className="flex gap-2 pl-1">
+                                  <span className="w-0.5 rounded-full bg-primary/40 shrink-0" />
+                                  <p
+                                    className="text-sm text-muted-foreground italic line-clamp-2"
+                                    title={g.transcript}
+                                  >
+                                    “{g.transcript}”
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p
+                              className="text-sm text-muted-foreground mt-1 line-clamp-1"
+                              title={transcript}
+                            >
+                              {transcript}
+                            </p>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                );
+              })()}
             </div>
           </>
         ) : null}
