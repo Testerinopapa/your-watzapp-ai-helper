@@ -63,12 +63,16 @@ export default function FlaggedReviewSection() {
   }, [user?.id, refetch]);
 
   const all: FlaggedMessage[] = data ?? [];
+  // Use the most recent timestamp available on each row so newly-arrived
+  // messages bubble to the top even if `updated_at` lags behind classification.
+  const recencyOf = (m: FlaggedMessage) => {
+    const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
+    return Math.max(...candidates.map((s) => new Date(s).getTime()));
+  };
   // De-dupe by sender — thread_id contains rotating WhatsApp avatar URL tokens,
-  // so the same conversation can produce multiple rows. Sort by updated_at desc
-  // and keep the newest row per sender.
-  const sorted = [...all].sort(
-    (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-  );
+  // so the same conversation can produce multiple rows. Sort newest first,
+  // then keep the newest row per sender.
+  const sorted = [...all].sort((a, b) => recencyOf(b) - recencyOf(a));
   const seen = new Set<string>();
   const items: FlaggedMessage[] = [];
   for (const m of sorted) {
