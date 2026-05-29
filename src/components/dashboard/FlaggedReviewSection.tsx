@@ -164,7 +164,7 @@ export default function FlaggedReviewSection() {
                     </span>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     {item.intent_category && (
                       <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
                         {item.intent_category}
@@ -172,13 +172,8 @@ export default function FlaggedReviewSection() {
                           ` · ${Math.round(item.intent_confidence * 100)}%`}
                       </Badge>
                     )}
-                    {(item.latest_message || item.preview) && (
-                      <p className="text-xs text-foreground/90 line-clamp-3 whitespace-pre-wrap">
-                        {item.latest_message || item.preview}
-                      </p>
-                    )}
                     {item.intent_reason && (
-                      <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-0.5 border-t border-border/40">
+                      <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
                         {item.intent_reason}
                       </p>
                     )}
