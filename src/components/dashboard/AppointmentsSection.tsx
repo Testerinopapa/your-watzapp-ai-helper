@@ -318,92 +318,109 @@ export default function AppointmentsSection() {
         </div>
       </div>
 
-      <div className="relative mt-6">
-        {error && (
-          <Alert variant="destructive" className="border-destructive/40 bg-destructive/10">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Couldn't load appointments: {(error as Error).message}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {isLoading && (
-          <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:grid-rows-2">
-            <div className="col-span-2 row-span-2 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
-              <Skeleton className="h-6 w-1/2 bg-white/10" />
-              <Skeleton className="mt-4 h-4 w-3/4 bg-white/10" />
-              <Skeleton className="mt-2 h-4 w-2/3 bg-white/10" />
-            </div>
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div
-                key={i}
-                className="col-span-2 rounded-2xl border border-white/10 bg-white/[0.02] p-5 md:col-span-2"
-              >
-                <Skeleton className="h-4 w-2/3 bg-white/10" />
-                <Skeleton className="mt-2 h-3 w-1/2 bg-white/10" />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {!isLoading && !error && items.length === 0 && (
-          <div
-            className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#2dd4a8]/30 bg-[#0a1620]/40 px-6 py-12 text-center"
+      <Tabs value={tab} onValueChange={(v) => setTab(v as "booked" | "agenda")} className="relative mt-6">
+        <TabsList className="bg-[#0a1620]/60 border border-white/10">
+          <TabsTrigger
+            value="booked"
+            className="data-[state=active]:bg-[#2dd4a8]/15 data-[state=active]:text-[#73ffb8] text-white/60"
           >
-            <div
-              className="flex h-12 w-12 items-center justify-center rounded-full"
-              style={{
-                background: `linear-gradient(135deg, ${MINT_BRIGHT}, ${MINT})`,
-                boxShadow: `0 0 30px ${MINT}66`,
-              }}
-            >
-              <Sparkles className="h-6 w-6 text-[#0a1620]" />
-            </div>
-            <p
-              className="text-white"
-              style={{ ...fontHeading, fontWeight: 600 }}
-            >
-              No appointments yet
-            </p>
-            <p className="text-sm text-white/60">
-              When your agent locks one in, it'll land here in real time.
-            </p>
-          </div>
-        )}
+            Booked for you
+          </TabsTrigger>
+          <TabsTrigger
+            value="agenda"
+            className="data-[state=active]:bg-[#2dd4a8]/15 data-[state=active]:text-[#73ffb8] text-white/60"
+          >
+            Personal agenda
+          </TabsTrigger>
+        </TabsList>
 
-        {!isLoading && !error && items.length > 0 && (
-          <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
-            {featured && (
-              <div className="col-span-2 row-span-2 md:col-span-2">
-                <AppointmentCard
-                  item={featured}
-                  featured
-                  inAgenda={!!findByThreadId(featured.thread_id)}
-                  onClick={() => openCard(featured)}
-                />
+        <TabsContent value="booked" className="mt-5">
+          {error && (
+            <Alert variant="destructive" className="border-destructive/40 bg-destructive/10">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription>
+                Couldn't load appointments: {(error as Error).message}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {isLoading && (
+            <div className="grid grid-cols-2 gap-4 md:grid-cols-4 md:grid-rows-2">
+              <div className="col-span-2 row-span-2 rounded-2xl border border-white/10 bg-white/[0.02] p-6">
+                <Skeleton className="h-6 w-1/2 bg-white/10" />
+                <Skeleton className="mt-4 h-4 w-3/4 bg-white/10" />
+                <Skeleton className="mt-2 h-4 w-2/3 bg-white/10" />
               </div>
-            )}
-            {rest.map((item, idx) => (
+              {Array.from({ length: 2 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="col-span-2 rounded-2xl border border-white/10 bg-white/[0.02] p-5 md:col-span-2"
+                >
+                  <Skeleton className="h-4 w-2/3 bg-white/10" />
+                  <Skeleton className="mt-2 h-3 w-1/2 bg-white/10" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!isLoading && !error && items.length === 0 && (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#2dd4a8]/30 bg-[#0a1620]/40 px-6 py-12 text-center">
               <div
-                key={item.thread_id}
-                className={cn(
-                  "col-span-2 md:col-span-2",
-                  idx >= 2 && idx % 3 === 2 && "md:col-span-2",
-                )}
+                className="flex h-12 w-12 items-center justify-center rounded-full"
+                style={{
+                  background: `linear-gradient(135deg, ${MINT_BRIGHT}, ${MINT})`,
+                  boxShadow: `0 0 30px ${MINT}66`,
+                }}
               >
-                <AppointmentCard
-                  item={item}
-                  inAgenda={!!findByThreadId(item.thread_id)}
-                  onClick={() => openCard(item)}
-                />
+                <Sparkles className="h-6 w-6 text-[#0a1620]" />
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+              <p className="text-white" style={{ ...fontHeading, fontWeight: 600 }}>
+                No appointments yet
+              </p>
+              <p className="text-sm text-white/60">
+                When your agent locks one in, it'll land here in real time.
+              </p>
+            </div>
+          )}
+
+          {!isLoading && !error && items.length > 0 && (
+            <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
+              {featured && (
+                <div className="col-span-2 row-span-2 md:col-span-2">
+                  <AppointmentCard
+                    item={featured}
+                    featured
+                    inAgenda={!!findByThreadId(featured.thread_id)}
+                    onClick={() => openCard(featured)}
+                  />
+                </div>
+              )}
+              {rest.map((item, idx) => (
+                <div
+                  key={item.thread_id}
+                  className={cn(
+                    "col-span-2 md:col-span-2",
+                    idx >= 2 && idx % 3 === 2 && "md:col-span-2",
+                  )}
+                >
+                  <AppointmentCard
+                    item={item}
+                    inAgenda={!!findByThreadId(item.thread_id)}
+                    onClick={() => openCard(item)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="agenda" className="mt-5">
+          <PersonalAgendaPanel onConnectClick={() => setConnectOpen(true)} />
+        </TabsContent>
+      </Tabs>
 
       <AppointmentDrawer item={selected} open={open} onOpenChange={setOpen} />
+      <ConnectCalendarModal open={connectOpen} onOpenChange={setConnectOpen} />
     </section>
   );
 }
