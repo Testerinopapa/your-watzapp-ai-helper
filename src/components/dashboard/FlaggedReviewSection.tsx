@@ -617,6 +617,7 @@ function FolderTile({
 
 export default function FlaggedReviewSection() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
 
   const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
@@ -629,20 +630,49 @@ export default function FlaggedReviewSection() {
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
 
+  // Timeout handles keyed by thread_id
+  const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // draft_id -> thread_id reverse index for realtime updates
+  const draftToThreadRef = useRef<Record<string, string>>({});
+
+  const clearTimeoutFor = (threadId: string) => {
+    const t = timeoutsRef.current[threadId];
+    if (t) {
+      clearTimeout(t);
+      delete timeoutsRef.current[threadId];
+    }
+  };
+
   const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
     setDrafts((prev) => ({
       ...prev,
       [threadId]: { ...defaultDraft, ...prev[threadId], ...patch },
     }));
 
-  const generateDraft = async (item: FlaggedMessage) => {
+  const friendlyError = (status: number, raw: string): string => {
+    if (status === 401) return "Session expired — please sign in again.";
+    if (status === 402) return "Plan limit reached. Upgrade to continue drafting.";
+    if (status === 429) return "Too many requests — try again in a moment.";
+    if (status === 502) return "AI service is unavailable right now. Please retry.";
+    return raw || `Request failed (${status})`;
+  };
+
+  const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
-    const incomingMessage = (item.latest_message ?? item.preview ?? "")
+    const incomingMessage = (item.latest_message ?? item.preview ?? item.subject ?? "")
       .trim()
       .slice(0, 4000);
     const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
     if (!incomingMessage || !instruction) return;
-    updateDraft(id, { loading: true, error: null });
+
+    clearTimeoutFor(id);
+    updateDraft(id, {
+      loading: true,
+      error: null,
+      phase: "generating",
+      sentAt: null,
+    });
+
     try {
       const {
         data: { session },
@@ -658,26 +688,121 @@ export default function FlaggedReviewSection() {
             apikey: FLAGGED_ANON_KEY,
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ incomingMessage, instruction }),
+          body: JSON.stringify({
+            thread_id: item.thread_id,
+            provider: "whatsapp",
+            incomingMessage,
+            instruction,
+            autoSend: true,
+          }),
         },
       );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || `Request failed (${res.status})`);
+        const msg = friendlyError(res.status, text);
+        toast({
+          title: "Draft failed",
+          description: msg,
+          variant: "destructive",
+        });
+        throw new Error(msg);
       }
-      const data = await res.json().catch(() => null);
+      const body = await res.json().catch(() => null);
       const draft =
-        (data && (data.draft ?? data.reply ?? data.text ?? data.message)) ??
-        (typeof data === "string" ? data : "");
+        (body && (body.draft ?? body.reply ?? body.text ?? body.message)) ??
+        (typeof body === "string" ? body : "");
+      const draftId: string | null =
+        (body && (body.draft_id ?? body.draftId)) ?? null;
       if (!draft) throw new Error("No draft returned");
-      updateDraft(id, { loading: false, draft: String(draft), error: null });
+
+      if (draftId) {
+        draftToThreadRef.current[draftId] = id;
+      }
+
+      updateDraft(id, {
+        loading: false,
+        draft: String(draft),
+        error: null,
+        draftId,
+        phase: draftId ? "waiting" : "idle",
+      });
+
+      // 60s client-side timeout — show warning if no terminal state
+      if (draftId) {
+        timeoutsRef.current[id] = setTimeout(() => {
+          setDrafts((prev) => {
+            const cur = prev[id];
+            if (!cur || cur.phase !== "waiting") return prev;
+            return {
+              ...prev,
+              [id]: {
+                ...cur,
+                phase: "timeout",
+                error:
+                  "Extension didn't pick this up — is WhatsApp Web open?",
+              },
+            };
+          });
+        }, 60_000);
+      }
     } catch (e) {
       updateDraft(id, {
         loading: false,
         error: (e as Error)?.message ?? "Failed to generate draft",
+        phase: "error",
       });
     }
   };
+
+  const generateDraft = (item: FlaggedMessage) => callDraftFunction(item);
+  const retryDraft = (item: FlaggedMessage) => callDraftFunction(item);
+
+  const cancelPendingSend = async (item: FlaggedMessage) => {
+    const id = item.thread_id;
+    const cur = drafts[id];
+    if (!cur?.draftId) return;
+    clearTimeoutFor(id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not signed in");
+      const res = await fetch(
+        `${FLAGGED_SUPABASE_URL}/functions/v1/cancel-pending-send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: FLAGGED_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            thread_id: item.thread_id,
+            draft_id: cur.draftId,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Cancel failed (${res.status})`);
+      }
+      updateDraft(id, { phase: "idle", error: null });
+      toast({ title: "Cancelled", description: "Pending send cancelled." });
+    } catch (e) {
+      updateDraft(id, {
+        phase: "error",
+        error: (e as Error)?.message ?? "Failed to cancel",
+      });
+    }
+  };
+
+  // Clear all timeouts on unmount
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(timeoutsRef.current)) clearTimeout(t);
+      timeoutsRef.current = {};
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -712,7 +837,48 @@ export default function FlaggedReviewSection() {
           table: "thread_states",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
+          const row = (payload.new ?? payload.old) as
+            | Record<string, unknown>
+            | undefined;
+          if (row) {
+            const threadId = row.thread_id as string | undefined;
+            const status = row.status_value as string | undefined;
+            const lastKey = row.last_auto_sent_message_key as string | undefined;
+            const lastAt = row.last_auto_sent_at as string | undefined;
+            const lastError = row.last_error as string | undefined;
+
+            if (threadId) {
+              setDrafts((prev) => {
+                const cur = prev[threadId];
+                if (!cur || !cur.draftId) return prev;
+
+                let next = cur;
+                if (
+                  status === "sent" &&
+                  lastKey &&
+                  lastKey === cur.draftId
+                ) {
+                  clearTimeoutFor(threadId);
+                  next = {
+                    ...cur,
+                    phase: "sent",
+                    sentAt: lastAt ?? new Date().toISOString(),
+                    error: null,
+                  };
+                } else if (lastError && cur.phase === "waiting") {
+                  clearTimeoutFor(threadId);
+                  next = {
+                    ...cur,
+                    phase: "error",
+                    error: lastError,
+                  };
+                }
+                if (next === cur) return prev;
+                return { ...prev, [threadId]: next };
+              });
+            }
+          }
           refetch();
         },
       )
@@ -721,6 +887,7 @@ export default function FlaggedReviewSection() {
       client.removeChannel(channel);
     };
   }, [user?.id, refetch]);
+
 
   const all: FlaggedMessage[] = data ?? [];
   const recencyOf = (m: FlaggedMessage) => {
