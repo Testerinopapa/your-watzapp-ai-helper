@@ -216,6 +216,8 @@ export default function AppointmentsSection() {
   const { findByThreadId } = usePersonalAgenda();
   const [selected, setSelected] = useState<FlaggedMessage | null>(null);
   const [open, setOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [tab, setTab] = useState<"booked" | "agenda">("booked");
 
   const openCard = (m: FlaggedMessage) => {
     setSelected(m);
