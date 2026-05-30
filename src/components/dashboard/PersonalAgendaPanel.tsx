@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
+import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { cn } from "@/lib/utils";
 
 const MINT = "#73ffb8";
@@ -166,7 +167,21 @@ export default function PersonalAgendaPanel({
 }: {
   onConnectClick?: () => void;
 }) {
-  const { entries, remove, upsert } = usePersonalAgenda();
+  const { entries: localEntries, remove: removeLocal, upsert } = usePersonalAgenda();
+  const { entries: dbEntries, remove: removeDb } = useAgendaEvents();
+  const entries = useMemo(() => {
+    // DB-backed entries (e.g. synced from Google) + local entries, dedup by id
+    const seen = new Set<string>();
+    const all: AgendaEntry[] = [];
+    for (const e of [...dbEntries, ...localEntries]) {
+      if (seen.has(e.id)) continue;
+      seen.add(e.id);
+      all.push(e);
+    }
+    return all;
+  }, [localEntries, dbEntries]);
+  const dbIds = useMemo(() => new Set(dbEntries.map((e) => e.id)), [dbEntries]);
+  const remove = (id: string) => (dbIds.has(id) ? removeDb(id) : removeLocal(id));
   const conflicts = useMemo(() => detectConflicts(entries), [entries]);
   const now = new Date();
   const todayStart = startOfDay(now);
