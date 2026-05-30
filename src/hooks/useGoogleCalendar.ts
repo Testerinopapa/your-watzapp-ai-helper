@@ -7,6 +7,23 @@ export interface GoogleCalendarConnection {
   connected_at: string;
 }
 
+export const GOOGLE_CALENDAR_SCOPE_ERROR =
+  "Google Calendar permission is missing. Please reconnect Google Calendar and approve read-only calendar access.";
+
+async function parseFunctionError(error: unknown) {
+  const context = (error as { context?: Response })?.context;
+  if (context) {
+    try {
+      const body = await context.clone().json();
+      if (typeof body?.message === "string") return body.message;
+      if (body?.error === "calendar_scope_missing") return GOOGLE_CALENDAR_SCOPE_ERROR;
+    } catch (_) {
+      // Fall back to the SDK error message below.
+    }
+  }
+  return (error as Error)?.message ?? "Google Calendar request failed.";
+}
+
 export function useGoogleCalendar() {
   const [connection, setConnection] = useState<GoogleCalendarConnection | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +65,7 @@ export function useGoogleCalendar() {
     setSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
-      if (error) throw error;
+      if (error) throw new Error(await parseFunctionError(error));
       return data as { synced: number };
     } finally {
       setSyncing(false);

@@ -9,6 +9,11 @@ const CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET")!;
 
 const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-oauth-callback`;
 const DEFAULT_APP = "https://your-watzapp-ai-helper.lovable.app";
+const REQUIRED_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+
+function hasCalendarScope(scope: string | null | undefined) {
+  return (scope ?? "").split(/\s+/).includes(REQUIRED_CALENDAR_SCOPE);
+}
 
 function htmlRedirect(target: string, message: string) {
   // Use a 302 redirect — most reliable, no CSP/inline-script concerns.
@@ -92,6 +97,16 @@ Deno.serve(async (req) => {
     } catch (_) { /* ignore */ }
 
     const expiresAt = new Date(Date.now() + (tok.expires_in - 60) * 1000).toISOString();
+
+    if (!hasCalendarScope(tok.scope)) {
+      console.error("google-oauth-callback missing required Calendar scope", {
+        required_scope: REQUIRED_CALENDAR_SCOPE,
+        granted_scope: tok.scope,
+      });
+      await admin.from("google_oauth_tokens").delete().eq("user_id", userId);
+      const target = redirectTo.replace("gcal=ok", "gcal=scope_missing");
+      return htmlRedirect(target, "Google Calendar access was not granted.");
+    }
 
     // Upsert tokens (preserve refresh_token if Google didn't return a new one)
     const { data: existing } = await admin
