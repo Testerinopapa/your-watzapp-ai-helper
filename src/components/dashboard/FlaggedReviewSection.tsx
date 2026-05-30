@@ -131,10 +131,11 @@ type FlaggedCardInnerProps = {
   item: FlaggedMessage;
   trailing?: React.ReactNode;
   leading?: React.ReactNode;
+  footer?: React.ReactNode;
   elevated?: boolean;
 };
 
-function FlaggedCardInner({ item, trailing, leading, elevated }: FlaggedCardInnerProps) {
+function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
   const tone = toneFor(item.updated_at);
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
@@ -188,6 +189,8 @@ function FlaggedCardInner({ item, trailing, leading, elevated }: FlaggedCardInne
             </p>
           )}
         </div>
+
+        {footer}
       </CardContent>
     </Card>
   );
