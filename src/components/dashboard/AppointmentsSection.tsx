@@ -392,27 +392,3 @@ export default function AppointmentsSection() {
     </section>
   );
 }
-          <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
-            {featured && (
-              <div className="col-span-2 row-span-2 md:col-span-2">
-                <AppointmentCard item={featured} featured />
-              </div>
-            )}
-            {rest.map((item, idx) => (
-              <div
-                key={item.thread_id}
-                className={cn(
-                  "col-span-2 md:col-span-2",
-                  // first two follow-ups span 2 cols (half), then alternate to add bento variety
-                  idx >= 2 && idx % 3 === 2 && "md:col-span-2",
-                )}
-              >
-                <AppointmentCard item={item} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
