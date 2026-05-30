@@ -51,6 +51,8 @@ import { cn } from "@/lib/utils";
 import {
   useFlaggedMessages,
   getFlaggedRealtimeClient,
+  FLAGGED_SUPABASE_URL,
+  FLAGGED_ANON_KEY,
   type FlaggedMessage,
 } from "@/hooks/useFlaggedMessages";
 import { useAuth } from "@/contexts/AuthContext";
@@ -565,11 +567,28 @@ export default function FlaggedReviewSection() {
     if (!incomingMessage || !instruction) return;
     updateDraft(id, { loading: true, error: null });
     try {
-      const { data, error } = await supabase.functions.invoke(
-        "draft-whatsapp-manual",
-        { body: { incomingMessage, instruction } },
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not signed in");
+
+      const res = await fetch(
+        `${FLAGGED_SUPABASE_URL}/functions/v1/draft-whatsapp-manual`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: FLAGGED_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ incomingMessage, instruction }),
+        },
       );
-      if (error) throw error;
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Request failed (${res.status})`);
+      }
+      const data = await res.json().catch(() => null);
       const draft =
         (data && (data.draft ?? data.reply ?? data.text ?? data.message)) ??
         (typeof data === "string" ? data : "");
