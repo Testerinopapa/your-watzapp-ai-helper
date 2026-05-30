@@ -209,6 +209,14 @@ function AppointmentCard({
 
 export default function AppointmentsSection() {
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(50);
+  const { findByThreadId } = usePersonalAgenda();
+  const [selected, setSelected] = useState<FlaggedMessage | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const openCard = (m: FlaggedMessage) => {
+    setSelected(m);
+    setOpen(true);
+  };
 
   const all = data ?? [];
   const sorted = [...all]
