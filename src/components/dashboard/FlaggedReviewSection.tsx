@@ -122,66 +122,96 @@ export default function FlaggedReviewSection() {
       ) : items.length === 0 ? (
         <p className="text-sm text-muted-foreground">No flagged threads</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((item) => {
-            const tone = toneFor(item.updated_at);
-            const styles = toneStyles[tone];
-            const age = formatDistanceToNow(new Date(item.updated_at), {
-              addSuffix: true,
-            });
-            return (
-              <Card
-                key={item.thread_id}
-                className={cn(
-                  "border-l-4 transition-colors hover:border-primary/40",
-                  styles.border,
-                )}
-              >
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-                        <MessageCircle
-                          size={14}
-                          className="text-muted-foreground shrink-0"
-                        />
-                        <span className="truncate">
-                          {item.sender ?? "Unknown sender"}
+        <div className="relative">
+          <div
+            className="flagged-scroll max-h-[640px] md:max-h-[560px] overflow-y-auto pr-2 pb-10"
+            style={{
+              scrollbarWidth: "thin",
+              scrollbarColor: "rgba(115,255,184,0.25) transparent",
+            }}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {items.map((item) => {
+                const tone = toneFor(item.updated_at);
+                const styles = toneStyles[tone];
+                const age = formatDistanceToNow(new Date(item.updated_at), {
+                  addSuffix: true,
+                });
+                return (
+                  <Card
+                    key={item.thread_id}
+                    className={cn(
+                      "border-l-4 transition-colors hover:border-primary/40",
+                      styles.border,
+                    )}
+                  >
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 text-sm font-medium truncate">
+                            <MessageCircle
+                              size={14}
+                              className="text-muted-foreground shrink-0"
+                            />
+                            <span className="truncate">
+                              {item.sender ?? "Unknown sender"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-muted-foreground truncate">
+                            {item.provider}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                            styles.badge,
+                          )}
+                        >
+                          <Clock size={11} />
+                          {age}
                         </span>
                       </div>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {item.provider}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                        styles.badge,
-                      )}
-                    >
-                      <Clock size={11} />
-                      {age}
-                    </span>
-                  </div>
 
-                  <div className="space-y-1">
-                    {item.intent_category && (
-                      <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-                        {item.intent_category}
-                        {typeof item.intent_confidence === "number" &&
-                          ` · ${Math.round(item.intent_confidence * 100)}%`}
-                      </Badge>
-                    )}
-                    {item.intent_reason && (
-                      <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
-                        {item.intent_reason}
-                      </p>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                      <div className="space-y-1">
+                        {item.intent_category && (
+                          <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                            {item.intent_category}
+                            {typeof item.intent_confidence === "number" &&
+                              ` · ${Math.round(item.intent_confidence * 100)}%`}
+                          </Badge>
+                        )}
+                        {item.intent_reason && (
+                          <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
+                            {item.intent_reason}
+                          </p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Fade overlay so cards softly disappear behind the divider */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-xl"
+            style={{
+              background:
+                "linear-gradient(to bottom, hsl(var(--background) / 0) 0%, hsl(var(--background) / 0.7) 55%, hsl(var(--background) / 0.95) 100%)",
+            }}
+          />
+          {/* Neon mint hairline divider */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-px"
+            style={{
+              background:
+                "linear-gradient(to right, transparent 0%, rgba(45,212,168,0.55) 50%, transparent 100%)",
+              boxShadow: "0 0 12px rgba(115,255,184,0.35)",
+            }}
+          />
         </div>
       )}
     </section>
