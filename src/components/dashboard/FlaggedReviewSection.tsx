@@ -548,6 +548,40 @@ export default function FlaggedReviewSection() {
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+
+  const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
+    setDrafts((prev) => ({
+      ...prev,
+      [threadId]: { ...defaultDraft, ...prev[threadId], ...patch },
+    }));
+
+  const generateDraft = async (item: FlaggedMessage) => {
+    const id = item.thread_id;
+    const incomingMessage = (item.latest_message ?? item.preview ?? "")
+      .trim()
+      .slice(0, 4000);
+    const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
+    if (!incomingMessage || !instruction) return;
+    updateDraft(id, { loading: true, error: null });
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "draft-whatsapp-manual",
+        { body: { incomingMessage, instruction } },
+      );
+      if (error) throw error;
+      const draft =
+        (data && (data.draft ?? data.reply ?? data.text ?? data.message)) ??
+        (typeof data === "string" ? data : "");
+      if (!draft) throw new Error("No draft returned");
+      updateDraft(id, { loading: false, draft: String(draft), error: null });
+    } catch (e) {
+      updateDraft(id, {
+        loading: false,
+        error: (e as Error)?.message ?? "Failed to generate draft",
+      });
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
