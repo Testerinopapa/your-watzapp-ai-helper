@@ -11,12 +11,13 @@ const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-oauth-callback`;
 const DEFAULT_APP = "https://your-watzapp-ai-helper.lovable.app";
 
 function htmlRedirect(target: string, message: string) {
+  // Use a 302 redirect — most reliable, no CSP/inline-script concerns.
   return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Connecting…</title>
+    `<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0;url=${target}">
+<title>Connecting…</title>
 <body style="font-family:system-ui;background:#0a1620;color:#fff;display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
-<div style="text-align:center"><p>${message}</p><p><a style="color:#73ffb8" href="${target}">Continue</a></p></div>
-<script>location.replace(${JSON.stringify(target)});</script></body>`,
-    { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } },
+<div style="text-align:center"><p>${message}</p><p><a style="color:#73ffb8" href="${target}">Continue</a></p></div>`,
+    { status: 302, headers: { "Content-Type": "text/html; charset=utf-8", "Location": target } },
   );
 }
 
