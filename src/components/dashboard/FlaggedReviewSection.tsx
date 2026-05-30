@@ -681,6 +681,10 @@ export default function FlaggedReviewSection() {
 
       const provider = (item.provider || "whatsapp").trim();
 
+      // DIAGNOSTIC: compare this to the extension's polling userId
+      // eslint-disable-next-line no-console
+      console.log("[draft] dashboard user.id (sub) =", session.user.id, "| thread:", item.thread_id, "| provider:", provider);
+
       const res = await fetch(
         `${FLAGGED_SUPABASE_URL}/functions/v1/draft-whatsapp-manual`,
         {
