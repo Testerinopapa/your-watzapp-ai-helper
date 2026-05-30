@@ -231,3 +231,18 @@
     transform: none !important;
   }
 }
+
+/* Custom thin scrollbar for flagged messages scroll area */
+.flagged-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.flagged-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.flagged-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, rgba(45, 212, 168, 0.35), rgba(115, 255, 184, 0.15));
+  border-radius: 9999px;
+}
+.flagged-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(115, 255, 184, 0.5);
+}
