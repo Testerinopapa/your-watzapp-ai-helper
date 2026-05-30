@@ -1085,6 +1085,8 @@ export default function FlaggedReviewSection() {
                             updateDraft(item.thread_id, { open: false, error: null })
                           }
                           onGenerate={() => generateDraft(item)}
+                          onRetry={() => retryDraft(item)}
+                          onCancel={() => cancelPendingSend(item)}
                         />
                       }
                     />
