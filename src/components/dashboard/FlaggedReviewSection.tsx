@@ -679,6 +679,8 @@ export default function FlaggedReviewSection() {
       } = await supabase.auth.getSession();
       if (!session) throw new Error("Not signed in");
 
+      const provider = (item.provider || "whatsapp").trim();
+
       const res = await fetch(
         `${FLAGGED_SUPABASE_URL}/functions/v1/draft-whatsapp-manual`,
         {
@@ -690,10 +692,12 @@ export default function FlaggedReviewSection() {
           },
           body: JSON.stringify({
             thread_id: item.thread_id,
-            provider: "whatsapp",
+            provider,
             incomingMessage,
+            incoming_message: incomingMessage,
             instruction,
             autoSend: true,
+            auto_send: true,
           }),
         },
       );
@@ -778,6 +782,7 @@ export default function FlaggedReviewSection() {
           },
           body: JSON.stringify({
             thread_id: item.thread_id,
+            provider: (item.provider || "whatsapp").trim(),
             draft_id: cur.draftId,
           }),
         },
