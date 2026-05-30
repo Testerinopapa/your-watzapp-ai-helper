@@ -14,6 +14,75 @@ export type Database = {
   }
   public: {
     Tables: {
+      agenda_events: {
+        Row: {
+          contact_channel: string | null
+          contact_name: string | null
+          created_at: string
+          description: string | null
+          end_time: string | null
+          html_link: string | null
+          id: string
+          imported_at: string
+          last_synced_at: string | null
+          location: string | null
+          notes: string | null
+          source_event_id: string | null
+          source_type: string
+          start_time: string | null
+          status: string
+          thread_id: string | null
+          timezone: string | null
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          contact_channel?: string | null
+          contact_name?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string | null
+          html_link?: string | null
+          id?: string
+          imported_at?: string
+          last_synced_at?: string | null
+          location?: string | null
+          notes?: string | null
+          source_event_id?: string | null
+          source_type?: string
+          start_time?: string | null
+          status?: string
+          thread_id?: string | null
+          timezone?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          contact_channel?: string | null
+          contact_name?: string | null
+          created_at?: string
+          description?: string | null
+          end_time?: string | null
+          html_link?: string | null
+          id?: string
+          imported_at?: string
+          last_synced_at?: string | null
+          location?: string | null
+          notes?: string | null
+          source_event_id?: string | null
+          source_type?: string
+          start_time?: string | null
+          status?: string
+          thread_id?: string | null
+          timezone?: string | null
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       extension_login_codes: {
         Row: {
           code: string
@@ -163,6 +232,72 @@ export type Database = {
           last_used_at?: string | null
           revoked_at?: string | null
           token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      google_oauth_states: {
+        Row: {
+          created_at: string
+          expires_at: string
+          redirect_to: string | null
+          state: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          redirect_to?: string | null
+          state: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          redirect_to?: string | null
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      google_oauth_tokens: {
+        Row: {
+          access_token: string
+          created_at: string
+          expires_at: string | null
+          google_email: string | null
+          google_sub: string | null
+          id: string
+          refresh_token: string | null
+          scope: string | null
+          token_type: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          expires_at?: string | null
+          google_email?: string | null
+          google_sub?: string | null
+          id?: string
+          refresh_token?: string | null
+          scope?: string | null
+          token_type?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          expires_at?: string | null
+          google_email?: string | null
+          google_sub?: string | null
+          id?: string
+          refresh_token?: string | null
+          scope?: string | null
+          token_type?: string | null
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
