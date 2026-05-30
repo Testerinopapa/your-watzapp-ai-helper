@@ -196,6 +196,172 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
   );
 }
 
+// =====================================================================
+// Draft reply panel
+// =====================================================================
+
+type DraftState = {
+  open: boolean;
+  instruction: string;
+  draft: string;
+  loading: boolean;
+  error: string | null;
+};
+
+const defaultDraft: DraftState = {
+  open: false,
+  instruction: "",
+  draft: "",
+  loading: false,
+  error: null,
+};
+
+function DraftReplyFooter({
+  item,
+  state,
+  onChange,
+  onClose,
+  onGenerate,
+}: {
+  item: FlaggedMessage;
+  state: DraftState;
+  onChange: (patch: Partial<DraftState>) => void;
+  onClose: () => void;
+  onGenerate: () => void;
+}) {
+  const incoming = (item.latest_message ?? item.preview ?? "").trim();
+  const hasIncoming = incoming.length > 0;
+  const trimmedInstruction = state.instruction.trim();
+  const canGenerate = hasIncoming && trimmedInstruction.length > 0 && !state.loading;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!state.draft) return;
+    try {
+      await navigator.clipboard.writeText(state.draft);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (!state.open) {
+    return (
+      <div className="flex items-center justify-between gap-2 pt-1">
+        {item.thread_url ? (
+          <a
+            href={item.thread_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+          >
+            <ExternalLink size={11} />
+            Open thread
+          </a>
+        ) : (
+          <span />
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange({ open: true })}
+          className="h-7 gap-1.5 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
+        >
+          <Sparkles size={12} />
+          Draft reply
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 rounded-lg border border-border bg-muted/40 p-3 space-y-2.5">
+      <div>
+        <label
+          htmlFor={`draft-instr-${item.thread_id}`}
+          className="block text-[11px] font-medium text-muted-foreground mb-1"
+        >
+          How should we reply?
+        </label>
+        <Textarea
+          id={`draft-instr-${item.thread_id}`}
+          value={state.instruction}
+          onChange={(e) => onChange({ instruction: e.target.value })}
+          placeholder="e.g. Politely confirm and propose Tuesday at 10am."
+          maxLength={2000}
+          rows={3}
+          className="text-xs bg-background"
+          disabled={state.loading}
+        />
+        {!hasIncoming && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            No message text available to draft from.
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={onGenerate}
+          disabled={!canGenerate}
+          className="h-7 gap-1.5 text-[11px] bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
+        >
+          {state.loading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Sparkles size={12} />
+          )}
+          {state.loading ? "Generating…" : state.draft ? "Regenerate" : "Generate draft"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          disabled={state.loading}
+          className="h-7 text-[11px]"
+        >
+          Cancel
+        </Button>
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          {trimmedInstruction.length}/2000
+        </span>
+      </div>
+
+      {state.error && (
+        <p className="text-[11px] text-destructive">{state.error}</p>
+      )}
+
+      {state.draft && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Suggested draft
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="h-6 gap-1 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <div
+            className="rounded-md border border-border bg-background p-2.5 text-xs whitespace-pre-wrap leading-relaxed"
+            aria-readonly
+          >
+            {state.draft}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function DraggableFlaggedCard({
   item,
   folders,
