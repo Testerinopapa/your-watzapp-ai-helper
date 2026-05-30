@@ -203,7 +203,7 @@ function AppointmentCard({
           />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
