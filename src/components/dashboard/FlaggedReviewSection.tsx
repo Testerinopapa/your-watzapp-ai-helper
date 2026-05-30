@@ -805,14 +805,28 @@ export default function FlaggedReviewSection() {
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {ungrouped.map((item) => (
-                  <DraggableFlaggedCard
-                    key={item.thread_id}
-                    item={item}
-                    folders={folders}
-                    onMoveTo={moveToFolder}
-                  />
-                ))}
+                {ungrouped.map((item) => {
+                  const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  return (
+                    <DraggableFlaggedCard
+                      key={item.thread_id}
+                      item={item}
+                      folders={folders}
+                      onMoveTo={moveToFolder}
+                      footer={
+                        <DraftReplyFooter
+                          item={item}
+                          state={draftState}
+                          onChange={(patch) => updateDraft(item.thread_id, patch)}
+                          onClose={() =>
+                            updateDraft(item.thread_id, { open: false, error: null })
+                          }
+                          onGenerate={() => generateDraft(item)}
+                        />
+                      }
+                    />
+                  );
+                })}
               </div>
             </div>
 
