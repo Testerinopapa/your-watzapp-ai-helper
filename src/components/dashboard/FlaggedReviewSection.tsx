@@ -220,6 +220,7 @@ function DraggableFlaggedCard({
     >
       <FlaggedCardInner
         item={item}
+        footer={footer}
         leading={
           <TooltipProvider delayDuration={250}>
             <Tooltip>
