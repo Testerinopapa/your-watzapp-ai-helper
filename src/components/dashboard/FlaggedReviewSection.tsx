@@ -200,10 +200,12 @@ function DraggableFlaggedCard({
   item,
   folders,
   onMoveTo,
+  footer,
 }: {
   item: FlaggedMessage;
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
+  footer?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
     useDraggable({ id: item.thread_id, data: { item } });
