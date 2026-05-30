@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +40,11 @@ import {
   MoreVertical,
   Inbox,
   Trash2,
+  ExternalLink,
+  Sparkles,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -124,10 +131,11 @@ type FlaggedCardInnerProps = {
   item: FlaggedMessage;
   trailing?: React.ReactNode;
   leading?: React.ReactNode;
+  footer?: React.ReactNode;
   elevated?: boolean;
 };
 
-function FlaggedCardInner({ item, trailing, leading, elevated }: FlaggedCardInnerProps) {
+function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
   const tone = toneFor(item.updated_at);
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
@@ -181,19 +189,189 @@ function FlaggedCardInner({ item, trailing, leading, elevated }: FlaggedCardInne
             </p>
           )}
         </div>
+
+        {footer}
       </CardContent>
     </Card>
   );
 }
 
+// =====================================================================
+// Draft reply panel
+// =====================================================================
+
+type DraftState = {
+  open: boolean;
+  instruction: string;
+  draft: string;
+  loading: boolean;
+  error: string | null;
+};
+
+const defaultDraft: DraftState = {
+  open: false,
+  instruction: "",
+  draft: "",
+  loading: false,
+  error: null,
+};
+
+function DraftReplyFooter({
+  item,
+  state,
+  onChange,
+  onClose,
+  onGenerate,
+}: {
+  item: FlaggedMessage;
+  state: DraftState;
+  onChange: (patch: Partial<DraftState>) => void;
+  onClose: () => void;
+  onGenerate: () => void;
+}) {
+  const incoming = (item.latest_message ?? item.preview ?? "").trim();
+  const hasIncoming = incoming.length > 0;
+  const trimmedInstruction = state.instruction.trim();
+  const canGenerate = hasIncoming && trimmedInstruction.length > 0 && !state.loading;
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!state.draft) return;
+    try {
+      await navigator.clipboard.writeText(state.draft);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  if (!state.open) {
+    return (
+      <div className="flex items-center justify-between gap-2 pt-1">
+        {item.thread_url ? (
+          <a
+            href={item.thread_url}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+          >
+            <ExternalLink size={11} />
+            Open thread
+          </a>
+        ) : (
+          <span />
+        )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => onChange({ open: true })}
+          className="h-7 gap-1.5 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
+        >
+          <Sparkles size={12} />
+          Draft reply
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-1 rounded-lg border border-border bg-muted/40 p-3 space-y-2.5">
+      <div>
+        <label
+          htmlFor={`draft-instr-${item.thread_id}`}
+          className="block text-[11px] font-medium text-muted-foreground mb-1"
+        >
+          How should we reply?
+        </label>
+        <Textarea
+          id={`draft-instr-${item.thread_id}`}
+          value={state.instruction}
+          onChange={(e) => onChange({ instruction: e.target.value })}
+          placeholder="e.g. Politely confirm and propose Tuesday at 10am."
+          maxLength={2000}
+          rows={3}
+          className="text-xs bg-background"
+          disabled={state.loading}
+        />
+        {!hasIncoming && (
+          <p className="text-[11px] text-muted-foreground mt-1">
+            No message text available to draft from.
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={onGenerate}
+          disabled={!canGenerate}
+          className="h-7 gap-1.5 text-[11px] bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
+        >
+          {state.loading ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Sparkles size={12} />
+          )}
+          {state.loading ? "Generating…" : state.draft ? "Regenerate" : "Generate draft"}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClose}
+          disabled={state.loading}
+          className="h-7 text-[11px]"
+        >
+          Cancel
+        </Button>
+        <span className="ml-auto text-[10px] text-muted-foreground">
+          {trimmedInstruction.length}/2000
+        </span>
+      </div>
+
+      {state.error && (
+        <p className="text-[11px] text-destructive">{state.error}</p>
+      )}
+
+      {state.draft && (
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-muted-foreground">
+              Suggested draft
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopy}
+              className="h-6 gap-1 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
+            >
+              {copied ? <Check size={11} /> : <Copy size={11} />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <div
+            className="rounded-md border border-border bg-background p-2.5 text-xs whitespace-pre-wrap leading-relaxed"
+            aria-readonly
+          >
+            {state.draft}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function DraggableFlaggedCard({
   item,
   folders,
   onMoveTo,
+  footer,
 }: {
   item: FlaggedMessage;
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
+  footer?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
     useDraggable({ id: item.thread_id, data: { item } });
@@ -208,6 +386,7 @@ function DraggableFlaggedCard({
     >
       <FlaggedCardInner
         item={item}
+        footer={footer}
         leading={
           <TooltipProvider delayDuration={250}>
             <Tooltip>
@@ -369,6 +548,40 @@ export default function FlaggedReviewSection() {
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
+  const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+
+  const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
+    setDrafts((prev) => ({
+      ...prev,
+      [threadId]: { ...defaultDraft, ...prev[threadId], ...patch },
+    }));
+
+  const generateDraft = async (item: FlaggedMessage) => {
+    const id = item.thread_id;
+    const incomingMessage = (item.latest_message ?? item.preview ?? "")
+      .trim()
+      .slice(0, 4000);
+    const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
+    if (!incomingMessage || !instruction) return;
+    updateDraft(id, { loading: true, error: null });
+    try {
+      const { data, error } = await supabase.functions.invoke(
+        "draft-whatsapp-manual",
+        { body: { incomingMessage, instruction } },
+      );
+      if (error) throw error;
+      const draft =
+        (data && (data.draft ?? data.reply ?? data.text ?? data.message)) ??
+        (typeof data === "string" ? data : "");
+      if (!draft) throw new Error("No draft returned");
+      updateDraft(id, { loading: false, draft: String(draft), error: null });
+    } catch (e) {
+      updateDraft(id, {
+        loading: false,
+        error: (e as Error)?.message ?? "Failed to generate draft",
+      });
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -592,14 +805,28 @@ export default function FlaggedReviewSection() {
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {ungrouped.map((item) => (
-                  <DraggableFlaggedCard
-                    key={item.thread_id}
-                    item={item}
-                    folders={folders}
-                    onMoveTo={moveToFolder}
-                  />
-                ))}
+                {ungrouped.map((item) => {
+                  const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  return (
+                    <DraggableFlaggedCard
+                      key={item.thread_id}
+                      item={item}
+                      folders={folders}
+                      onMoveTo={moveToFolder}
+                      footer={
+                        <DraftReplyFooter
+                          item={item}
+                          state={draftState}
+                          onChange={(patch) => updateDraft(item.thread_id, patch)}
+                          onClose={() =>
+                            updateDraft(item.thread_id, { open: false, error: null })
+                          }
+                          onGenerate={() => generateDraft(item)}
+                        />
+                      }
+                    />
+                  );
+                })}
               </div>
             </div>
 
