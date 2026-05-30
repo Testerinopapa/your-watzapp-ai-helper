@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
     });
 
     const url = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+    console.log("google-oauth-start generated OAuth URL", url);
 
     return new Response(JSON.stringify({ url }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
