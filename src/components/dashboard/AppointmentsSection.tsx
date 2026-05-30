@@ -299,6 +299,15 @@ export default function AppointmentsSection() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={() => setConnectOpen(true)}
+            className="gap-1.5 text-white/70 hover:bg-white/5 hover:text-white"
+          >
+            <Plug size={14} />
+            <span className="hidden sm:inline">Connect</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
             className="gap-1.5 text-white/70 hover:bg-white/5 hover:text-white"
