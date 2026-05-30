@@ -361,6 +361,40 @@ export default function AppointmentsSection() {
           <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
             {featured && (
               <div className="col-span-2 row-span-2 md:col-span-2">
+                <AppointmentCard
+                  item={featured}
+                  featured
+                  inAgenda={!!findByThreadId(featured.thread_id)}
+                  onClick={() => openCard(featured)}
+                />
+              </div>
+            )}
+            {rest.map((item, idx) => (
+              <div
+                key={item.thread_id}
+                className={cn(
+                  "col-span-2 md:col-span-2",
+                  idx >= 2 && idx % 3 === 2 && "md:col-span-2",
+                )}
+              >
+                <AppointmentCard
+                  item={item}
+                  inAgenda={!!findByThreadId(item.thread_id)}
+                  onClick={() => openCard(item)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <AppointmentDrawer item={selected} open={open} onOpenChange={setOpen} />
+    </section>
+  );
+}
+          <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
+            {featured && (
+              <div className="col-span-2 row-span-2 md:col-span-2">
                 <AppointmentCard item={featured} featured />
               </div>
             )}
