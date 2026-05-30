@@ -10,12 +10,16 @@ import {
   Clock,
   ArrowUpRight,
   CheckCircle2,
+  Plug,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { usePersonalAgenda } from "@/hooks/usePersonalAgenda";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import AppointmentDrawer from "./AppointmentDrawer";
+import PersonalAgendaPanel from "./PersonalAgendaPanel";
+import ConnectCalendarModal from "./ConnectCalendarModal";
 
 const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
