@@ -8,6 +8,18 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CLIENT_ID = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID")!;
 const CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET")!;
+const REQUIRED_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "Content-Type": "application/json" },
+  });
+}
+
+function hasCalendarScope(scope: string | null | undefined) {
+  return (scope ?? "").split(/\s+/).includes(REQUIRED_CALENDAR_SCOPE);
+}
 
 async function refreshAccessToken(refreshToken: string) {
   const res = await fetch("https://oauth2.googleapis.com/token", {
@@ -55,9 +67,14 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (tokErr) throw tokErr;
     if (!tok) {
-      return new Response(JSON.stringify({ error: "not_connected" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+      return jsonResponse({ error: "not_connected", message: "Google Calendar is not connected." }, 400);
+    }
+    if (!hasCalendarScope(tok.scope)) {
+      await admin.from("google_oauth_tokens").delete().eq("user_id", userId);
+      return jsonResponse({
+        error: "calendar_scope_missing",
+        message: "Google Calendar permission is missing. Please reconnect Google Calendar and approve read-only calendar access.",
+      }, 409);
     }
 
     let accessToken: string = tok.access_token;
@@ -70,11 +87,18 @@ Deno.serve(async (req) => {
       }
       const refreshed = await refreshAccessToken(tok.refresh_token);
       accessToken = refreshed.access_token;
+      if (refreshed.scope && !hasCalendarScope(refreshed.scope)) {
+        await admin.from("google_oauth_tokens").delete().eq("user_id", userId);
+        return jsonResponse({
+          error: "calendar_scope_missing",
+          message: "Google Calendar permission is missing. Please reconnect Google Calendar and approve read-only calendar access.",
+        }, 409);
+      }
       await admin.from("google_oauth_tokens").update({
         access_token: refreshed.access_token,
         expires_at: new Date(Date.now() + (refreshed.expires_in - 60) * 1000).toISOString(),
         token_type: refreshed.token_type,
-        scope: refreshed.scope,
+        scope: refreshed.scope ?? tok.scope,
       }).eq("user_id", userId);
     }
 
