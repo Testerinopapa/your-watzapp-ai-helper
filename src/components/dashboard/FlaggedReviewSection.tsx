@@ -3,12 +3,28 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Flag,
   MessageCircle,
@@ -16,7 +32,12 @@ import {
   RefreshCw,
   FolderOpen,
   Folder,
+  FolderPlus,
   X,
+  GripVertical,
+  MoreVertical,
+  Inbox,
+  Trash2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -56,27 +77,57 @@ const toneFor = (updatedAt: string): Tone => {
   return age < 24 * 60 * 60 * 1000 ? "fresh" : "stale";
 };
 
-const GROUP_STORAGE_KEY = "flagged.groupedThreadIds.v1";
-const FOLDER_DROPPABLE_ID = "flagged-folder-drop";
+type FolderDef = { id: string; name: string };
 
-const loadGrouped = (): string[] => {
+const FOLDERS_KEY = "flagged.folders.v2";
+const ASSIGNMENTS_KEY = "flagged.assignments.v2";
+const FOLDER_DROP_PREFIX = "folder-drop:";
+
+const DEFAULT_FOLDERS: FolderDef[] = [
+  { id: "needs-review", name: "Needs review" },
+  { id: "follow-up", name: "Follow-up" },
+];
+
+function loadFolders(): FolderDef[] {
   try {
-    const raw = localStorage.getItem(GROUP_STORAGE_KEY);
-    if (!raw) return [];
+    const raw = localStorage.getItem(FOLDERS_KEY);
+    if (!raw) return DEFAULT_FOLDERS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
+    if (Array.isArray(parsed)) {
+      return parsed.filter(
+        (f): f is FolderDef =>
+          f && typeof f.id === "string" && typeof f.name === "string",
+      );
+    }
+    return DEFAULT_FOLDERS;
   } catch {
-    return [];
+    return DEFAULT_FOLDERS;
   }
-};
+}
 
-type FlaggedCardContentProps = {
+function loadAssignments(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(ASSIGNMENTS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
+  } catch {
+    return {};
+  }
+}
+
+// =====================================================================
+// Card UI
+// =====================================================================
+
+type FlaggedCardInnerProps = {
   item: FlaggedMessage;
   trailing?: React.ReactNode;
+  leading?: React.ReactNode;
   elevated?: boolean;
 };
 
-function FlaggedCardInner({ item, trailing, elevated }: FlaggedCardContentProps) {
+function FlaggedCardInner({ item, trailing, leading, elevated }: FlaggedCardInnerProps) {
   const tone = toneFor(item.updated_at);
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
@@ -92,12 +143,15 @@ function FlaggedCardInner({ item, trailing, elevated }: FlaggedCardContentProps)
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-              <MessageCircle size={14} className="text-muted-foreground shrink-0" />
-              <span className="truncate">{item.sender ?? "Unknown sender"}</span>
+          <div className="min-w-0 flex-1 flex items-start gap-2">
+            {leading}
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 text-sm font-medium truncate">
+                <MessageCircle size={14} className="text-muted-foreground shrink-0" />
+                <span className="truncate">{item.sender ?? "Unknown sender"}</span>
+              </div>
+              <p className="text-xs text-muted-foreground truncate">{item.provider}</p>
             </div>
-            <p className="text-xs text-muted-foreground truncate">{item.provider}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <span
@@ -132,76 +186,189 @@ function FlaggedCardInner({ item, trailing, elevated }: FlaggedCardContentProps)
   );
 }
 
-function DraggableFlaggedCard({ item }: { item: FlaggedMessage }) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: item.thread_id,
-    data: { item },
-  });
+function DraggableFlaggedCard({
+  item,
+  folders,
+  onMoveTo,
+}: {
+  item: FlaggedMessage;
+  folders: FolderDef[];
+  onMoveTo: (threadId: string, folderId: string) => void;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
+    useDraggable({ id: item.thread_id, data: { item } });
 
   return (
     <div
       ref={setNodeRef}
-      {...listeners}
-      {...attributes}
       className={cn(
-        "touch-none cursor-grab active:cursor-grabbing transition-all",
-        "hover:-translate-y-0.5 hover:shadow-[0_8px_24px_-12px_rgba(45,212,168,0.45)]",
+        "group/card relative transition-all",
         isDragging && "opacity-40",
       )}
     >
-      <FlaggedCardInner item={item} />
+      <FlaggedCardInner
+        item={item}
+        leading={
+          <TooltipProvider delayDuration={250}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  ref={setActivatorNodeRef}
+                  type="button"
+                  aria-label="Drag to folder"
+                  className={cn(
+                    "touch-none mt-0.5 -ml-1 rounded p-0.5 text-muted-foreground/60",
+                    "cursor-grab active:cursor-grabbing",
+                    "hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)] transition-colors",
+                  )}
+                  {...listeners}
+                  {...attributes}
+                >
+                  <GripVertical size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-[11px]">
+                Drag to folder
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        }
+        trailing={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 text-muted-foreground hover:text-[#73ffb8]"
+                aria-label="More actions"
+              >
+                <MoreVertical size={12} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+                Move to folder
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {folders.length === 0 ? (
+                <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+              ) : (
+                folders.map((f) => (
+                  <DropdownMenuItem key={f.id} onClick={() => onMoveTo(item.thread_id, f.id)}>
+                    <Folder size={12} className="mr-2 text-[#2dd4a8]" />
+                    {f.name}
+                  </DropdownMenuItem>
+                ))
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
     </div>
   );
 }
 
-function FolderDropZone({
+// =====================================================================
+// Folder drop zone
+// =====================================================================
+
+function FolderTile({
+  folder,
   count,
   onOpen,
+  onDelete,
   isAnyDragging,
 }: {
+  folder: FolderDef;
   count: number;
   onOpen: () => void;
+  onDelete: () => void;
   isAnyDragging: boolean;
 }) {
-  const { isOver, setNodeRef } = useDroppable({ id: FOLDER_DROPPABLE_ID });
+  const { isOver, setNodeRef } = useDroppable({
+    id: `${FOLDER_DROP_PREFIX}${folder.id}`,
+    data: { folderId: folder.id },
+  });
+
+  const isEmpty = count === 0;
 
   return (
-    <button
+    <div
       ref={setNodeRef}
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open group (${count})`}
       className={cn(
-        "ml-2 group relative inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-xs font-medium transition-all",
-        "border-[rgba(45,212,168,0.35)] bg-[rgba(15,23,42,0.6)] text-foreground",
-        "hover:border-[rgba(115,255,184,0.6)] hover:shadow-[0_0_18px_rgba(115,255,184,0.25)]",
-        isAnyDragging && "ring-2 ring-[rgba(45,212,168,0.45)]",
+        "group/folder relative rounded-xl border px-3 py-2.5 transition-all cursor-pointer select-none",
+        "bg-[rgba(15,23,42,0.55)] border-[rgba(45,212,168,0.3)]",
+        "hover:border-[rgba(115,255,184,0.55)] hover:shadow-[0_0_18px_rgba(115,255,184,0.18)]",
+        isEmpty && "border-dashed",
+        isAnyDragging && !isOver && "border-[rgba(45,212,168,0.55)] shadow-[0_0_12px_rgba(45,212,168,0.2)]",
         isOver &&
-          "scale-[1.06] border-[rgba(115,255,184,0.9)] shadow-[0_0_28px_rgba(115,255,184,0.55)] bg-[rgba(45,212,168,0.12)]",
+          "scale-[1.04] border-[rgba(115,255,184,0.95)] shadow-[0_0_28px_rgba(115,255,184,0.55)] bg-[rgba(45,212,168,0.12)]",
       )}
+      onClick={onOpen}
+      role="button"
+      aria-label={`Open folder ${folder.name}`}
     >
-      {isOver ? (
-        <FolderOpen size={14} className="text-[#73ffb8]" />
-      ) : (
-        <Folder size={14} className="text-[#2dd4a8]" />
-      )}
-      <span>Group</span>
-      {count > 0 && (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-[#2dd4a8] text-[10px] font-bold text-[#0a0a1a] px-1">
+      <div className="flex items-center gap-2 min-w-0">
+        {isOver ? (
+          <FolderOpen size={16} className="text-[#73ffb8] shrink-0" />
+        ) : (
+          <Folder size={16} className="text-[#2dd4a8] shrink-0" />
+        )}
+        <span className="text-sm font-medium truncate">{folder.name}</span>
+        <span
+          className={cn(
+            "ml-auto inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full px-1.5 text-[10px] font-bold transition-colors",
+            count > 0
+              ? "bg-[#2dd4a8] text-[#0a0a1a]"
+              : "bg-[rgba(45,212,168,0.15)] text-[#2dd4a8]",
+          )}
+        >
           {count}
         </span>
-      )}
-    </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          aria-label={`Delete folder ${folder.name}`}
+          className="opacity-0 group-hover/folder:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+        >
+          <Trash2 size={12} />
+        </button>
+      </div>
+      <p
+        className={cn(
+          "text-[10px] mt-1 transition-colors",
+          isOver
+            ? "text-[#73ffb8]"
+            : isEmpty
+              ? "text-muted-foreground/70"
+              : "text-muted-foreground/60",
+        )}
+      >
+        {isOver ? "Release to add" : isEmpty ? "Drop cards here" : `${count} card${count === 1 ? "" : "s"} grouped`}
+      </p>
+    </div>
   );
 }
+
+// =====================================================================
+// Main
+// =====================================================================
 
 export default function FlaggedReviewSection() {
   const { user } = useAuth();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
 
-  const [groupedIds, setGroupedIds] = useState<string[]>(() => loadGrouped());
+  const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
+  const [assignments, setAssignments] = useState<Record<string, string>>(() =>
+    loadAssignments(),
+  );
   const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(null);
-  const [folderOpen, setFolderOpen] = useState(false);
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -209,11 +376,19 @@ export default function FlaggedReviewSection() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(GROUP_STORAGE_KEY, JSON.stringify(groupedIds));
+      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
     } catch {
-      // ignore
+      /* ignore */
     }
-  }, [groupedIds]);
+  }, [folders]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
+    } catch {
+      /* ignore */
+    }
+  }, [assignments]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -253,15 +428,56 @@ export default function FlaggedReviewSection() {
     deduped.push(m);
   }
 
-  const groupedSet = useMemo(() => new Set(groupedIds), [groupedIds]);
-  const items = deduped.filter((m) => !groupedSet.has(m.thread_id));
-  const groupedItems = deduped.filter((m) => groupedSet.has(m.thread_id));
+  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
+  const ungrouped = deduped.filter((m) => {
+    const fid = assignments[m.thread_id];
+    return !fid || !folderIds.has(fid);
+  });
 
-  const addToGroup = (threadId: string) => {
-    setGroupedIds((prev) => (prev.includes(threadId) ? prev : [...prev, threadId]));
+  const countByFolder = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const m of deduped) {
+      const fid = assignments[m.thread_id];
+      if (fid && folderIds.has(fid)) {
+        map[fid] = (map[fid] ?? 0) + 1;
+      }
+    }
+    return map;
+  }, [deduped, assignments, folderIds]);
+
+  const itemsInFolder = (folderId: string) =>
+    deduped.filter((m) => assignments[m.thread_id] === folderId);
+
+  const moveToFolder = (threadId: string, folderId: string) => {
+    setAssignments((prev) => ({ ...prev, [threadId]: folderId }));
   };
-  const removeFromGroup = (threadId: string) => {
-    setGroupedIds((prev) => prev.filter((id) => id !== threadId));
+  const removeFromFolder = (threadId: string) => {
+    setAssignments((prev) => {
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+  };
+
+  const createFolder = () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    const id = `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setFolders((prev) => [...prev, { id, name }]);
+    setNewFolderName("");
+    setCreateOpen(false);
+  };
+
+  const deleteFolder = (folderId: string) => {
+    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setAssignments((prev) => {
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        if (v !== folderId) next[k] = v;
+      }
+      return next;
+    });
+    if (openFolderId === folderId) setOpenFolderId(null);
   };
 
   const handleDragStart = (e: DragStartEvent) => {
@@ -269,11 +485,16 @@ export default function FlaggedReviewSection() {
     if (item) setActiveItem(item);
   };
   const handleDragEnd = (e: DragEndEvent) => {
-    if (e.over?.id === FOLDER_DROPPABLE_ID && activeItem) {
-      addToGroup(activeItem.thread_id);
+    const overId = e.over?.id;
+    if (typeof overId === "string" && overId.startsWith(FOLDER_DROP_PREFIX) && activeItem) {
+      const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
+      moveToFolder(activeItem.thread_id, folderId);
     }
     setActiveItem(null);
   };
+
+  const openFolder = folders.find((f) => f.id === openFolderId) ?? null;
+  const openFolderItems = openFolder ? itemsInFolder(openFolder.id) : [];
 
   return (
     <DndContext
@@ -283,20 +504,24 @@ export default function FlaggedReviewSection() {
       onDragCancel={() => setActiveItem(null)}
     >
       <section className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Flag size={18} className="text-primary" />
           <h2 className="text-xl font-semibold">Flagged messages</h2>
           {!isLoading && (
             <Badge variant="secondary" className="ml-1">
-              {items.length}
+              {ungrouped.length}
             </Badge>
           )}
 
-          <FolderDropZone
-            count={groupedItems.length}
-            onOpen={() => setFolderOpen(true)}
-            isAnyDragging={activeItem !== null}
-          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCreateOpen(true)}
+            className="ml-2 gap-1.5 border-[rgba(45,212,168,0.4)] text-[#2dd4a8] hover:text-[#73ffb8] hover:border-[rgba(115,255,184,0.7)] hover:bg-[rgba(45,212,168,0.08)]"
+          >
+            <FolderPlus size={14} />
+            <span>Create folder</span>
+          </Button>
 
           <Button
             variant="ghost"
@@ -309,6 +534,29 @@ export default function FlaggedReviewSection() {
             <span className="hidden sm:inline">Refresh</span>
           </Button>
         </div>
+
+        {/* Folder bar */}
+        {folders.length > 0 && (
+          <div className="space-y-1.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {folders.map((f) => (
+                <FolderTile
+                  key={f.id}
+                  folder={f}
+                  count={countByFolder[f.id] ?? 0}
+                  onOpen={() => setOpenFolderId(f.id)}
+                  onDelete={() => deleteFolder(f.id)}
+                  isAnyDragging={activeItem !== null}
+                />
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground/70 italic flex items-center gap-1.5">
+              <GripVertical size={11} className="text-[#2dd4a8]" />
+              Drag cards into folders to group related reviews — or use the
+              <MoreVertical size={11} className="inline" /> menu on each card.
+            </p>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -327,12 +575,13 @@ export default function FlaggedReviewSection() {
           <p className="text-sm text-destructive">
             Couldn't load flagged messages: {(error as Error).message}
           </p>
-        ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {groupedItems.length > 0
-              ? "All flagged threads are in your group."
+        ) : ungrouped.length === 0 ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
+            <Inbox size={16} className="text-[#2dd4a8]" />
+            {deduped.length > 0
+              ? "All flagged threads are organized in folders."
               : "No flagged threads"}
-          </p>
+          </div>
         ) : (
           <div className="relative">
             <div
@@ -343,8 +592,13 @@ export default function FlaggedReviewSection() {
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {items.map((item) => (
-                  <DraggableFlaggedCard key={item.thread_id} item={item} />
+                {ungrouped.map((item) => (
+                  <DraggableFlaggedCard
+                    key={item.thread_id}
+                    item={item}
+                    folders={folders}
+                    onMoveTo={moveToFolder}
+                  />
                 ))}
               </div>
             </div>
@@ -369,23 +623,62 @@ export default function FlaggedReviewSection() {
           </div>
         )}
 
-        <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
+        {/* Create folder dialog */}
+        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FolderPlus size={18} className="text-[#2dd4a8]" />
+                Create new folder
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-2 pt-1">
+              <Input
+                autoFocus
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") createFolder();
+                }}
+                placeholder="e.g. Possible spam, Appointments…"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Folders help you group flagged reviews. They live on this device.
+              </p>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                onClick={createFolder}
+                disabled={!newFolderName.trim()}
+                className="bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
+              >
+                Create
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Folder contents dialog */}
+        <Dialog open={openFolder !== null} onOpenChange={(o) => !o && setOpenFolderId(null)}>
           <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FolderOpen size={18} className="text-[#2dd4a8]" />
-                Grouped flagged messages
-                <Badge variant="secondary">{groupedItems.length}</Badge>
+                {openFolder?.name}
+                <Badge variant="secondary">{openFolderItems.length}</Badge>
               </DialogTitle>
             </DialogHeader>
 
-            {groupedItems.length === 0 ? (
+            {openFolderItems.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                Drag flagged cards onto the Group button to collect them here.
+                Drag flagged cards onto this folder to collect them here.
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                {groupedItems.map((item) => (
+                {openFolderItems.map((item) => (
                   <FlaggedCardInner
                     key={item.thread_id}
                     item={item}
@@ -394,8 +687,8 @@ export default function FlaggedReviewSection() {
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeFromGroup(item.thread_id)}
-                        aria-label="Remove from group"
+                        onClick={() => removeFromFolder(item.thread_id)}
+                        aria-label="Remove from folder"
                       >
                         <X size={12} />
                       </Button>
