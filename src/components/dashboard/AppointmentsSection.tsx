@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -8,10 +9,13 @@ import {
   Sparkles,
   Clock,
   ArrowUpRight,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
+import { usePersonalAgenda } from "@/hooks/usePersonalAgenda";
 import { cn } from "@/lib/utils";
+import AppointmentDrawer from "./AppointmentDrawer";
 
 const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
@@ -40,9 +44,13 @@ function recencyDate(m: FlaggedMessage): Date {
 function AppointmentCard({
   item,
   featured = false,
+  onClick,
+  inAgenda = false,
 }: {
   item: FlaggedMessage;
   featured?: boolean;
+  onClick?: () => void;
+  inAgenda?: boolean;
 }) {
   const when = recencyDate(item);
   const age = formatDistanceToNow(when, { addSuffix: true });
@@ -51,12 +59,14 @@ function AppointmentCard({
   const monthLabel = format(when, "MMM").toUpperCase();
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/10",
+        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left",
         "bg-gradient-to-br from-[#0d1b2a] via-[#102a3a] to-[#1b4332]",
         "shadow-[0_8px_30px_-12px_rgba(45,212,168,0.25)] hover:shadow-[0_12px_40px_-12px_rgba(115,255,184,0.35)]",
-        "transition-all duration-300 hover:-translate-y-0.5",
+        "transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2dd4a8]",
         featured ? "p-6" : "p-5",
       )}
       style={fontBody}
@@ -135,10 +145,18 @@ function AppointmentCard({
             </div>
           </div>
 
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#2dd4a8]/30 bg-[#2dd4a8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
-            <Clock size={10} />
-            {age}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[#2dd4a8]/30 bg-[#2dd4a8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+              <Clock size={10} />
+              {age}
+            </span>
+            {inAgenda && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                <CheckCircle2 size={10} />
+                In agenda
+              </span>
+            )}
+          </div>
         </div>
 
         {item.subject && (
@@ -185,12 +203,20 @@ function AppointmentCard({
           />
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
 export default function AppointmentsSection() {
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(50);
+  const { findByThreadId } = usePersonalAgenda();
+  const [selected, setSelected] = useState<FlaggedMessage | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const openCard = (m: FlaggedMessage) => {
+    setSelected(m);
+    setOpen(true);
+  };
 
   const all = data ?? [];
   const sorted = [...all]
@@ -335,7 +361,12 @@ export default function AppointmentsSection() {
           <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
             {featured && (
               <div className="col-span-2 row-span-2 md:col-span-2">
-                <AppointmentCard item={featured} featured />
+                <AppointmentCard
+                  item={featured}
+                  featured
+                  inAgenda={!!findByThreadId(featured.thread_id)}
+                  onClick={() => openCard(featured)}
+                />
               </div>
             )}
             {rest.map((item, idx) => (
@@ -343,16 +374,21 @@ export default function AppointmentsSection() {
                 key={item.thread_id}
                 className={cn(
                   "col-span-2 md:col-span-2",
-                  // first two follow-ups span 2 cols (half), then alternate to add bento variety
                   idx >= 2 && idx % 3 === 2 && "md:col-span-2",
                 )}
               >
-                <AppointmentCard item={item} />
+                <AppointmentCard
+                  item={item}
+                  inAgenda={!!findByThreadId(item.thread_id)}
+                  onClick={() => openCard(item)}
+                />
               </div>
             ))}
           </div>
         )}
       </div>
+
+      <AppointmentDrawer item={selected} open={open} onOpenChange={setOpen} />
     </section>
   );
 }
