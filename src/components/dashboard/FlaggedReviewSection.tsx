@@ -51,6 +51,8 @@ import { cn } from "@/lib/utils";
 import {
   useFlaggedMessages,
   getFlaggedRealtimeClient,
+  FLAGGED_SUPABASE_URL,
+  FLAGGED_ANON_KEY,
   type FlaggedMessage,
 } from "@/hooks/useFlaggedMessages";
 import { useAuth } from "@/contexts/AuthContext";
