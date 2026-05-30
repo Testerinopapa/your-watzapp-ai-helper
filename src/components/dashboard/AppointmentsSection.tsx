@@ -3,21 +3,45 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { AlertTriangle, CalendarDays, RefreshCw, Phone, User, Sparkles } from "lucide-react";
-import { useAppointments } from "@/hooks/useAppointments";
+import { AlertTriangle, CalendarDays, RefreshCw, MessageCircle, Sparkles, Clock } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { cn } from "@/lib/utils";
 
-function formatDate(d: string) {
-  try {
-    const dt = new Date(d + "T00:00:00");
-    return dt.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  } catch {
-    return d;
-  }
+const APPOINTMENT_KEYWORDS = ["appointment", "booking", "schedule", "reservation", "book"];
+
+function isAppointment(m: FlaggedMessage): boolean {
+  const haystack = [
+    m.intent_category,
+    m.intent_reason,
+    m.subject,
+    m.preview,
+    m.latest_message,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return APPOINTMENT_KEYWORDS.some((k) => haystack.includes(k));
 }
 
 export default function AppointmentsSection() {
-  const { items, isLoading, error, refetch, isFetching } = useAppointments();
+  const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(50);
+
+  const all = data ?? [];
+  const recencyOf = (m: FlaggedMessage) => {
+    const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
+    return Math.max(...candidates.map((s) => new Date(s).getTime()));
+  };
+  const sorted = [...all].filter(isAppointment).sort((a, b) => recencyOf(b) - recencyOf(a));
+  // De-dupe by sender
+  const seen = new Set<string>();
+  const items: FlaggedMessage[] = [];
+  for (const m of sorted) {
+    const key = m.sender ?? m.thread_id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    items.push(m);
+  }
 
   return (
     <section className="space-y-4">
@@ -46,7 +70,7 @@ export default function AppointmentsSection() {
       {error && (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertDescription>Couldn't load appointments: {error.message}</AlertDescription>
+          <AlertDescription>Couldn't load appointments: {(error as Error).message}</AlertDescription>
         </Alert>
       )}
 
@@ -70,7 +94,7 @@ export default function AppointmentsSection() {
             <Sparkles className="h-8 w-8 text-primary" />
             <p className="font-medium">No appointments yet</p>
             <p className="text-sm text-muted-foreground">
-              When your agent books an appointment, it'll show up here.
+              When your agent spots an appointment request, it'll show up here.
             </p>
           </CardContent>
         </Card>
@@ -78,35 +102,43 @@ export default function AppointmentsSection() {
 
       {!isLoading && !error && items.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((a) => (
-            <Card key={a.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <User size={14} className="text-muted-foreground shrink-0" />
-                    <span className="font-medium truncate">{a.name}</span>
+          {items.map((item) => {
+            const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
+            return (
+              <Card key={item.thread_id} className="border-l-4 border-l-primary/40 hover:shadow-md transition-shadow">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageCircle size={14} className="text-muted-foreground shrink-0" />
+                      <span className="font-medium truncate">{item.sender ?? "Unknown"}</span>
+                    </div>
+                    <span className="shrink-0 inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] text-muted-foreground">
+                      <Clock size={11} />
+                      {age}
+                    </span>
                   </div>
-                  <Badge variant="outline" className="shrink-0">
-                    {a.service}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <CalendarDays size={14} />
-                  <span>{formatDate(a.date)}</span>
-                  <span className="text-foreground font-medium">{a.time}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Phone size={14} />
-                  <a href={`tel:${a.phone}`} className="hover:text-primary truncate">
-                    {a.phone}
-                  </a>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Booked {new Date(a.booked_at).toLocaleString()}
-                </p>
-              </CardContent>
-            </Card>
-          ))}
+                  {item.subject && (
+                    <p className="text-sm font-medium line-clamp-2">{item.subject}</p>
+                  )}
+                  {(item.preview || item.latest_message) && (
+                    <p className="text-xs text-muted-foreground line-clamp-3">
+                      {item.preview ?? item.latest_message}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {item.intent_category && (
+                      <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+                        {item.intent_category}
+                        {typeof item.intent_confidence === "number" &&
+                          ` · ${Math.round(item.intent_confidence * 100)}%`}
+                      </Badge>
+                    )}
+                    <span className="text-[11px] text-muted-foreground">{item.provider}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </section>
