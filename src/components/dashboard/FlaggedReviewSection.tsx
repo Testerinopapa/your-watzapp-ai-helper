@@ -40,6 +40,11 @@ import {
   MoreVertical,
   Inbox,
   Trash2,
+  ExternalLink,
+  Sparkles,
+  Copy,
+  Check,
+  Loader2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
