@@ -8,20 +8,10 @@ import { formatDistanceToNow } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { cn } from "@/lib/utils";
 
-const APPOINTMENT_KEYWORDS = ["appointment", "booking", "schedule", "reservation", "book"];
+const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
 function isAppointment(m: FlaggedMessage): boolean {
-  const haystack = [
-    m.intent_category,
-    m.intent_reason,
-    m.subject,
-    m.preview,
-    m.latest_message,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-  return APPOINTMENT_KEYWORDS.some((k) => haystack.includes(k));
+  return APPOINTMENT_CATEGORIES.has((m.intent_category ?? "").toLowerCase().trim());
 }
 
 export default function AppointmentsSection() {
