@@ -14,6 +14,7 @@ import doodleBgDark from "@/assets/dashboard-doodles-dark.jpg";
 import { useTheme } from "@/components/ThemeProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { GOOGLE_CALENDAR_SCOPE_ERROR } from "@/hooks/useGoogleCalendar";
 
 const Dashboard = () => {
   const { theme } = useTheme();
@@ -35,11 +36,15 @@ const Dashboard = () => {
       toast({ title: "Google Calendar", description: "Connection failed. Please try again.", variant: "destructive" });
       return;
     }
+    if (gcal === "scope_missing") {
+      toast({ title: "Google Calendar permission needed", description: GOOGLE_CALENDAR_SCOPE_ERROR, variant: "destructive" });
+      return;
+    }
     if (gcal === "ok") {
       toast({ title: "Google Calendar connected", description: "Syncing your upcoming events…" });
       supabase.functions.invoke("google-calendar-sync", { body: {} }).then(({ data, error }) => {
         if (error) {
-          toast({ title: "Sync failed", description: error.message, variant: "destructive" });
+          toast({ title: "Sync failed", description: GOOGLE_CALENDAR_SCOPE_ERROR, variant: "destructive" });
         } else if (data) {
           toast({ title: "Synced", description: `${(data as { synced: number }).synced} events imported.` });
         }
