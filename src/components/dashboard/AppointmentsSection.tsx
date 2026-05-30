@@ -145,10 +145,18 @@ function AppointmentCard({
             </div>
           </div>
 
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#2dd4a8]/30 bg-[#2dd4a8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
-            <Clock size={10} />
-            {age}
-          </span>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[#2dd4a8]/30 bg-[#2dd4a8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+              <Clock size={10} />
+              {age}
+            </span>
+            {inAgenda && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                <CheckCircle2 size={10} />
+                In agenda
+              </span>
+            )}
+          </div>
         </div>
 
         {item.subject && (
