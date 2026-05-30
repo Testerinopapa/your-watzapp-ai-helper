@@ -44,9 +44,13 @@ function recencyDate(m: FlaggedMessage): Date {
 function AppointmentCard({
   item,
   featured = false,
+  onClick,
+  inAgenda = false,
 }: {
   item: FlaggedMessage;
   featured?: boolean;
+  onClick?: () => void;
+  inAgenda?: boolean;
 }) {
   const when = recencyDate(item);
   const age = formatDistanceToNow(when, { addSuffix: true });
@@ -55,12 +59,14 @@ function AppointmentCard({
   const monthLabel = format(when, "MMM").toUpperCase();
 
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        "group relative overflow-hidden rounded-2xl border border-white/10",
+        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left",
         "bg-gradient-to-br from-[#0d1b2a] via-[#102a3a] to-[#1b4332]",
         "shadow-[0_8px_30px_-12px_rgba(45,212,168,0.25)] hover:shadow-[0_12px_40px_-12px_rgba(115,255,184,0.35)]",
-        "transition-all duration-300 hover:-translate-y-0.5",
+        "transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2dd4a8]",
         featured ? "p-6" : "p-5",
       )}
       style={fontBody}
