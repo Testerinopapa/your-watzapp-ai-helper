@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -8,10 +9,13 @@ import {
   Sparkles,
   Clock,
   ArrowUpRight,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
+import { usePersonalAgenda } from "@/hooks/usePersonalAgenda";
 import { cn } from "@/lib/utils";
+import AppointmentDrawer from "./AppointmentDrawer";
 
 const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
