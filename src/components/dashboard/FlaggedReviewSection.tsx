@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 import {
   Dialog,
   DialogContent,
@@ -45,6 +46,8 @@ import {
   Copy,
   Check,
   Loader2,
+  AlertTriangle,
+  CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -202,12 +205,23 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
 // Draft reply panel
 // =====================================================================
 
+type DraftPhase =
+  | "idle"
+  | "generating"
+  | "waiting"
+  | "sent"
+  | "error"
+  | "timeout";
+
 type DraftState = {
   open: boolean;
   instruction: string;
   draft: string;
   loading: boolean;
   error: string | null;
+  draftId: string | null;
+  phase: DraftPhase;
+  sentAt: string | null;
 };
 
 const defaultDraft: DraftState = {
@@ -216,6 +230,9 @@ const defaultDraft: DraftState = {
   draft: "",
   loading: false,
   error: null,
+  draftId: null,
+  phase: "idle",
+  sentAt: null,
 };
 
 function DraftReplyFooter({
@@ -224,14 +241,18 @@ function DraftReplyFooter({
   onChange,
   onClose,
   onGenerate,
+  onRetry,
+  onCancel,
 }: {
   item: FlaggedMessage;
   state: DraftState;
   onChange: (patch: Partial<DraftState>) => void;
   onClose: () => void;
   onGenerate: () => void;
+  onRetry: () => void;
+  onCancel: () => void;
 }) {
-  const incoming = (item.latest_message ?? item.preview ?? "").trim();
+  const incoming = (item.latest_message ?? item.preview ?? item.subject ?? "").trim();
   const hasIncoming = incoming.length > 0;
   const trimmedInstruction = state.instruction.trim();
   const canGenerate = hasIncoming && trimmedInstruction.length > 0 && !state.loading;
@@ -294,7 +315,7 @@ function DraftReplyFooter({
           maxLength={2000}
           rows={3}
           className="text-xs bg-background"
-          disabled={state.loading}
+          disabled={state.loading || state.phase === "waiting"}
         />
         {!hasIncoming && (
           <p className="text-[11px] text-muted-foreground mt-1">
@@ -307,7 +328,7 @@ function DraftReplyFooter({
         <Button
           size="sm"
           onClick={onGenerate}
-          disabled={!canGenerate}
+          disabled={!canGenerate || state.phase === "waiting"}
           className="h-7 gap-1.5 text-[11px] bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
         >
           {state.loading ? (
@@ -315,7 +336,11 @@ function DraftReplyFooter({
           ) : (
             <Sparkles size={12} />
           )}
-          {state.loading ? "Generating…" : state.draft ? "Regenerate" : "Generate draft"}
+          {state.loading
+            ? "Generating…"
+            : state.draft
+              ? "Regenerate & send"
+              : "Generate & send"}
         </Button>
         <Button
           variant="ghost"
@@ -324,7 +349,7 @@ function DraftReplyFooter({
           disabled={state.loading}
           className="h-7 text-[11px]"
         >
-          Cancel
+          Close
         </Button>
         <span className="ml-auto text-[10px] text-muted-foreground">
           {trimmedInstruction.length}/2000
@@ -332,7 +357,20 @@ function DraftReplyFooter({
       </div>
 
       {state.error && (
-        <p className="text-[11px] text-destructive">{state.error}</p>
+        <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2">
+          <p className="text-[11px] text-destructive flex-1">{state.error}</p>
+          {(state.phase === "error" || state.phase === "timeout") && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={onRetry}
+              className="h-6 text-[11px] text-destructive hover:text-destructive"
+            >
+              <RefreshCw size={11} className="mr-1" />
+              Retry
+            </Button>
+          )}
+        </div>
       )}
 
       {state.draft && (
@@ -357,6 +395,45 @@ function DraftReplyFooter({
           >
             {state.draft}
           </div>
+
+          {state.phase === "waiting" && (
+            <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/60 p-2">
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Loader2 size={11} className="animate-spin text-[#2dd4a8]" />
+                Queued — waiting for WhatsApp Web…
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onCancel}
+                className="h-6 text-[11px] text-muted-foreground hover:text-destructive"
+              >
+                Cancel
+              </Button>
+            </div>
+          )}
+
+          {state.phase === "sent" && (
+            <div className="flex items-center gap-1.5 rounded-md border border-[rgba(45,212,168,0.35)] bg-[rgba(45,212,168,0.08)] p-2 text-[11px] text-[#2dd4a8]">
+              <CheckCircle2 size={12} />
+              Sent
+              {state.sentAt && (
+                <span className="text-muted-foreground">
+                  · {formatDistanceToNow(new Date(state.sentAt), { addSuffix: true })}
+                </span>
+              )}
+            </div>
+          )}
+
+          {state.phase === "timeout" && (
+            <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-600 dark:text-amber-400">
+              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Extension didn't pick this up — is WhatsApp Web open? The draft
+                is still queued.
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -540,6 +617,7 @@ function FolderTile({
 
 export default function FlaggedReviewSection() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
 
   const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
@@ -552,20 +630,49 @@ export default function FlaggedReviewSection() {
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
 
+  // Timeout handles keyed by thread_id
+  const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // draft_id -> thread_id reverse index for realtime updates
+  const draftToThreadRef = useRef<Record<string, string>>({});
+
+  const clearTimeoutFor = (threadId: string) => {
+    const t = timeoutsRef.current[threadId];
+    if (t) {
+      clearTimeout(t);
+      delete timeoutsRef.current[threadId];
+    }
+  };
+
   const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
     setDrafts((prev) => ({
       ...prev,
       [threadId]: { ...defaultDraft, ...prev[threadId], ...patch },
     }));
 
-  const generateDraft = async (item: FlaggedMessage) => {
+  const friendlyError = (status: number, raw: string): string => {
+    if (status === 401) return "Session expired — please sign in again.";
+    if (status === 402) return "Plan limit reached. Upgrade to continue drafting.";
+    if (status === 429) return "Too many requests — try again in a moment.";
+    if (status === 502) return "AI service is unavailable right now. Please retry.";
+    return raw || `Request failed (${status})`;
+  };
+
+  const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
-    const incomingMessage = (item.latest_message ?? item.preview ?? "")
+    const incomingMessage = (item.latest_message ?? item.preview ?? item.subject ?? "")
       .trim()
       .slice(0, 4000);
     const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
     if (!incomingMessage || !instruction) return;
-    updateDraft(id, { loading: true, error: null });
+
+    clearTimeoutFor(id);
+    updateDraft(id, {
+      loading: true,
+      error: null,
+      phase: "generating",
+      sentAt: null,
+    });
+
     try {
       const {
         data: { session },
@@ -581,26 +688,121 @@ export default function FlaggedReviewSection() {
             apikey: FLAGGED_ANON_KEY,
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ incomingMessage, instruction }),
+          body: JSON.stringify({
+            thread_id: item.thread_id,
+            provider: "whatsapp",
+            incomingMessage,
+            instruction,
+            autoSend: true,
+          }),
         },
       );
       if (!res.ok) {
         const text = await res.text().catch(() => "");
-        throw new Error(text || `Request failed (${res.status})`);
+        const msg = friendlyError(res.status, text);
+        toast({
+          title: "Draft failed",
+          description: msg,
+          variant: "destructive",
+        });
+        throw new Error(msg);
       }
-      const data = await res.json().catch(() => null);
+      const body = await res.json().catch(() => null);
       const draft =
-        (data && (data.draft ?? data.reply ?? data.text ?? data.message)) ??
-        (typeof data === "string" ? data : "");
+        (body && (body.draft ?? body.reply ?? body.text ?? body.message)) ??
+        (typeof body === "string" ? body : "");
+      const draftId: string | null =
+        (body && (body.draft_id ?? body.draftId)) ?? null;
       if (!draft) throw new Error("No draft returned");
-      updateDraft(id, { loading: false, draft: String(draft), error: null });
+
+      if (draftId) {
+        draftToThreadRef.current[draftId] = id;
+      }
+
+      updateDraft(id, {
+        loading: false,
+        draft: String(draft),
+        error: null,
+        draftId,
+        phase: draftId ? "waiting" : "idle",
+      });
+
+      // 60s client-side timeout — show warning if no terminal state
+      if (draftId) {
+        timeoutsRef.current[id] = setTimeout(() => {
+          setDrafts((prev) => {
+            const cur = prev[id];
+            if (!cur || cur.phase !== "waiting") return prev;
+            return {
+              ...prev,
+              [id]: {
+                ...cur,
+                phase: "timeout",
+                error:
+                  "Extension didn't pick this up — is WhatsApp Web open?",
+              },
+            };
+          });
+        }, 60_000);
+      }
     } catch (e) {
       updateDraft(id, {
         loading: false,
         error: (e as Error)?.message ?? "Failed to generate draft",
+        phase: "error",
       });
     }
   };
+
+  const generateDraft = (item: FlaggedMessage) => callDraftFunction(item);
+  const retryDraft = (item: FlaggedMessage) => callDraftFunction(item);
+
+  const cancelPendingSend = async (item: FlaggedMessage) => {
+    const id = item.thread_id;
+    const cur = drafts[id];
+    if (!cur?.draftId) return;
+    clearTimeoutFor(id);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) throw new Error("Not signed in");
+      const res = await fetch(
+        `${FLAGGED_SUPABASE_URL}/functions/v1/cancel-pending-send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: FLAGGED_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            thread_id: item.thread_id,
+            draft_id: cur.draftId,
+          }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(text || `Cancel failed (${res.status})`);
+      }
+      updateDraft(id, { phase: "idle", error: null });
+      toast({ title: "Cancelled", description: "Pending send cancelled." });
+    } catch (e) {
+      updateDraft(id, {
+        phase: "error",
+        error: (e as Error)?.message ?? "Failed to cancel",
+      });
+    }
+  };
+
+  // Clear all timeouts on unmount
+  useEffect(() => {
+    return () => {
+      for (const t of Object.values(timeoutsRef.current)) clearTimeout(t);
+      timeoutsRef.current = {};
+    };
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -635,7 +837,48 @@ export default function FlaggedReviewSection() {
           table: "thread_states",
           filter: `user_id=eq.${user.id}`,
         },
-        () => {
+        (payload) => {
+          const row = (payload.new ?? payload.old) as
+            | Record<string, unknown>
+            | undefined;
+          if (row) {
+            const threadId = row.thread_id as string | undefined;
+            const status = row.status_value as string | undefined;
+            const lastKey = row.last_auto_sent_message_key as string | undefined;
+            const lastAt = row.last_auto_sent_at as string | undefined;
+            const lastError = row.last_error as string | undefined;
+
+            if (threadId) {
+              setDrafts((prev) => {
+                const cur = prev[threadId];
+                if (!cur || !cur.draftId) return prev;
+
+                let next = cur;
+                if (
+                  status === "sent" &&
+                  lastKey &&
+                  lastKey === cur.draftId
+                ) {
+                  clearTimeoutFor(threadId);
+                  next = {
+                    ...cur,
+                    phase: "sent",
+                    sentAt: lastAt ?? new Date().toISOString(),
+                    error: null,
+                  };
+                } else if (lastError && cur.phase === "waiting") {
+                  clearTimeoutFor(threadId);
+                  next = {
+                    ...cur,
+                    phase: "error",
+                    error: lastError,
+                  };
+                }
+                if (next === cur) return prev;
+                return { ...prev, [threadId]: next };
+              });
+            }
+          }
           refetch();
         },
       )
@@ -644,6 +887,7 @@ export default function FlaggedReviewSection() {
       client.removeChannel(channel);
     };
   }, [user?.id, refetch]);
+
 
   const all: FlaggedMessage[] = data ?? [];
   const recencyOf = (m: FlaggedMessage) => {
@@ -841,6 +1085,8 @@ export default function FlaggedReviewSection() {
                             updateDraft(item.thread_id, { open: false, error: null })
                           }
                           onGenerate={() => generateDraft(item)}
+                          onRetry={() => retryDraft(item)}
+                          onCancel={() => cancelPendingSend(item)}
                         />
                       }
                     />
