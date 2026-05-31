@@ -163,7 +163,6 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
                 <MessageCircle size={14} className="text-muted-foreground shrink-0" />
                 <span className="truncate">{item.sender ?? "Unknown sender"}</span>
               </div>
-              <p className="text-xs text-muted-foreground truncate">{item.provider}</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -184,8 +183,6 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
           {item.intent_category && (
             <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
               {item.intent_category}
-              {typeof item.intent_confidence === "number" &&
-                ` · ${Math.round(item.intent_confidence * 100)}%`}
             </Badge>
           )}
           {item.intent_reason && (
