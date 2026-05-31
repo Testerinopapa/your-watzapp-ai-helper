@@ -1207,16 +1207,20 @@ export default function FlaggedReviewSection() {
   const sorted = [...all].sort((a, b) => recencyOf(b) - recencyOf(a));
   // One pill per sender. Newest message wins (sorted desc); older messages from
   // the same sender become a backlog count surfaced on the pill.
-  const groups = new Map<string, FlaggedMessage & { backlog_count?: number }>();
+  const groups = new Map<
+    string,
+    FlaggedMessage & { backlog_count?: number; backlog_items?: FlaggedMessage[] }
+  >();
   for (const m of sorted) {
     if (isDismissed(m)) continue;
     const senderKey = normalizeLookup(senderLabelForItem(m) || m.sender || "");
     const key = senderKey || m.thread_id;
     const existing = groups.get(key);
     if (!existing) {
-      groups.set(key, { ...m, backlog_count: 0 });
+      groups.set(key, { ...m, backlog_count: 0, backlog_items: [] });
     } else {
       existing.backlog_count = (existing.backlog_count ?? 0) + 1;
+      existing.backlog_items = [...(existing.backlog_items ?? []), m];
     }
   }
   const deduped: FlaggedMessage[] = Array.from(groups.values());
