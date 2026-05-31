@@ -642,27 +642,36 @@ export default function FlaggedReviewSection() {
   const normalizeSender = (s: string | null | undefined) =>
     (s ?? "").trim().toLowerCase();
   const enrichedBySender = useMemo(() => {
-    // Keep the freshest (latest createdAt) non-empty activity entry per sender,
-    // preferring entries that have a real transcript over voice-message stubs.
-    const map = new Map<string, { text: string; createdAt: number }>();
-    for (const r of usageData?.recent ?? []) {
+    // Keep the freshest real activity text per sender, plus whether it belongs
+    // to a nearby voice/review batch. Only those newer batches are allowed to
+    // override a non-stub flagged row, which prevents sent replies from
+    // clobbering the panel with arbitrary older text.
+    const rows = usageData?.recent ?? [];
+    const map = new Map<string, { text: string; createdAt: number; hasNearbyStub: boolean }>();
+    for (const r of rows) {
       const key = normalizeSender(r.senderEmail);
       if (!key) continue;
       const text = (r.latestMessage ?? r.preview ?? "").trim();
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+      const hasNearbyStub = rows.some((other) => {
+        if (normalizeSender(other.senderEmail) !== key) return false;
+        const otherText = (other.latestMessage ?? other.preview ?? "").trim();
+        const otherAt = other.createdAt ? new Date(other.createdAt).getTime() : 0;
+        return isVoiceStub(otherText) && Math.abs(otherAt - createdAt) < 2 * 60 * 1000;
+      });
       const existing = map.get(key);
       if (!existing) {
-        map.set(key, { text, createdAt });
+        map.set(key, { text, createdAt, hasNearbyStub });
         continue;
       }
       const existingIsStub = isVoiceStub(existing.text);
       const candidateIsStub = isVoiceStub(text);
       // Prefer real transcript over stub; otherwise prefer the newer entry.
       if (existingIsStub && !candidateIsStub) {
-        map.set(key, { text, createdAt });
+        map.set(key, { text, createdAt, hasNearbyStub });
       } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
-        map.set(key, { text, createdAt });
+        map.set(key, { text, createdAt, hasNearbyStub });
       }
     }
     return map;
@@ -679,6 +688,10 @@ export default function FlaggedReviewSection() {
     const key = normalizeSender(item.sender);
     const candidate = enrichedBySender.get(key);
     if (!candidate) return null;
+    const itemTs = Math.max(
+      new Date(item.updated_at).getTime(),
+      item.intent_classified_at ? new Date(item.intent_classified_at).getTime() : 0,
+    );
 
     // ONLY replace voice-message stubs with a real transcript. Do NOT use the
     // Activity feed to override an otherwise-valid incoming message — Activity
@@ -687,6 +700,13 @@ export default function FlaggedReviewSection() {
     // older text (or the outgoing reply) and would otherwise clobber the real
     // latest incoming once the user hits Send.
     if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
+      return candidate.text;
+    }
+
+    // Exception: if Activity has a newer real transcript paired with a nearby
+    // voice/review stub, treat it as the latest inbound voice message even when
+    // the flagged row itself failed to advance.
+    if (!isVoiceStub(candidate.text) && candidate.hasNearbyStub && candidate.createdAt > itemTs) {
       return candidate.text;
     }
 
