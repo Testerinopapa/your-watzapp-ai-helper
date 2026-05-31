@@ -297,6 +297,21 @@ function DraftReplyFooter({
 
   return (
     <div className="mt-1 rounded-lg border border-border bg-muted/40 p-3 space-y-2.5">
+      <div className="space-y-1">
+        <span className="block text-[11px] font-medium text-muted-foreground">
+          Incoming message
+        </span>
+        {hasIncoming ? (
+          <div className="rounded-md border border-border bg-background p-2.5 text-xs whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
+            {incoming}
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed border-border bg-background/50 p-2.5 text-[11px] text-muted-foreground italic">
+            No message text available.
+          </div>
+        )}
+      </div>
+
       <div>
         <label
           htmlFor={`draft-instr-${item.thread_id}`}
@@ -314,11 +329,6 @@ function DraftReplyFooter({
           className="text-xs bg-background"
           disabled={state.loading || state.phase === "waiting"}
         />
-        {!hasIncoming && (
-          <p className="text-[11px] text-muted-foreground mt-1">
-            No message text available to draft from.
-          </p>
-        )}
       </div>
 
       <div className="flex items-center gap-2">
