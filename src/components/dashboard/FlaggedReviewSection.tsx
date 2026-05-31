@@ -667,24 +667,28 @@ export default function FlaggedReviewSection() {
   // sender-only map was why Dominique updated while other cards stayed stale.
   const enrichedByKey = useMemo(() => {
     const rows = usageData?.recent ?? [];
-    const map = new Map<string, { text: string; createdAt: number }>();
+    const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
     for (const r of rows) {
-      const text = (r.latestMessage ?? r.preview ?? "").trim();
+      const text = textForActivity(r);
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+      const flagged = isFlaggedActivity(r);
       for (const key of lookupKeysForActivity(r)) {
         const existing = map.get(key);
         if (!existing) {
-          map.set(key, { text, createdAt });
+          map.set(key, { text, createdAt, flagged });
           continue;
         }
         const existingIsStub = isVoiceStub(existing.text);
         const candidateIsStub = isVoiceStub(text);
-        // Prefer real transcript over stub; otherwise prefer the newer entry.
-        if (existingIsStub && !candidateIsStub) {
-          map.set(key, { text, createdAt });
-        } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
-          map.set(key, { text, createdAt });
+        // Prefer the same flagged Activity rows this panel is supposed to show,
+        // then prefer real transcripts over stubs, then the newest entry.
+        if (flagged && !existing.flagged) {
+          map.set(key, { text, createdAt, flagged });
+        } else if (flagged === existing.flagged && existingIsStub && !candidateIsStub) {
+          map.set(key, { text, createdAt, flagged });
+        } else if (flagged === existing.flagged && existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+          map.set(key, { text, createdAt, flagged });
         }
       }
     }
@@ -700,37 +704,21 @@ export default function FlaggedReviewSection() {
   const activityCandidateFor = (item: FlaggedMessage) =>
     lookupKeysForFlagged(item)
       .map((key) => enrichedByKey.get(key))
-      .filter((c): c is { text: string; createdAt: number } => Boolean(c))
+      .filter((c): c is { text: string; createdAt: number; flagged: boolean } => Boolean(c))
       .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
 
   const enrichedMessageFor = (item: FlaggedMessage): string | null => {
     const current = (item.latest_message ?? item.preview ?? "").trim();
     const candidate = activityCandidateFor(item);
     if (!candidate) return null;
-    const classifiedTs = item.intent_classified_at
-      ? new Date(item.intent_classified_at).getTime()
-      : 0;
-
     // Always replace voice-message stubs with a real transcript when we have one.
     if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
       return candidate.text;
     }
 
-    // For non-stub cards, the flagged row's `latest_message` only refreshes
-    // when the extension calls classify-intent on each new inbound. When that
-    // doesn't fire (or races a send), the card shows stale text while a newer
-    // real inbound already exists in the Activity feed. Substitute it when:
-    //   - Activity has a real (non-stub) text that differs from the current,
-    //   - Activity's createdAt is meaningfully newer than the flagged row's
-    //     classification time (30s buffer avoids the same-inbound row that
-    //     gets appended when *we* send a reply).
-    // We compare against intent_classified_at (not updated_at) because
-    // sending/retrying drafts can bump updated_at on an old flagged row.
-    if (
-      !isVoiceStub(candidate.text) &&
-      candidate.text !== current &&
-      (!classifiedTs || candidate.createdAt > classifiedTs + 30_000)
-    ) {
+    // The Activity endpoint is the reliable stream; if it has a different real
+    // latest message for this flagged contact/thread, let it win immediately.
+    if (!isVoiceStub(candidate.text) && candidate.text !== current) {
       return candidate.text;
     }
 
