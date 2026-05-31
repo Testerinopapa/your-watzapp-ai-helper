@@ -10,6 +10,10 @@ export interface SendSmartUsageRecent {
   createdAt: string;
   subject: string | null;
   senderEmail: string | null;
+  sender?: string | null;
+  contactName?: string | null;
+  threadId?: string | null;
+  thread_id?: string | null;
   decision: string;
   latestMessage: string | null;
   preview: string | null;
@@ -27,6 +31,7 @@ export function useSendSmartUsage() {
     queryKey: ["send-smart-usage"],
     staleTime: 60_000,
     refetchOnWindowFocus: true,
+    refetchInterval: 15_000,
     queryFn: async () => {
       const {
         data: { session },
@@ -61,6 +66,7 @@ export function useSendSmartUsage() {
   return {
     data: query.data,
     isLoading: query.isLoading,
+    isFetching: query.isFetching,
     error: query.error as Error | null,
     refetch: query.refetch,
   };
