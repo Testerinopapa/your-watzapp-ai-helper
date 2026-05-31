@@ -1153,9 +1153,33 @@ export default function FlaggedReviewSection() {
   };
   const handleDragEnd = (e: DragEndEvent) => {
     const overId = e.over?.id;
-    if (typeof overId === "string" && overId.startsWith(FOLDER_DROP_PREFIX) && activeItem) {
-      const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
-      moveToFolder(activeItem.thread_id, folderId);
+    if (typeof overId === "string" && activeItem) {
+      if (overId === TRASH_DROP_ID) {
+        const item = activeItem;
+        dismissItem(item);
+        toast({
+          title: "Flagged message deleted",
+          description: `${item.sender ?? "Thread"} removed from review.`,
+          action: (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setDismissed((prev) => {
+                  const next = new Set(prev);
+                  for (const k of dismissKeysFor(item)) next.delete(k);
+                  return next;
+                })
+              }
+            >
+              Undo
+            </Button>
+          ),
+        });
+      } else if (overId.startsWith(FOLDER_DROP_PREFIX)) {
+        const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
+        moveToFolder(activeItem.thread_id, folderId);
+      }
     }
     setActiveItem(null);
   };
