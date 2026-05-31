@@ -302,7 +302,8 @@ export default function PersonalAgendaPanel({
   onConnectClick?: () => void;
 }) {
   const { entries: localEntries, remove: removeLocal, upsert } = usePersonalAgenda();
-  const { entries: dbEntries, remove: removeDb } = useAgendaEvents();
+  const { entries: dbEntries, remove: removeDb, refresh: refreshDb } = useAgendaEvents();
+  const { toast } = useToast();
   const entries = useMemo(() => {
     const seen = new Set<string>();
     const all: AgendaEntry[] = [];
@@ -313,8 +314,33 @@ export default function PersonalAgendaPanel({
     }
     return all;
   }, [localEntries, dbEntries]);
-  const dbIds = useMemo(() => new Set(dbEntries.map((e) => e.id)), [dbEntries]);
-  const remove = (id: string) => (dbIds.has(id) ? removeDb(id) : removeLocal(id));
+  const dbEntriesById = useMemo(
+    () => new Map(dbEntries.map((e) => [e.id, e])),
+    [dbEntries],
+  );
+  const remove = async (id: string) => {
+    const dbEntry = dbEntriesById.get(id);
+    if (dbEntry) {
+      // If it's a Google-synced event, delete on Google first
+      if (dbEntry.source_type === "google_calendar" && dbEntry.source_event_id) {
+        try {
+          const { error } = await supabase.functions.invoke("google-calendar-push", {
+            body: { agenda_event_id: id, action: "delete" },
+          });
+          if (error) throw error;
+        } catch (e) {
+          toast({
+            title: "Couldn't remove from Google Calendar",
+            description: (e as Error).message,
+            variant: "destructive",
+          });
+          // continue with local delete anyway
+        }
+      }
+      return removeDb(id);
+    }
+    return removeLocal(id);
+  };
   const conflicts = useMemo(() => detectConflicts(entries), [entries]);
   const now = new Date();
   const todayStart = startOfDay(now);
