@@ -658,8 +658,10 @@ export default function FlaggedReviewSection() {
     (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
       .trim();
 
-  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.decision ?? "").toLowerCase().includes("flagged");
+  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
+    const decision = (r.decision ?? "").toLowerCase();
+    return decision.includes("flagged") || decision.includes("review");
+  };
 
   // Build a multi-key lookup from the Activity feed so flagged cards can be
   // refreshed by exact thread id, contact name, sender label, or phone number.
@@ -681,13 +683,14 @@ export default function FlaggedReviewSection() {
         }
         const existingIsStub = isVoiceStub(existing.text);
         const candidateIsStub = isVoiceStub(text);
-        // Prefer the same flagged Activity rows this panel is supposed to show,
-        // then prefer real transcripts over stubs, then the newest entry.
-        if (flagged && !existing.flagged) {
+        // Prefer real Activity transcripts over voice stubs, then panel-owned
+        // review/flagged rows, then newest entry. Activity uses "review" for
+        // these pills, while the old flagged endpoint often stays stale.
+        if (existingIsStub && !candidateIsStub) {
           map.set(key, { text, createdAt, flagged });
-        } else if (flagged === existing.flagged && existingIsStub && !candidateIsStub) {
+        } else if (existingIsStub === candidateIsStub && flagged && !existing.flagged) {
           map.set(key, { text, createdAt, flagged });
-        } else if (flagged === existing.flagged && existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+        } else if (existingIsStub === candidateIsStub && flagged === existing.flagged && createdAt > existing.createdAt) {
           map.set(key, { text, createdAt, flagged });
         }
       }
@@ -978,27 +981,39 @@ export default function FlaggedReviewSection() {
   }, [assignments]);
 
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
-  const flaggedFromActivity: FlaggedMessage[] = (usageData?.recent ?? [])
-    .filter(isFlaggedActivity)
-    .map((r, index): FlaggedMessage => {
-      const text = textForActivity(r);
-      const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
-      return {
-        thread_id: fallbackId,
+  const activityGroups = new Map<string, FlaggedMessage>();
+  for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
+    const text = textForActivity(r);
+    const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
+    const sender = r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender";
+    const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
+    const existing = activityGroups.get(groupKey);
+    const existingText = existing?.latest_message ?? existing?.preview ?? "";
+    const useText =
+      !existing ||
+      !existingText ||
+      Boolean(text && !isVoiceStub(text) && (isVoiceStub(existingText) || text !== existingText));
+    const createdAt = new Date(r.createdAt).getTime();
+    const existingAt = existing ? new Date(existing.updated_at).getTime() : 0;
+    if (!existing || useText || createdAt > existingAt) {
+      activityGroups.set(groupKey, {
+        thread_id: existing?.thread_id ?? fallbackId,
         provider: "whatsapp",
-        sender: r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender",
-        subject: r.subject,
-        preview: text || r.preview,
-        latest_message: text || r.latestMessage,
+        sender,
+        subject: r.subject ?? existing?.subject ?? null,
+        preview: useText ? text || r.preview : existing.preview,
+        latest_message: useText ? text || r.latestMessage : existing.latest_message,
         intent_category: "misc",
         intent_confidence: 1,
-        intent_reason: "Flagged by the Activity stream.",
+        intent_reason: "Needs review from the Activity stream.",
         intent_source: "activity",
         intent_classified_at: r.createdAt,
         updated_at: r.createdAt,
         thread_url: null,
-      };
-    });
+      });
+    }
+  }
+  const flaggedFromActivity: FlaggedMessage[] = Array.from(activityGroups.values()).map(withActivityPreview);
   const all: FlaggedMessage[] = [...flaggedFromList, ...flaggedFromActivity];
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
