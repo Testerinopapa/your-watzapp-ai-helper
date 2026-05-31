@@ -680,23 +680,13 @@ export default function FlaggedReviewSection() {
     const candidate = enrichedBySender.get(key);
     if (!candidate) return null;
 
-    // Always replace voice-message stubs with a real transcript if we have one.
+    // ONLY replace voice-message stubs with a real transcript. Do NOT use the
+    // Activity feed to override an otherwise-valid incoming message — Activity
+    // rows are written whenever the pipeline processes a message (including
+    // when we send a reply), so a fresh Activity row for this sender can carry
+    // older text (or the outgoing reply) and would otherwise clobber the real
+    // latest incoming once the user hits Send.
     if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
-      return candidate.text;
-    }
-
-    // Otherwise, replace the flagged-list preview when the Activity feed has
-    // a strictly newer message for this sender — the flagged list can be
-    // stale for some threads while Activity reflects the latest inbound.
-    const itemTs = Math.max(
-      item.intent_classified_at ? new Date(item.intent_classified_at).getTime() : 0,
-      item.updated_at ? new Date(item.updated_at).getTime() : 0,
-    );
-    if (
-      candidate.createdAt > itemTs &&
-      candidate.text &&
-      candidate.text !== current
-    ) {
       return candidate.text;
     }
 
@@ -706,21 +696,10 @@ export default function FlaggedReviewSection() {
   const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
     const enriched = enrichedMessageFor(item);
     if (!enriched) return item;
-
-    const candidate = enrichedBySender.get(normalizeSender(item.sender));
-    const currentUpdatedAt = item.updated_at ? new Date(item.updated_at).getTime() : 0;
-    const hasFreshActivityTime =
-      candidate &&
-      Number.isFinite(candidate.createdAt) &&
-      candidate.createdAt > currentUpdatedAt;
-
     return {
       ...item,
       preview: enriched,
       latest_message: enriched,
-      updated_at: hasFreshActivityTime
-        ? new Date(candidate.createdAt).toISOString()
-        : item.updated_at,
     };
   };
 
