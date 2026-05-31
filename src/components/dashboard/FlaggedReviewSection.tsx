@@ -627,6 +627,42 @@ export default function FlaggedReviewSection() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
+  const { data: usageData } = useSendSmartUsage();
+
+  // Build a sender -> richest recent message text map from the Activity feed
+  // so we can substitute "[Voice message] 1×" stubs with the real transcript.
+  const normalizeSender = (s: string | null | undefined) =>
+    (s ?? "").trim().toLowerCase();
+  const enrichedBySender = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const r of usageData?.recent ?? []) {
+      const key = normalizeSender(r.senderEmail);
+      if (!key) continue;
+      const text = (r.latestMessage ?? r.preview ?? "").trim();
+      if (!text) continue;
+      // Prefer entries that actually contain a transcript (have characters
+      // after a trailing "]" or aren't just a bare "[Voice message]" stub).
+      const existing = map.get(key);
+      if (!existing || text.length > existing.length) map.set(key, text);
+    }
+    return map;
+  }, [usageData]);
+
+  const isVoiceStub = (text: string | null | undefined) => {
+    const t = (text ?? "").trim();
+    if (!t) return true;
+    // "[Voice message] 1×", "[Voice message]", "[Voice message 0:05]" with no transcript
+    return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
+  };
+
+  const enrichedMessageFor = (item: FlaggedMessage): string | null => {
+    const current = item.latest_message ?? item.preview ?? "";
+    if (!isVoiceStub(current) && current.trim().length > 0) return null;
+    const key = normalizeSender(item.sender);
+    const candidate = enrichedBySender.get(key);
+    if (candidate && !isVoiceStub(candidate)) return candidate;
+    return null;
+  };
 
   const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
   const [assignments, setAssignments] = useState<Record<string, string>>(() =>
