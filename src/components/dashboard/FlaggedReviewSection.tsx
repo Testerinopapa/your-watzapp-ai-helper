@@ -643,6 +643,16 @@ export default function FlaggedReviewSection() {
     return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
   };
 
+  const textForActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.latestMessage ?? r.preview ?? "").trim();
+
+  const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
+      .trim();
+
+  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.decision ?? "").toLowerCase().includes("flagged");
+
   // Build a multi-key lookup from the Activity feed so flagged cards can be
   // refreshed by exact thread id, contact name, sender label, or phone number.
   // Some WhatsApp rows expose names while others expose phone/thread ids; a
@@ -720,10 +730,16 @@ export default function FlaggedReviewSection() {
   const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
     const enriched = enrichedMessageFor(item);
     if (!enriched) return item;
+    const activityCreatedAt = lookupKeysForFlagged(item)
+      .map((key) => enrichedByKey.get(key)?.createdAt ?? 0)
+      .reduce((max, ts) => Math.max(max, ts), 0);
     return {
       ...item,
       preview: enriched,
       latest_message: enriched,
+      updated_at: activityCreatedAt
+        ? new Date(Math.max(new Date(item.updated_at).getTime(), activityCreatedAt)).toISOString()
+        : item.updated_at,
     };
   };
 
