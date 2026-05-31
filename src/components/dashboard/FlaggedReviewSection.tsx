@@ -174,7 +174,14 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
   const senderLabel = senderLabelForItem(item) || "Unknown sender";
-  const backlog = (item as FlaggedMessage & { backlog_count?: number }).backlog_count ?? 0;
+  const itemWithBacklog = item as FlaggedMessage & {
+    backlog_count?: number;
+    backlog_items?: FlaggedMessage[];
+  };
+  const backlog = itemWithBacklog.backlog_count ?? 0;
+  const backlogItems = itemWithBacklog.backlog_items ?? [];
+  const [backlogOpen, setBacklogOpen] = useState(false);
+  const allMessages = [item, ...backlogItems];
 
   return (
     <Card
@@ -194,13 +201,23 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
                 <MessageCircle size={14} className="text-muted-foreground shrink-0" />
                 <span className="truncate">{senderLabel}</span>
                 {backlog > 0 && (
-                  <Badge
-                    variant="secondary"
-                    className="ml-1 h-5 px-1.5 text-[10px] font-semibold shrink-0"
-                    title={`${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setBacklogOpen(true);
+                    }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="ml-1 shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={`View ${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
                   >
-                    +{backlog}
-                  </Badge>
+                    <Badge
+                      variant="secondary"
+                      className="h-5 px-1.5 text-[10px] font-semibold cursor-pointer hover:bg-secondary/70"
+                    >
+                      +{backlog}
+                    </Badge>
+                  </button>
                 )}
               </div>
             </div>
@@ -243,6 +260,47 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
 
         {footer}
       </CardContent>
+
+      <Dialog open={backlogOpen} onOpenChange={setBacklogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              Messages from {senderLabel}
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {allMessages.length} total
+              </span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
+            {allMessages.map((m, idx) => {
+              const text = m.latest_message ?? m.preview ?? m.subject ?? "";
+              const when = m.updated_at
+                ? formatDistanceToNow(new Date(m.updated_at), { addSuffix: true })
+                : "";
+              return (
+                <div
+                  key={`${m.thread_id}-${idx}`}
+                  className="rounded-md border border-border bg-muted/30 p-3 space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground/80">
+                      {idx === 0 ? "Latest" : `#${allMessages.length - idx}`}
+                    </span>
+                    <span>{when}</span>
+                  </div>
+                  {text ? (
+                    <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                      {text}
+                    </p>
+                  ) : (
+                    <p className="text-xs italic text-muted-foreground">No preview available.</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
