@@ -364,8 +364,9 @@ export default function PersonalAgendaPanel({
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const addManual = () => {
+  const addManual = async () => {
     if (!title.trim()) return;
     let startISO: string | null = null;
     if (date) {
@@ -374,18 +375,79 @@ export default function PersonalAgendaPanel({
       d.setHours(hh || 0, mm || 0, 0, 0);
       startISO = d.toISOString();
     }
-    upsert({
-      id: `manual-${crypto.randomUUID()}`,
-      source_type: "manual",
-      title: title.trim(),
-      start_time: startISO,
-      status: "booked",
-      imported_at: new Date().toISOString(),
-    });
-    setTitle("");
-    setDate("");
-    setTime("");
-    setShowManual(false);
+
+    setSaving(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        toast({ title: "Please sign in", variant: "destructive" });
+        return;
+      }
+
+      // Insert into agenda_events so we get a DB id and can sync to Google
+      const { data: inserted, error: insErr } = await supabase
+        .from("agenda_events")
+        .insert({
+          user_id: userData.user.id,
+          source_type: "manual",
+          title: title.trim(),
+          start_time: startISO,
+          status: "booked",
+          imported_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+
+      await refreshDb();
+
+      // Push to Google Calendar if we have a start time
+      if (startISO && inserted?.id) {
+        const { data: pushData, error: pushErr } = await supabase.functions.invoke(
+          "google-calendar-push",
+          { body: { agenda_event_id: inserted.id, action: "upsert" } },
+        );
+        const errCode = (pushData as { error?: string } | null)?.error;
+        if (pushErr || errCode) {
+          if (errCode === "calendar_scope_missing" || errCode === "reauth_required") {
+            toast({
+              title: "Reconnect Google Calendar",
+              description: "We need write access to push events. Click Connect to re-authorize.",
+              variant: "destructive",
+            });
+          } else if (errCode === "not_connected") {
+            toast({
+              title: "Saved locally",
+              description: "Connect Google Calendar to sync this event.",
+            });
+          } else {
+            toast({
+              title: "Couldn't sync to Google",
+              description: pushErr?.message ?? errCode ?? "Unknown error",
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({ title: "Added", description: "Synced to Google Calendar." });
+          await refreshDb();
+        }
+      } else {
+        toast({ title: "Added to agenda" });
+      }
+
+      setTitle("");
+      setDate("");
+      setTime("");
+      setShowManual(false);
+    } catch (e) {
+      toast({
+        title: "Couldn't add event",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
