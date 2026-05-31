@@ -659,25 +659,25 @@ export default function FlaggedReviewSection() {
       ? new Date(item.intent_classified_at).getTime()
       : 0;
 
-    // ONLY replace voice-message stubs with a real transcript. Do NOT use the
-    // Activity feed to override an otherwise-valid incoming message — Activity
-    // rows are written whenever the pipeline processes a message (including
-    // when we send a reply), so a fresh Activity row for this sender can carry
-    // older text (or the outgoing reply) and would otherwise clobber the real
-    // latest incoming once the user hits Send.
+    // Always replace voice-message stubs with a real transcript when we have one.
     if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
       return candidate.text;
     }
 
-    // Exception: if Activity has a newer real transcript paired with a nearby
-    // voice/review stub, treat it as the latest inbound voice message even when
-    // the flagged row itself failed to advance. Compare against classification
-    // time, not updated_at, because sending/retrying drafts can bump updated_at
-    // on an old flagged row and make stale text like "n acredito" look newer.
+    // For non-stub cards, the flagged row's `latest_message` only refreshes
+    // when the extension calls classify-intent on each new inbound. When that
+    // doesn't fire (or races a send), the card shows stale text while a newer
+    // real inbound already exists in the Activity feed. Substitute it when:
+    //   - Activity has a real (non-stub) text that differs from the current,
+    //   - Activity's createdAt is meaningfully newer than the flagged row's
+    //     classification time (30s buffer avoids the same-inbound row that
+    //     gets appended when *we* send a reply).
+    // We compare against intent_classified_at (not updated_at) because
+    // sending/retrying drafts can bump updated_at on an old flagged row.
     if (
       !isVoiceStub(candidate.text) &&
-      candidate.hasNearbyStub &&
-      (!classifiedTs || candidate.createdAt > classifiedTs)
+      candidate.text !== current &&
+      (!classifiedTs || candidate.createdAt > classifiedTs + 30_000)
     ) {
       return candidate.text;
     }
