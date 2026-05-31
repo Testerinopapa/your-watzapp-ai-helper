@@ -989,7 +989,10 @@ export default function FlaggedReviewSection() {
     const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText = existing?.latest_message ?? existing?.preview ?? "";
-    const useText = !existing || (isVoiceStub(existingText) && text && !isVoiceStub(text));
+    const useText =
+      !existing ||
+      !existingText ||
+      (text && !isVoiceStub(text) && (isVoiceStub(existingText) || text !== existingText));
     const createdAt = new Date(r.createdAt).getTime();
     const existingAt = existing ? new Date(existing.updated_at).getTime() : 0;
     if (!existing || useText || createdAt > existingAt) {
