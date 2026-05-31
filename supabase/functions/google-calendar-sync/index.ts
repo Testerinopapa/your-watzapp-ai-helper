@@ -8,7 +8,11 @@ const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CLIENT_ID = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID")!;
 const CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET")!;
-const REQUIRED_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const CALENDAR_SCOPES = [
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar",
+];
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -18,7 +22,8 @@ function jsonResponse(body: Record<string, unknown>, status = 200) {
 }
 
 function hasCalendarScope(scope: string | null | undefined) {
-  return (scope ?? "").split(/\s+/).includes(REQUIRED_CALENDAR_SCOPE);
+  const parts = (scope ?? "").split(/\s+/);
+  return CALENDAR_SCOPES.some((s) => parts.includes(s));
 }
 
 async function refreshAccessToken(refreshToken: string) {

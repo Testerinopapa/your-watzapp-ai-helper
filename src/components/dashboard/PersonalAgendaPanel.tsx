@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const MINT = "#2dd4a8";
 const MINT_BRIGHT = "#73ffb8";
@@ -299,8 +301,9 @@ export default function PersonalAgendaPanel({
 }: {
   onConnectClick?: () => void;
 }) {
-  const { entries: localEntries, remove: removeLocal, upsert } = usePersonalAgenda();
-  const { entries: dbEntries, remove: removeDb } = useAgendaEvents();
+  const { entries: localEntries, remove: removeLocal } = usePersonalAgenda();
+  const { entries: dbEntries, remove: removeDb, refresh: refreshDb } = useAgendaEvents();
+  const { toast } = useToast();
   const entries = useMemo(() => {
     const seen = new Set<string>();
     const all: AgendaEntry[] = [];
@@ -311,8 +314,33 @@ export default function PersonalAgendaPanel({
     }
     return all;
   }, [localEntries, dbEntries]);
-  const dbIds = useMemo(() => new Set(dbEntries.map((e) => e.id)), [dbEntries]);
-  const remove = (id: string) => (dbIds.has(id) ? removeDb(id) : removeLocal(id));
+  const dbEntriesById = useMemo(
+    () => new Map(dbEntries.map((e) => [e.id, e])),
+    [dbEntries],
+  );
+  const remove = async (id: string) => {
+    const dbEntry = dbEntriesById.get(id);
+    if (dbEntry) {
+      // If it's a Google-synced event, delete on Google first
+      if (dbEntry.source_type === "google_calendar" && dbEntry.source_event_id) {
+        try {
+          const { error } = await supabase.functions.invoke("google-calendar-push", {
+            body: { agenda_event_id: id, action: "delete" },
+          });
+          if (error) throw error;
+        } catch (e) {
+          toast({
+            title: "Couldn't remove from Google Calendar",
+            description: (e as Error).message,
+            variant: "destructive",
+          });
+          // continue with local delete anyway
+        }
+      }
+      return removeDb(id);
+    }
+    return removeLocal(id);
+  };
   const conflicts = useMemo(() => detectConflicts(entries), [entries]);
   const now = new Date();
   const todayStart = startOfDay(now);
@@ -336,8 +364,9 @@ export default function PersonalAgendaPanel({
   const [title, setTitle] = useState("");
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  const addManual = () => {
+  const addManual = async () => {
     if (!title.trim()) return;
     let startISO: string | null = null;
     if (date) {
@@ -346,18 +375,79 @@ export default function PersonalAgendaPanel({
       d.setHours(hh || 0, mm || 0, 0, 0);
       startISO = d.toISOString();
     }
-    upsert({
-      id: `manual-${crypto.randomUUID()}`,
-      source_type: "manual",
-      title: title.trim(),
-      start_time: startISO,
-      status: "booked",
-      imported_at: new Date().toISOString(),
-    });
-    setTitle("");
-    setDate("");
-    setTime("");
-    setShowManual(false);
+
+    setSaving(true);
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user) {
+        toast({ title: "Please sign in", variant: "destructive" });
+        return;
+      }
+
+      // Insert into agenda_events so we get a DB id and can sync to Google
+      const { data: inserted, error: insErr } = await supabase
+        .from("agenda_events")
+        .insert({
+          user_id: userData.user.id,
+          source_type: "manual",
+          title: title.trim(),
+          start_time: startISO,
+          status: "booked",
+          imported_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single();
+      if (insErr) throw insErr;
+
+      await refreshDb();
+
+      // Push to Google Calendar if we have a start time
+      if (startISO && inserted?.id) {
+        const { data: pushData, error: pushErr } = await supabase.functions.invoke(
+          "google-calendar-push",
+          { body: { agenda_event_id: inserted.id, action: "upsert" } },
+        );
+        const errCode = (pushData as { error?: string } | null)?.error;
+        if (pushErr || errCode) {
+          if (errCode === "calendar_scope_missing" || errCode === "reauth_required") {
+            toast({
+              title: "Reconnect Google Calendar",
+              description: "We need write access to push events. Click Connect to re-authorize.",
+              variant: "destructive",
+            });
+          } else if (errCode === "not_connected") {
+            toast({
+              title: "Saved locally",
+              description: "Connect Google Calendar to sync this event.",
+            });
+          } else {
+            toast({
+              title: "Couldn't sync to Google",
+              description: pushErr?.message ?? errCode ?? "Unknown error",
+              variant: "destructive",
+            });
+          }
+        } else {
+          toast({ title: "Added", description: "Synced to Google Calendar." });
+          await refreshDb();
+        }
+      } else {
+        toast({ title: "Added to agenda" });
+      }
+
+      setTitle("");
+      setDate("");
+      setTime("");
+      setShowManual(false);
+    } catch (e) {
+      toast({
+        title: "Couldn't add event",
+        description: (e as Error).message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -416,10 +506,10 @@ export default function PersonalAgendaPanel({
           <Button
             size="sm"
             onClick={addManual}
-            disabled={!title.trim()}
+            disabled={!title.trim() || saving}
             className="w-full bg-[#2dd4a8] text-[#0a1620] hover:bg-[#73ffb8]"
           >
-            Add to agenda
+            {saving ? "Saving…" : "Add to agenda"}
           </Button>
         </div>
       )}
