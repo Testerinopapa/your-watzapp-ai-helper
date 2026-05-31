@@ -991,7 +991,7 @@ export default function FlaggedReviewSection() {
     // subscription isn't delivering events.
     const pollId = setInterval(async () => {
       const waitingThreadIds = Object.entries(draftsRef.current)
-        .filter(([, d]) => d.phase === "waiting" && d.draftId)
+        .filter(([, d]) => (d as DraftState).phase === "waiting" && (d as DraftState).draftId)
         .map(([tid]) => tid);
       if (waitingThreadIds.length === 0) return;
 
