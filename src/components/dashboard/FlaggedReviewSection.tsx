@@ -681,6 +681,10 @@ export default function FlaggedReviewSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+  const draftsRef = useRef<Record<string, DraftState>>({});
+  useEffect(() => {
+    draftsRef.current = drafts;
+  }, [drafts]);
 
   // Timeout handles keyed by thread_id
   const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
