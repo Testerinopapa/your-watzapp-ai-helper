@@ -174,6 +174,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
   const senderLabel = senderLabelForItem(item) || "Unknown sender";
+  const backlog = (item as FlaggedMessage & { backlog_count?: number }).backlog_count ?? 0;
 
   return (
     <Card
@@ -192,6 +193,15 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
               <div className="flex items-center gap-1.5 text-sm font-medium truncate">
                 <MessageCircle size={14} className="text-muted-foreground shrink-0" />
                 <span className="truncate">{senderLabel}</span>
+                {backlog > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 h-5 px-1.5 text-[10px] font-semibold shrink-0"
+                    title={`${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
+                  >
+                    +{backlog}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
@@ -208,6 +218,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             {trailing}
           </div>
         </div>
+
 
         <div className="space-y-1">
           {item.intent_category && (
