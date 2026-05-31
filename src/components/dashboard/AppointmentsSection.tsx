@@ -324,7 +324,7 @@ export default function AppointmentsSection() {
             value="booked"
             className="data-[state=active]:bg-[#2dd4a8]/15 data-[state=active]:text-[#73ffb8] text-white/60"
           >
-            Booked for you
+            Booked by agent
           </TabsTrigger>
           <TabsTrigger
             value="agenda"
