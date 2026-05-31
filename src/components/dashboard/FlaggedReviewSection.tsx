@@ -711,8 +711,7 @@ export default function FlaggedReviewSection() {
 
   const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
     (
-      r.thread_id ??
-      r.threadId ??
+      (r.thread_id ?? r.threadId) ||
       cleanSenderLabel(r.senderEmail) ||
       cleanSenderLabel(r.sender) ||
       cleanSenderLabel(r.contactName) ||
