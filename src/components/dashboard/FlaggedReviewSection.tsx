@@ -840,7 +840,6 @@ export default function FlaggedReviewSection() {
       }
     }
 
-    clearTimeoutFor(id);
     updateDraft(id, {
       loading: true,
       error: null,
@@ -895,36 +894,14 @@ export default function FlaggedReviewSection() {
         (body && (body.draft_id ?? body.draftId)) ?? null;
       if (!draft) throw new Error("No draft returned");
 
-      if (draftId) {
-        draftToThreadRef.current[draftId] = id;
-      }
-
       updateDraft(id, {
         loading: false,
         draft: String(draft),
         error: null,
         draftId,
-        phase: draftId ? "waiting" : "idle",
+        phase: "sent",
+        sentAt: new Date().toISOString(),
       });
-
-      // 60s client-side timeout — show warning if no terminal state
-      if (draftId) {
-        timeoutsRef.current[id] = setTimeout(() => {
-          setDrafts((prev) => {
-            const cur = prev[id];
-            if (!cur || cur.phase !== "waiting") return prev;
-            return {
-              ...prev,
-              [id]: {
-                ...cur,
-                phase: "timeout",
-                error:
-                  "Extension didn't pick this up — is WhatsApp Web open?",
-              },
-            };
-          });
-        }, 60_000);
-      }
     } catch (e) {
       updateDraft(id, {
         loading: false,
@@ -937,53 +914,6 @@ export default function FlaggedReviewSection() {
   const generateDraft = (item: FlaggedMessage) => callDraftFunction(item);
   const retryDraft = (item: FlaggedMessage) => callDraftFunction(item);
 
-  const cancelPendingSend = async (item: FlaggedMessage) => {
-    const id = item.thread_id;
-    const cur = drafts[id];
-    if (!cur?.draftId) return;
-    clearTimeoutFor(id);
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not signed in");
-      const res = await fetch(
-        `${FLAGGED_SUPABASE_URL}/functions/v1/cancel-pending-send`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            apikey: FLAGGED_ANON_KEY,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            thread_id: item.thread_id,
-            provider: (item.provider || "whatsapp").trim(),
-            draft_id: cur.draftId,
-          }),
-        },
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(text || `Cancel failed (${res.status})`);
-      }
-      updateDraft(id, { phase: "idle", error: null });
-      toast({ title: "Cancelled", description: "Pending send cancelled." });
-    } catch (e) {
-      updateDraft(id, {
-        phase: "error",
-        error: (e as Error)?.message ?? "Failed to cancel",
-      });
-    }
-  };
-
-  // Clear all timeouts on unmount
-  useEffect(() => {
-    return () => {
-      for (const t of Object.values(timeoutsRef.current)) clearTimeout(t);
-      timeoutsRef.current = {};
-    };
-  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -1005,143 +935,6 @@ export default function FlaggedReviewSection() {
     }
   }, [assignments]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    const client = getFlaggedRealtimeClient();
-    let cancelled = false;
-    let channel: ReturnType<typeof client.channel> | null = null;
-
-    const applyRow = (row: Record<string, unknown> | undefined, source: string) => {
-      if (!row) return;
-      const threadId = row.thread_id as string | undefined;
-      if (!threadId) return;
-      const status = row.status_value as string | undefined;
-      const lastKey = row.last_auto_sent_message_key as string | undefined;
-      const lastAt = row.last_auto_sent_at as string | undefined;
-      const lastError = row.last_error as string | undefined;
-
-      console.log("[flagged] thread_states update", source, {
-        threadId,
-        status,
-        lastKey,
-        lastAt,
-        lastError,
-      });
-
-      setDrafts((prev) => {
-        const cur = prev[threadId];
-        if (!cur || !cur.draftId || cur.phase !== "waiting") return prev;
-
-        const keyMatches = lastKey && lastKey === cur.draftId;
-        const looksSent =
-          status === "sent" ||
-          status === "delivered" ||
-          status === "completed" ||
-          !!keyMatches;
-
-        if (looksSent) {
-          clearTimeoutFor(threadId);
-          return {
-            ...prev,
-            [threadId]: {
-              ...cur,
-              phase: "sent",
-              sentAt: lastAt ?? new Date().toISOString(),
-              error: null,
-            },
-          };
-        }
-        if (lastError) {
-          clearTimeoutFor(threadId);
-          return {
-            ...prev,
-            [threadId]: { ...cur, phase: "error", error: lastError },
-          };
-        }
-        return prev;
-      });
-    };
-
-    (async () => {
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (session?.access_token) {
-          client.realtime.setAuth(session.access_token);
-        }
-      } catch {
-        /* ignore */
-      }
-      if (cancelled) return;
-
-      channel = client
-        .channel(`flagged-thread-states-${user.id}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "thread_states",
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            applyRow(
-              (payload.new ?? payload.old) as Record<string, unknown> | undefined,
-              "realtime",
-            );
-            refetch();
-            refetchUsage();
-          },
-        )
-        .subscribe((status) => {
-          console.log("[flagged] realtime status:", status);
-        });
-    })();
-
-    // Polling fallback — every 4s, check thread_states for any draft in
-    // "waiting" phase via REST. This sidesteps realtime entirely if the
-    // subscription isn't delivering events.
-    const pollId = setInterval(async () => {
-      const waitingThreadIds = Object.entries(draftsRef.current)
-        .filter(([, d]) => (d as DraftState).phase === "waiting" && (d as DraftState).draftId)
-        .map(([tid]) => tid);
-      if (waitingThreadIds.length === 0) return;
-
-      try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) return;
-
-        const inList = waitingThreadIds
-          .map((t) => `"${t.replace(/"/g, '\\"')}"`)
-          .join(",");
-        const url =
-          `${FLAGGED_SUPABASE_URL}/rest/v1/thread_states` +
-          `?select=thread_id,status_value,last_auto_sent_message_key,last_auto_sent_at,last_error` +
-          `&thread_id=in.(${encodeURIComponent(inList)})`;
-
-        const res = await fetch(url, {
-          headers: {
-            apikey: FLAGGED_ANON_KEY,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        });
-        if (!res.ok) return;
-        const rows = (await res.json()) as Record<string, unknown>[];
-        for (const r of rows) applyRow(r, "poll");
-      } catch (e) {
-        console.log("[flagged] poll error", e);
-      }
-    }, 4000);
-
-    return () => {
-      cancelled = true;
-      clearInterval(pollId);
-      if (channel) client.removeChannel(channel);
-    };
-  }, [user?.id, refetch, refetchUsage]);
 
 
   const all: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
@@ -1345,7 +1138,6 @@ export default function FlaggedReviewSection() {
                           }
                           onGenerate={() => generateDraft(item)}
                           onRetry={() => retryDraft(item)}
-                          onCancel={() => cancelPendingSend(item)}
                         />
                       }
                     />
