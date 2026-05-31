@@ -184,6 +184,14 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
               {item.intent_category}
             </Badge>
           )}
+          {(item.latest_message || item.preview || item.subject) && (
+            <p
+              className="text-xs text-foreground/90 line-clamp-3 whitespace-pre-wrap leading-relaxed"
+              title={item.latest_message ?? item.preview ?? item.subject ?? undefined}
+            >
+              “{item.latest_message ?? item.preview ?? item.subject}”
+            </p>
+          )}
           {item.intent_reason && (
             <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
               {item.intent_reason}
