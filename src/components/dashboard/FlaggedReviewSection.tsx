@@ -725,8 +725,71 @@ export default function FlaggedReviewSection() {
     )
       .trim()
       .slice(0, 4000);
-    const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
-    if (!incomingMessage || !instruction) return;
+    const userInstruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
+    if (!incomingMessage || !userInstruction) return;
+
+    // For appointment-category messages, pull the user's next 30 days of
+    // calendar events from agenda_events and prepend them to the instruction
+    // so the external draft agent can propose/accept times without
+    // double-booking. Silent fallback: if the fetch fails, we still draft.
+    let instruction = userInstruction;
+    if ((item.intent_category ?? "").toLowerCase() === "appointment") {
+      try {
+        const nowIso = new Date().toISOString();
+        const horizonIso = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        ).toISOString();
+        const { data: events } = await supabase
+          .from("agenda_events")
+          .select("title, start_time, end_time, timezone, location")
+          .gte("end_time", nowIso)
+          .lte("start_time", horizonIso)
+          .order("start_time", { ascending: true })
+          .limit(60);
+
+        const tz =
+          Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+        const fmt = new Intl.DateTimeFormat("en-GB", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: tz,
+        });
+        const fmtTime = new Intl.DateTimeFormat("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: tz,
+        });
+
+        const lines = (events ?? [])
+          .filter((e) => e.start_time && e.end_time)
+          .map((e) => {
+            const start = fmt.format(new Date(e.start_time as string));
+            const end = fmtTime.format(new Date(e.end_time as string));
+            const loc = e.location ? ` @ ${e.location}` : "";
+            const title = e.title?.trim() || "(busy)";
+            return `- ${start}–${end} — ${title}${loc}`;
+          });
+
+        const calendarBlock =
+          lines.length > 0
+            ? `CALENDAR CONTEXT (user's busy times, next 30 days, ${tz}):\n${lines.join(
+                "\n",
+              )}\n\nUse this to propose or confirm times. Never suggest a slot that overlaps a busy block. If the incoming message proposes a time that conflicts, politely suggest the nearest free alternative.`
+            : `CALENDAR CONTEXT: User has no scheduled events in the next 30 days (${tz}). Any reasonable time can be proposed.`;
+
+        instruction = `${calendarBlock}\n\n---\n\n${userInstruction}`.slice(
+          0,
+          8000,
+        );
+      } catch (err) {
+        console.warn("[flagged] failed to load calendar context", err);
+      }
+    }
 
     clearTimeoutFor(id);
     updateDraft(id, {
