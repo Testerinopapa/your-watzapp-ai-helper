@@ -235,6 +235,7 @@ const defaultDraft: DraftState = {
 
 function DraftReplyFooter({
   item,
+  enrichedMessage,
   state,
   onChange,
   onClose,
@@ -243,6 +244,7 @@ function DraftReplyFooter({
   onCancel,
 }: {
   item: FlaggedMessage;
+  enrichedMessage?: string | null;
   state: DraftState;
   onChange: (patch: Partial<DraftState>) => void;
   onClose: () => void;
@@ -250,7 +252,13 @@ function DraftReplyFooter({
   onRetry: () => void;
   onCancel: () => void;
 }) {
-  const incoming = (item.latest_message ?? item.preview ?? item.subject ?? "").trim();
+  const incoming = (
+    enrichedMessage ??
+    item.latest_message ??
+    item.preview ??
+    item.subject ??
+    ""
+  ).trim();
   const hasIncoming = incoming.length > 0;
   const trimmedInstruction = state.instruction.trim();
   const canGenerate = hasIncoming && trimmedInstruction.length > 0 && !state.loading;
