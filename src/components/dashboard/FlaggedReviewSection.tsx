@@ -92,7 +92,20 @@ type FolderDef = { id: string; name: string };
 
 const FOLDERS_KEY = "flagged.folders.v2";
 const ASSIGNMENTS_KEY = "flagged.assignments.v2";
+const DISMISSED_KEY = "flagged.dismissed.v1";
 const FOLDER_DROP_PREFIX = "folder-drop:";
+const TRASH_DROP_ID = "flagged-trash-drop";
+
+function loadDismissed(): string[] {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const DEFAULT_FOLDERS: FolderDef[] = [
   { id: "needs-review", name: "Needs review" },
@@ -603,6 +616,33 @@ function FolderTile({
 }
 
 // =====================================================================
+// Trash drop zone
+// =====================================================================
+
+function TrashDropZone({ isAnyDragging }: { isAnyDragging: boolean }) {
+  const { isOver, setNodeRef } = useDroppable({ id: TRASH_DROP_ID });
+  return (
+    <div
+      ref={setNodeRef}
+      aria-label="Drop here to delete"
+      className={cn(
+        "rounded-xl border border-dashed px-4 py-3 flex items-center justify-center gap-2 text-sm transition-all select-none",
+        "border-destructive/40 text-destructive/80 bg-destructive/[0.04]",
+        isAnyDragging && !isOver && "border-destructive/60 bg-destructive/[0.08]",
+        isOver &&
+          "scale-[1.02] border-destructive text-destructive bg-destructive/15 shadow-[0_0_28px_hsl(var(--destructive)/0.45)]",
+        !isAnyDragging && "opacity-60",
+      )}
+    >
+      <Trash2 size={16} />
+      <span className="font-medium">
+        {isOver ? "Release to delete" : "Drag here to delete"}
+      </span>
+    </div>
+  );
+}
+
+// =====================================================================
 // Main
 // =====================================================================
 
@@ -746,6 +786,7 @@ export default function FlaggedReviewSection() {
   const [assignments, setAssignments] = useState<Record<string, string>>(() =>
     loadAssignments(),
   );
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(loadDismissed()));
   const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(null);
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -980,6 +1021,30 @@ export default function FlaggedReviewSection() {
     }
   }, [assignments]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
+    } catch {
+      /* ignore */
+    }
+  }, [dismissed]);
+
+  const dismissKeysFor = (m: FlaggedMessage): string[] => {
+    const keys = [m.thread_id];
+    const sk = normalizeLookup(m.sender ?? "");
+    if (sk) keys.push(`sender:${sk}`);
+    return keys;
+  };
+  const isDismissed = (m: FlaggedMessage) => dismissKeysFor(m).some((k) => dismissed.has(k));
+  const dismissItem = (m: FlaggedMessage) => {
+    const keys = dismissKeysFor(m);
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) next.add(k);
+      return next;
+    });
+  };
+
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
   const activityGroups = new Map<string, FlaggedMessage>();
   for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
@@ -1023,6 +1088,7 @@ export default function FlaggedReviewSection() {
   const seen = new Set<string>();
   const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
+    if (isDismissed(m)) continue;
     const key = m.sender ?? m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1087,9 +1153,33 @@ export default function FlaggedReviewSection() {
   };
   const handleDragEnd = (e: DragEndEvent) => {
     const overId = e.over?.id;
-    if (typeof overId === "string" && overId.startsWith(FOLDER_DROP_PREFIX) && activeItem) {
-      const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
-      moveToFolder(activeItem.thread_id, folderId);
+    if (typeof overId === "string" && activeItem) {
+      if (overId === TRASH_DROP_ID) {
+        const item = activeItem;
+        dismissItem(item);
+        toast({
+          title: "Flagged message deleted",
+          description: `${item.sender ?? "Thread"} removed from review.`,
+          action: (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                setDismissed((prev) => {
+                  const next = new Set(prev);
+                  for (const k of dismissKeysFor(item)) next.delete(k);
+                  return next;
+                })
+              }
+            >
+              Undo
+            </Button>
+          ),
+        });
+      } else if (overId.startsWith(FOLDER_DROP_PREFIX)) {
+        const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
+        moveToFolder(activeItem.thread_id, folderId);
+      }
     }
     setActiveItem(null);
   };
@@ -1242,6 +1332,12 @@ export default function FlaggedReviewSection() {
             />
           </div>
         )}
+
+        {(deduped.length > 0 || activeItem) && (
+          <TrashDropZone isAnyDragging={activeItem !== null} />
+        )}
+
+
 
         {/* Create folder dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
