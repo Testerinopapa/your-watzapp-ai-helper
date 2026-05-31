@@ -92,7 +92,20 @@ type FolderDef = { id: string; name: string };
 
 const FOLDERS_KEY = "flagged.folders.v2";
 const ASSIGNMENTS_KEY = "flagged.assignments.v2";
+const DISMISSED_KEY = "flagged.dismissed.v1";
 const FOLDER_DROP_PREFIX = "folder-drop:";
+const TRASH_DROP_ID = "flagged-trash-drop";
+
+function loadDismissed(): string[] {
+  try {
+    const raw = localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 const DEFAULT_FOLDERS: FolderDef[] = [
   { id: "needs-review", name: "Needs review" },
