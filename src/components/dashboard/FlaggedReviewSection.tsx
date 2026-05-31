@@ -174,6 +174,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
   const senderLabel = senderLabelForItem(item) || "Unknown sender";
+  const backlog = (item as FlaggedMessage & { backlog_count?: number }).backlog_count ?? 0;
 
   return (
     <Card
@@ -192,6 +193,15 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
               <div className="flex items-center gap-1.5 text-sm font-medium truncate">
                 <MessageCircle size={14} className="text-muted-foreground shrink-0" />
                 <span className="truncate">{senderLabel}</span>
+                {backlog > 0 && (
+                  <Badge
+                    variant="secondary"
+                    className="ml-1 h-5 px-1.5 text-[10px] font-semibold shrink-0"
+                    title={`${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
+                  >
+                    +{backlog}
+                  </Badge>
+                )}
               </div>
             </div>
           </div>
@@ -208,6 +218,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             {trailing}
           </div>
         </div>
+
 
         <div className="space-y-1">
           {item.intent_category && (
@@ -1136,15 +1147,21 @@ export default function FlaggedReviewSection() {
     return Math.max(...candidates.map((s) => new Date(s).getTime()));
   };
   const sorted = [...all].sort((a, b) => recencyOf(b) - recencyOf(a));
-  const seen = new Set<string>();
-  const deduped: FlaggedMessage[] = [];
+  // One pill per sender. Newest message wins (sorted desc); older messages from
+  // the same sender become a backlog count surfaced on the pill.
+  const groups = new Map<string, FlaggedMessage & { backlog_count?: number }>();
   for (const m of sorted) {
     if (isDismissed(m)) continue;
-    const key = m.sender ?? m.thread_id;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    deduped.push(m);
+    const senderKey = normalizeLookup(senderLabelForItem(m) || m.sender || "");
+    const key = senderKey || m.thread_id;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, { ...m, backlog_count: 0 });
+    } else {
+      existing.backlog_count = (existing.backlog_count ?? 0) + 1;
+    }
   }
+  const deduped: FlaggedMessage[] = Array.from(groups.values());
 
   const folderIds = new Set(folders.map((f) => f.id));
   const ungrouped = deduped.filter((m) => {
