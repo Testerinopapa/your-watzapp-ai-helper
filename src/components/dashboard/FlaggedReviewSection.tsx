@@ -992,7 +992,7 @@ export default function FlaggedReviewSection() {
     const useText =
       !existing ||
       !existingText ||
-      (text && !isVoiceStub(text) && (isVoiceStub(existingText) || text !== existingText));
+      Boolean(text && !isVoiceStub(text) && (isVoiceStub(existingText) || text !== existingText));
     const createdAt = new Date(r.createdAt).getTime();
     const existingAt = existing ? new Date(existing.updated_at).getTime() : 0;
     if (!existing || useText || createdAt > existingAt) {
