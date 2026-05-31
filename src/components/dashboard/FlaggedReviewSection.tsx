@@ -699,6 +699,7 @@ export default function FlaggedReviewSection() {
       r.sender,
       r.contactName,
       r.subject,
+      senderLabelForActivity(r),
       threadContactKey(r.thread_id ?? r.threadId),
       normalizePhone(r.senderEmail),
       normalizePhone(r.thread_id ?? r.threadId),
@@ -759,9 +760,8 @@ export default function FlaggedReviewSection() {
   // Some WhatsApp rows expose names while others expose phone/thread ids; a
   // sender-only map was why Dominique updated while other cards stayed stale.
   const enrichedByKey = (() => {
-    const rows = usageData?.recent ?? [];
     const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
-    for (const r of rows) {
+    for (const r of activityRows) {
       const text = textForActivity(r);
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
@@ -1098,10 +1098,10 @@ export default function FlaggedReviewSection() {
 
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
   const activityGroups = new Map<string, FlaggedMessage>();
-  for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
+  for (const [index, r] of activityRows.filter(isFlaggedActivity).entries()) {
     const text = textForActivity(r);
     const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
-    const sender = r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender";
+    const sender = senderLabelForActivity(r) || senderFromThreadId(fallbackId) || fallbackId;
     const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText = existing?.latest_message ?? existing?.preview ?? "";
