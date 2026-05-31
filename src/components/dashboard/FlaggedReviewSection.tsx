@@ -710,8 +710,45 @@ export default function FlaggedReviewSection() {
     (r.latestMessage ?? r.preview ?? "").trim();
 
   const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.thread_id ?? r.threadId ?? cleanSenderLabel(r.senderEmail) || cleanSenderLabel(r.sender) || cleanSenderLabel(r.contactName) || cleanSenderLabel(r.subject) || "")
-      .trim();
+    (
+      r.thread_id ??
+      r.threadId ??
+      cleanSenderLabel(r.senderEmail) ||
+      cleanSenderLabel(r.sender) ||
+      cleanSenderLabel(r.contactName) ||
+      cleanSenderLabel(r.subject) ||
+      ""
+    ).trim();
+
+  const activityRows = usageData?.recent ?? [];
+
+  const senderLabelForActivity = (
+    r: NonNullable<typeof usageData>["recent"][number],
+    rows: NonNullable<typeof usageData>["recent"] = activityRows,
+  ) => {
+    const direct =
+      cleanSenderLabel(r.senderEmail) ||
+      cleanSenderLabel(r.sender) ||
+      cleanSenderLabel(r.contactName) ||
+      cleanSenderLabel(r.subject) ||
+      senderFromThreadId(r.thread_id ?? r.threadId);
+    if (direct) return direct;
+
+    const currentAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+    const neighbor = rows
+      .map((candidate) => ({
+        label:
+          cleanSenderLabel(candidate.senderEmail) ||
+          cleanSenderLabel(candidate.sender) ||
+          cleanSenderLabel(candidate.contactName) ||
+          cleanSenderLabel(candidate.subject) ||
+          senderFromThreadId(candidate.thread_id ?? candidate.threadId),
+        distance: Math.abs(new Date(candidate.createdAt).getTime() - currentAt),
+      }))
+      .filter((candidate) => candidate.label && candidate.distance <= 2 * 60 * 1000)
+      .sort((a, b) => a.distance - b.distance)[0];
+    return neighbor?.label ?? "";
+  };
 
   const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
     const decision = (r.decision ?? "").toLowerCase();
