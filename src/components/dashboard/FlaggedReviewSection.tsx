@@ -1088,6 +1088,7 @@ export default function FlaggedReviewSection() {
   const seen = new Set<string>();
   const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
+    if (isDismissed(m)) continue;
     const key = m.sender ?? m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
