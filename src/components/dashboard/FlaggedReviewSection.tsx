@@ -604,41 +604,70 @@ export default function FlaggedReviewSection() {
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
   const { data: usageData, refetch: refetchUsage } = useSendSmartUsage();
 
-  // Build a sender -> richest recent message text map from the Activity feed
-  // so we can substitute "[Voice message] 1×" stubs with the real transcript.
-  const normalizeSender = (s: string | null | undefined) =>
-    (s ?? "").trim().toLowerCase();
-  const enrichedBySender = useMemo(() => {
-    // Keep the freshest real activity text per sender, plus whether it belongs
-    // to a nearby voice/review batch. Only those newer batches are allowed to
-    // override a non-stub flagged row, which prevents sent replies from
-    // clobbering the panel with arbitrary older text.
+  const normalizeLookup = (s: string | null | undefined) =>
+    (s ?? "")
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  const normalizePhone = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
+  const threadContactKey = (threadId: string | null | undefined) => {
+    const raw = (threadId ?? "").split("|")[0]?.replace(/^\w+:/, "") ?? "";
+    return normalizeLookup(raw);
+  };
+  const lookupKeysForFlagged = (item: FlaggedMessage) => {
+    const keys = [
+      item.thread_id,
+      item.sender,
+      item.subject,
+      threadContactKey(item.thread_id),
+      normalizePhone(item.sender),
+      normalizePhone(item.thread_id),
+    ];
+    return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
+  };
+  const lookupKeysForActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
+    const keys = [
+      r.thread_id,
+      r.threadId,
+      r.senderEmail,
+      r.sender,
+      r.contactName,
+      r.subject,
+      threadContactKey(r.thread_id ?? r.threadId),
+      normalizePhone(r.senderEmail),
+      normalizePhone(r.thread_id ?? r.threadId),
+    ];
+    return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
+  };
+
+  // Build a multi-key lookup from the Activity feed so flagged cards can be
+  // refreshed by exact thread id, contact name, sender label, or phone number.
+  // Some WhatsApp rows expose names while others expose phone/thread ids; a
+  // sender-only map was why Dominique updated while other cards stayed stale.
+  const enrichedByKey = useMemo(() => {
     const rows = usageData?.recent ?? [];
-    const map = new Map<string, { text: string; createdAt: number; hasNearbyStub: boolean }>();
+    const map = new Map<string, { text: string; createdAt: number }>();
     for (const r of rows) {
-      const key = normalizeSender(r.senderEmail);
-      if (!key) continue;
       const text = (r.latestMessage ?? r.preview ?? "").trim();
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
-      const hasNearbyStub = rows.some((other) => {
-        if (normalizeSender(other.senderEmail) !== key) return false;
-        const otherText = (other.latestMessage ?? other.preview ?? "").trim();
-        const otherAt = other.createdAt ? new Date(other.createdAt).getTime() : 0;
-        return isVoiceStub(otherText) && Math.abs(otherAt - createdAt) < 2 * 60 * 1000;
-      });
-      const existing = map.get(key);
-      if (!existing) {
-        map.set(key, { text, createdAt, hasNearbyStub });
-        continue;
-      }
-      const existingIsStub = isVoiceStub(existing.text);
-      const candidateIsStub = isVoiceStub(text);
-      // Prefer real transcript over stub; otherwise prefer the newer entry.
-      if (existingIsStub && !candidateIsStub) {
-        map.set(key, { text, createdAt, hasNearbyStub });
-      } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
-        map.set(key, { text, createdAt, hasNearbyStub });
+      for (const key of lookupKeysForActivity(r)) {
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, { text, createdAt });
+          continue;
+        }
+        const existingIsStub = isVoiceStub(existing.text);
+        const candidateIsStub = isVoiceStub(text);
+        // Prefer real transcript over stub; otherwise prefer the newer entry.
+        if (existingIsStub && !candidateIsStub) {
+          map.set(key, { text, createdAt });
+        } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+          map.set(key, { text, createdAt });
+        }
       }
     }
     return map;
@@ -652,8 +681,11 @@ export default function FlaggedReviewSection() {
 
   const enrichedMessageFor = (item: FlaggedMessage): string | null => {
     const current = (item.latest_message ?? item.preview ?? "").trim();
-    const key = normalizeSender(item.sender);
-    const candidate = enrichedBySender.get(key);
+    const candidates = lookupKeysForFlagged(item)
+      .map((key) => enrichedByKey.get(key))
+      .filter((c): c is { text: string; createdAt: number } => Boolean(c))
+      .sort((a, b) => b.createdAt - a.createdAt);
+    const candidate = candidates[0];
     if (!candidate) return null;
     const classifiedTs = item.intent_classified_at
       ? new Date(item.intent_classified_at).getTime()
