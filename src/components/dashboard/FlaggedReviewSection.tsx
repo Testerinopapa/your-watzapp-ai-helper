@@ -206,10 +206,8 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
 type DraftPhase =
   | "idle"
   | "generating"
-  | "waiting"
   | "sent"
-  | "error"
-  | "timeout";
+  | "error";
 
 type DraftState = {
   open: boolean;
@@ -241,7 +239,6 @@ function DraftReplyFooter({
   onClose,
   onGenerate,
   onRetry,
-  onCancel,
 }: {
   item: FlaggedMessage;
   enrichedMessage?: string | null;
@@ -250,7 +247,6 @@ function DraftReplyFooter({
   onClose: () => void;
   onGenerate: () => void;
   onRetry: () => void;
-  onCancel: () => void;
 }) {
   const incoming = (
     enrichedMessage ??
@@ -336,7 +332,7 @@ function DraftReplyFooter({
           maxLength={2000}
           rows={3}
           className="text-xs bg-background"
-          disabled={state.loading || state.phase === "waiting"}
+          disabled={state.loading}
         />
       </div>
 
@@ -344,7 +340,7 @@ function DraftReplyFooter({
         <Button
           size="sm"
           onClick={onGenerate}
-          disabled={!canGenerate || state.phase === "waiting"}
+          disabled={!canGenerate}
           className="h-7 gap-1.5 text-[11px] bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
         >
           {state.loading ? (
@@ -375,7 +371,7 @@ function DraftReplyFooter({
       {state.error && (
         <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2">
           <p className="text-[11px] text-destructive flex-1">{state.error}</p>
-          {(state.phase === "error" || state.phase === "timeout") && (
+          {state.phase === "error" && (
             <Button
               size="sm"
               variant="ghost"
@@ -412,23 +408,6 @@ function DraftReplyFooter({
             {state.draft}
           </div>
 
-          {state.phase === "waiting" && (
-            <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/60 p-2">
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Loader2 size={11} className="animate-spin text-[#2dd4a8]" />
-                Queued — waiting for WhatsApp Web…
-              </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={onCancel}
-                className="h-6 text-[11px] text-muted-foreground hover:text-destructive"
-              >
-                Cancel
-              </Button>
-            </div>
-          )}
-
           {state.phase === "sent" && (
             <div className="flex items-center gap-1.5 rounded-md border border-[rgba(45,212,168,0.35)] bg-[rgba(45,212,168,0.08)] p-2 text-[11px] text-[#2dd4a8]">
               <CheckCircle2 size={12} />
@@ -438,16 +417,6 @@ function DraftReplyFooter({
                   · {formatDistanceToNow(new Date(state.sentAt), { addSuffix: true })}
                 </span>
               )}
-            </div>
-          )}
-
-          {state.phase === "timeout" && (
-            <div className="flex items-start gap-1.5 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-600 dark:text-amber-400">
-              <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-              <span>
-                Extension didn't pick this up — is WhatsApp Web open? The draft
-                is still queued.
-              </span>
             </div>
           )}
         </div>
