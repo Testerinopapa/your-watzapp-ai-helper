@@ -506,10 +506,10 @@ export default function PersonalAgendaPanel({
           <Button
             size="sm"
             onClick={addManual}
-            disabled={!title.trim()}
+            disabled={!title.trim() || saving}
             className="w-full bg-[#2dd4a8] text-[#0a1620] hover:bg-[#73ffb8]"
           >
-            Add to agenda
+            {saving ? "Saving…" : "Add to agenda"}
           </Button>
         </div>
       )}
