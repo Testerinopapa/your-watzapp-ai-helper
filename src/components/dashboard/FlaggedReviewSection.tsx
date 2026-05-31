@@ -697,13 +697,15 @@ export default function FlaggedReviewSection() {
     return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
   }
 
-  const enrichedMessageFor = (item: FlaggedMessage): string | null => {
-    const current = (item.latest_message ?? item.preview ?? "").trim();
-    const candidates = lookupKeysForFlagged(item)
+  const activityCandidateFor = (item: FlaggedMessage) =>
+    lookupKeysForFlagged(item)
       .map((key) => enrichedByKey.get(key))
       .filter((c): c is { text: string; createdAt: number } => Boolean(c))
-      .sort((a, b) => b.createdAt - a.createdAt);
-    const candidate = candidates[0];
+      .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+
+  const enrichedMessageFor = (item: FlaggedMessage): string | null => {
+    const current = (item.latest_message ?? item.preview ?? "").trim();
+    const candidate = activityCandidateFor(item);
     if (!candidate) return null;
     const classifiedTs = item.intent_classified_at
       ? new Date(item.intent_classified_at).getTime()
@@ -737,14 +739,12 @@ export default function FlaggedReviewSection() {
 
   const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
     const enriched = enrichedMessageFor(item);
-    if (!enriched) return item;
-    const activityCreatedAt = lookupKeysForFlagged(item)
-      .map((key) => enrichedByKey.get(key)?.createdAt ?? 0)
-      .reduce((max, ts) => Math.max(max, ts), 0);
+    const activityCreatedAt = activityCandidateFor(item)?.createdAt ?? 0;
+    if (!enriched && !activityCreatedAt) return item;
     return {
       ...item,
-      preview: enriched,
-      latest_message: enriched,
+      preview: enriched ?? item.preview,
+      latest_message: enriched ?? item.latest_message,
       updated_at: activityCreatedAt
         ? new Date(Math.max(new Date(item.updated_at).getTime(), activityCreatedAt)).toISOString()
         : item.updated_at,
