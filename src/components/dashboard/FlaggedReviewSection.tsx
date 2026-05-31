@@ -981,27 +981,36 @@ export default function FlaggedReviewSection() {
   }, [assignments]);
 
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
-  const flaggedFromActivity: FlaggedMessage[] = (usageData?.recent ?? [])
-    .filter(isFlaggedActivity)
-    .map((r, index): FlaggedMessage => {
-      const text = textForActivity(r);
-      const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
-      return {
-        thread_id: fallbackId,
+  const activityGroups = new Map<string, FlaggedMessage>();
+  for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
+    const text = textForActivity(r);
+    const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
+    const sender = r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender";
+    const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
+    const existing = activityGroups.get(groupKey);
+    const existingText = existing?.latest_message ?? existing?.preview ?? "";
+    const useText = !existing || (isVoiceStub(existingText) && text && !isVoiceStub(text));
+    const createdAt = new Date(r.createdAt).getTime();
+    const existingAt = existing ? new Date(existing.updated_at).getTime() : 0;
+    if (!existing || useText || createdAt > existingAt) {
+      activityGroups.set(groupKey, {
+        thread_id: existing?.thread_id ?? fallbackId,
         provider: "whatsapp",
-        sender: r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender",
-        subject: r.subject,
-        preview: text || r.preview,
-        latest_message: text || r.latestMessage,
+        sender,
+        subject: r.subject ?? existing?.subject ?? null,
+        preview: useText ? text || r.preview : existing.preview,
+        latest_message: useText ? text || r.latestMessage : existing.latest_message,
         intent_category: "misc",
         intent_confidence: 1,
-        intent_reason: "Flagged by the Activity stream.",
+        intent_reason: "Needs review from the Activity stream.",
         intent_source: "activity",
         intent_classified_at: r.createdAt,
         updated_at: r.createdAt,
         thread_url: null,
-      };
-    });
+      });
+    }
+  }
+  const flaggedFromActivity: FlaggedMessage[] = Array.from(activityGroups.values()).map(withActivityPreview);
   const all: FlaggedMessage[] = [...flaggedFromList, ...flaggedFromActivity];
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
