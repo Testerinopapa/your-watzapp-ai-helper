@@ -786,6 +786,7 @@ export default function FlaggedReviewSection() {
   const [assignments, setAssignments] = useState<Record<string, string>>(() =>
     loadAssignments(),
   );
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(loadDismissed()));
   const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(null);
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
