@@ -52,7 +52,6 @@ import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
   useFlaggedMessages,
-  getFlaggedRealtimeClient,
   FLAGGED_SUPABASE_URL,
   FLAGGED_ANON_KEY,
   type FlaggedMessage,
