@@ -1020,7 +1020,7 @@ export default function FlaggedReviewSection() {
     return !fid || !folderIds.has(fid);
   });
 
-  const countByFolder = useMemo(() => {
+  const countByFolder = (() => {
     const map: Record<string, number> = {};
     for (const m of deduped) {
       const fid = assignments[m.thread_id];
@@ -1029,7 +1029,7 @@ export default function FlaggedReviewSection() {
       }
     }
     return map;
-  }, [deduped, assignments, folderIds]);
+  })();
 
   const itemsInFolder = (folderId: string) =>
     deduped.filter((m) => assignments[m.thread_id] === folderId);
