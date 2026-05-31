@@ -658,8 +658,10 @@ export default function FlaggedReviewSection() {
     (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
       .trim();
 
-  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.decision ?? "").toLowerCase().includes("flagged");
+  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
+    const decision = (r.decision ?? "").toLowerCase();
+    return decision.includes("flagged") || decision.includes("review");
+  };
 
   // Build a multi-key lookup from the Activity feed so flagged cards can be
   // refreshed by exact thread id, contact name, sender label, or phone number.
@@ -681,13 +683,14 @@ export default function FlaggedReviewSection() {
         }
         const existingIsStub = isVoiceStub(existing.text);
         const candidateIsStub = isVoiceStub(text);
-        // Prefer the same flagged Activity rows this panel is supposed to show,
-        // then prefer real transcripts over stubs, then the newest entry.
-        if (flagged && !existing.flagged) {
+        // Prefer real Activity transcripts over voice stubs, then panel-owned
+        // review/flagged rows, then newest entry. Activity uses "review" for
+        // these pills, while the old flagged endpoint often stays stale.
+        if (existingIsStub && !candidateIsStub) {
           map.set(key, { text, createdAt, flagged });
-        } else if (flagged === existing.flagged && existingIsStub && !candidateIsStub) {
+        } else if (existingIsStub === candidateIsStub && flagged && !existing.flagged) {
           map.set(key, { text, createdAt, flagged });
-        } else if (flagged === existing.flagged && existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+        } else if (existingIsStub === candidateIsStub && flagged === existing.flagged && createdAt > existing.createdAt) {
           map.set(key, { text, createdAt, flagged });
         }
       }
