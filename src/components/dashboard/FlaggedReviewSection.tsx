@@ -765,6 +765,11 @@ export default function FlaggedReviewSection() {
     return raw || `Request failed (${status})`;
   };
 
+  const needsCalendarContext = (item: FlaggedMessage, incomingMessage: string, userInstruction: string) => {
+    const text = `${item.intent_category ?? ""} ${incomingMessage} ${userInstruction}`.toLowerCase();
+    return /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/.test(text);
+  };
+
   const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
     const enriched = enrichedMessageFor(item);
@@ -780,13 +785,17 @@ export default function FlaggedReviewSection() {
     const userInstruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
     if (!incomingMessage || !userInstruction) return;
 
-    // For appointment-category messages, pull the user's next 30 days of
-    // calendar events from agenda_events and prepend them to the instruction
-    // so the external draft agent can propose/accept times without
-    // double-booking. Silent fallback: if the fetch fails, we still draft.
+    // For scheduling-related messages, first sync Google Calendar into
+    // agenda_events, then prepend the user's busy blocks to the instruction.
+    // If we can't verify the calendar, do not draft a positive confirmation.
     let instruction = userInstruction;
-    if ((item.intent_category ?? "").toLowerCase() === "appointment") {
+    if (needsCalendarContext(item, incomingMessage, userInstruction)) {
       try {
+        const { error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+        if (syncError) {
+          throw new Error(syncError.message || "Calendar sync failed");
+        }
+
         const nowIso = new Date().toISOString();
         const horizonIso = new Date(
           Date.now() + 30 * 24 * 60 * 60 * 1000,
@@ -797,7 +806,11 @@ export default function FlaggedReviewSection() {
           .gte("end_time", nowIso)
           .lte("start_time", horizonIso)
           .order("start_time", { ascending: true })
-          .limit(60);
+          .limit(250);
+
+        if (events === null) {
+          throw new Error("Calendar events could not be loaded");
+        }
 
         const tz =
           Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
@@ -820,19 +833,21 @@ export default function FlaggedReviewSection() {
         const lines = (events ?? [])
           .filter((e) => e.start_time && e.end_time)
           .map((e) => {
-            const start = fmt.format(new Date(e.start_time as string));
-            const end = fmtTime.format(new Date(e.end_time as string));
+            const startDate = new Date(e.start_time as string);
+            const endDate = new Date(e.end_time as string);
+            const start = fmt.format(startDate);
+            const end = fmtTime.format(endDate);
             const loc = e.location ? ` @ ${e.location}` : "";
             const title = e.title?.trim() || "(busy)";
-            return `- ${start}–${end} — ${title}${loc}`;
+            return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}`;
           });
 
         const calendarBlock =
           lines.length > 0
-            ? `CALENDAR CONTEXT — the user is ALREADY BUSY at these times (next 30 days, ${tz}). Treat each block as fully booked and unavailable:\n${lines.join(
+            ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days. Treat each block as fully booked and unavailable:\n${lines.join(
                 "\n",
               )}`
-            : `CALENDAR CONTEXT: User has no scheduled events in the next 30 days (${tz}). Any reasonable time can be proposed.`;
+            : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}). Any reasonable time can be proposed.`;
 
         const calendarRules =
           lines.length > 0
@@ -846,6 +861,21 @@ export default function FlaggedReviewSection() {
 
       } catch (err) {
         console.warn("[flagged] failed to load calendar context", err);
+        const message =
+          err instanceof Error && err.message
+            ? err.message
+            : "Calendar could not be verified.";
+        updateDraft(id, {
+          loading: false,
+          error: `Calendar could not be verified, so I stopped before drafting: ${message}`,
+          phase: "error",
+        });
+        toast({
+          title: "Calendar not verified",
+          description: "I stopped the draft so we don't confirm an already-booked slot.",
+          variant: "destructive",
+        });
+        return;
       }
     }
 
