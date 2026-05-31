@@ -301,7 +301,7 @@ export default function PersonalAgendaPanel({
 }: {
   onConnectClick?: () => void;
 }) {
-  const { entries: localEntries, remove: removeLocal, upsert } = usePersonalAgenda();
+  const { entries: localEntries, remove: removeLocal } = usePersonalAgenda();
   const { entries: dbEntries, remove: removeDb, refresh: refreshDb } = useAgendaEvents();
   const { toast } = useToast();
   const entries = useMemo(() => {
