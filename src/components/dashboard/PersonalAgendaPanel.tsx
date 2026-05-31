@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const MINT = "#2dd4a8";
 const MINT_BRIGHT = "#73ffb8";
