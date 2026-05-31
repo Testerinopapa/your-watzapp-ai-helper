@@ -635,7 +635,7 @@ export default function FlaggedReviewSection() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
-  const { data: usageData } = useSendSmartUsage();
+  const { data: usageData, refetch: refetchUsage } = useSendSmartUsage();
 
   // Build a sender -> richest recent message text map from the Activity feed
   // so we can substitute "[Voice message] 1×" stubs with the real transcript.
@@ -701,6 +701,27 @@ export default function FlaggedReviewSection() {
     }
 
     return null;
+  };
+
+  const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
+    const enriched = enrichedMessageFor(item);
+    if (!enriched) return item;
+
+    const candidate = enrichedBySender.get(normalizeSender(item.sender));
+    const currentUpdatedAt = item.updated_at ? new Date(item.updated_at).getTime() : 0;
+    const hasFreshActivityTime =
+      candidate &&
+      Number.isFinite(candidate.createdAt) &&
+      candidate.createdAt > currentUpdatedAt;
+
+    return {
+      ...item,
+      preview: enriched,
+      latest_message: enriched,
+      updated_at: hasFreshActivityTime
+        ? new Date(candidate.createdAt).toISOString()
+        : item.updated_at,
+    };
   };
 
   const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
@@ -1073,6 +1094,7 @@ export default function FlaggedReviewSection() {
               "realtime",
             );
             refetch();
+            refetchUsage();
           },
         )
         .subscribe((status) => {
@@ -1122,10 +1144,10 @@ export default function FlaggedReviewSection() {
       clearInterval(pollId);
       if (channel) client.removeChannel(channel);
     };
-  }, [user?.id, refetch]);
+  }, [user?.id, refetch, refetchUsage]);
 
 
-  const all: FlaggedMessage[] = data ?? [];
+  const all: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
     return Math.max(...candidates.map((s) => new Date(s).getTime()));
@@ -1238,7 +1260,10 @@ export default function FlaggedReviewSection() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => {
+              refetch();
+              refetchUsage();
+            }}
             disabled={isFetching}
             className="ml-auto gap-1.5"
           >
