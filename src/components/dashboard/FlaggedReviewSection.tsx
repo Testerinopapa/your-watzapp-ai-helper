@@ -981,9 +981,29 @@ export default function FlaggedReviewSection() {
     }
   }, [assignments]);
 
-
-
-  const all: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
+  const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
+  const flaggedFromActivity: FlaggedMessage[] = (usageData?.recent ?? [])
+    .filter(isFlaggedActivity)
+    .map((r, index): FlaggedMessage => {
+      const text = textForActivity(r);
+      const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
+      return {
+        thread_id: fallbackId,
+        provider: "whatsapp",
+        sender: r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender",
+        subject: r.subject,
+        preview: text || r.preview,
+        latest_message: text || r.latestMessage,
+        intent_category: "misc",
+        intent_confidence: 1,
+        intent_reason: "Flagged by the Activity stream.",
+        intent_source: "activity",
+        intent_classified_at: r.createdAt,
+        updated_at: r.createdAt,
+        thread_url: null,
+      };
+    });
+  const all: FlaggedMessage[] = [...flaggedFromList, ...flaggedFromActivity];
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
     return Math.max(...candidates.map((s) => new Date(s).getTime()));
