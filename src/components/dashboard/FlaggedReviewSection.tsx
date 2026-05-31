@@ -112,6 +112,23 @@ const DEFAULT_FOLDERS: FolderDef[] = [
   { id: "follow-up", name: "Follow-up" },
 ];
 
+const cleanSenderLabel = (value: string | null | undefined) => {
+  const cleaned = (value ?? "")
+    .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned || /^unknown sender$/i.test(cleaned) || /^activity:/i.test(cleaned)) return "";
+  return cleaned;
+};
+
+const senderFromThreadId = (threadId: string | null | undefined) => {
+  const raw = (threadId ?? "").split("|")[0]?.replace(/^\w+:/, "") ?? "";
+  return cleanSenderLabel(raw);
+};
+
+const senderLabelForItem = (item: Pick<FlaggedMessage, "sender" | "subject" | "thread_id">) =>
+  cleanSenderLabel(item.sender) || cleanSenderLabel(item.subject) || senderFromThreadId(item.thread_id);
+
 function loadFolders(): FolderDef[] {
   try {
     const raw = localStorage.getItem(FOLDERS_KEY);
@@ -156,6 +173,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
   const tone = toneFor(item.updated_at);
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
+  const senderLabel = senderLabelForItem(item) || "Unknown sender";
 
   return (
     <Card
@@ -173,7 +191,7 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-sm font-medium truncate">
                 <MessageCircle size={14} className="text-muted-foreground shrink-0" />
-                <span className="truncate">{item.sender ?? "Unknown sender"}</span>
+                <span className="truncate">{senderLabel}</span>
               </div>
             </div>
           </div>
@@ -653,23 +671,20 @@ export default function FlaggedReviewSection() {
   const { data: usageData, refetch: refetchUsage } = useSendSmartUsage();
 
   const normalizeLookup = (s: string | null | undefined) =>
-    (s ?? "")
+    cleanSenderLabel(s)
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
   const normalizePhone = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const threadContactKey = (threadId: string | null | undefined) => {
-    const raw = (threadId ?? "").split("|")[0]?.replace(/^\w+:/, "") ?? "";
-    return normalizeLookup(raw);
-  };
+  const threadContactKey = (threadId: string | null | undefined) => normalizeLookup(senderFromThreadId(threadId));
   const lookupKeysForFlagged = (item: FlaggedMessage) => {
     const keys = [
       item.thread_id,
       item.sender,
       item.subject,
+      senderLabelForItem(item),
       threadContactKey(item.thread_id),
       normalizePhone(item.sender),
       normalizePhone(item.thread_id),
@@ -684,6 +699,7 @@ export default function FlaggedReviewSection() {
       r.sender,
       r.contactName,
       r.subject,
+      senderLabelForActivity(r),
       threadContactKey(r.thread_id ?? r.threadId),
       normalizePhone(r.senderEmail),
       normalizePhone(r.thread_id ?? r.threadId),
@@ -695,8 +711,44 @@ export default function FlaggedReviewSection() {
     (r.latestMessage ?? r.preview ?? "").trim();
 
   const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
-      .trim();
+    (
+      (r.thread_id ?? r.threadId) ||
+      cleanSenderLabel(r.senderEmail) ||
+      cleanSenderLabel(r.sender) ||
+      cleanSenderLabel(r.contactName) ||
+      cleanSenderLabel(r.subject) ||
+      ""
+    ).trim();
+
+  const activityRows = usageData?.recent ?? [];
+
+  const senderLabelForActivity = (
+    r: NonNullable<typeof usageData>["recent"][number],
+    rows: NonNullable<typeof usageData>["recent"] = activityRows,
+  ) => {
+    const direct =
+      cleanSenderLabel(r.senderEmail) ||
+      cleanSenderLabel(r.sender) ||
+      cleanSenderLabel(r.contactName) ||
+      cleanSenderLabel(r.subject) ||
+      senderFromThreadId(r.thread_id ?? r.threadId);
+    if (direct) return direct;
+
+    const currentAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+    const neighbor = rows
+      .map((candidate) => ({
+        label:
+          cleanSenderLabel(candidate.senderEmail) ||
+          cleanSenderLabel(candidate.sender) ||
+          cleanSenderLabel(candidate.contactName) ||
+          cleanSenderLabel(candidate.subject) ||
+          senderFromThreadId(candidate.thread_id ?? candidate.threadId),
+        distance: Math.abs(new Date(candidate.createdAt).getTime() - currentAt),
+      }))
+      .filter((candidate) => candidate.label && candidate.distance <= 2 * 60 * 1000)
+      .sort((a, b) => a.distance - b.distance)[0];
+    return neighbor?.label ?? "";
+  };
 
   const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
     const decision = (r.decision ?? "").toLowerCase();
@@ -708,9 +760,8 @@ export default function FlaggedReviewSection() {
   // Some WhatsApp rows expose names while others expose phone/thread ids; a
   // sender-only map was why Dominique updated while other cards stayed stale.
   const enrichedByKey = (() => {
-    const rows = usageData?.recent ?? [];
     const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
-    for (const r of rows) {
+    for (const r of activityRows) {
       const text = textForActivity(r);
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
@@ -1047,10 +1098,10 @@ export default function FlaggedReviewSection() {
 
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
   const activityGroups = new Map<string, FlaggedMessage>();
-  for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
+  for (const [index, r] of activityRows.filter(isFlaggedActivity).entries()) {
     const text = textForActivity(r);
     const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
-    const sender = r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender";
+    const sender = senderLabelForActivity(r) || senderFromThreadId(fallbackId) || fallbackId;
     const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText = existing?.latest_message ?? existing?.preview ?? "";
