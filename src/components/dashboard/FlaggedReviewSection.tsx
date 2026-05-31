@@ -711,18 +711,6 @@ export default function FlaggedReviewSection() {
     draftsRef.current = drafts;
   }, [drafts]);
 
-  // Timeout handles keyed by thread_id
-  const timeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  // draft_id -> thread_id reverse index for realtime updates
-  const draftToThreadRef = useRef<Record<string, string>>({});
-
-  const clearTimeoutFor = (threadId: string) => {
-    const t = timeoutsRef.current[threadId];
-    if (t) {
-      clearTimeout(t);
-      delete timeoutsRef.current[threadId];
-    }
-  };
 
   const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
     setDrafts((prev) => ({
