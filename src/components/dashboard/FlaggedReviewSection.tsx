@@ -711,7 +711,14 @@ export default function FlaggedReviewSection() {
 
   const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
-    const incomingMessage = (item.latest_message ?? item.preview ?? item.subject ?? "")
+    const enriched = enrichedMessageFor(item);
+    const incomingMessage = (
+      enriched ??
+      item.latest_message ??
+      item.preview ??
+      item.subject ??
+      ""
+    )
       .trim()
       .slice(0, 4000);
     const instruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
