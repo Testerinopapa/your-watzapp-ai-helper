@@ -829,15 +829,21 @@ export default function FlaggedReviewSection() {
 
         const calendarBlock =
           lines.length > 0
-            ? `CALENDAR CONTEXT (user's busy times, next 30 days, ${tz}):\n${lines.join(
+            ? `CALENDAR CONTEXT — the user is ALREADY BUSY at these times (next 30 days, ${tz}). Treat each block as fully booked and unavailable:\n${lines.join(
                 "\n",
-              )}\n\nUse this to propose or confirm times. Never suggest a slot that overlaps a busy block. If the incoming message proposes a time that conflicts, politely suggest the nearest free alternative.`
+              )}`
             : `CALENDAR CONTEXT: User has no scheduled events in the next 30 days (${tz}). Any reasonable time can be proposed.`;
 
-        instruction = `${calendarBlock}\n\n---\n\n${userInstruction}`.slice(
+        const calendarRules =
+          lines.length > 0
+            ? `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps a CALENDAR CONTEXT block above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against the CALENDAR CONTEXT. If it conflicts (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any CALENDAR CONTEXT block.`
+            : "";
+
+        instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(
           0,
           8000,
         );
+
       } catch (err) {
         console.warn("[flagged] failed to load calendar context", err);
       }
