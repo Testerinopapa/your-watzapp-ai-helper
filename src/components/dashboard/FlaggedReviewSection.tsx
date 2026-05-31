@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -665,7 +665,7 @@ export default function FlaggedReviewSection() {
   // refreshed by exact thread id, contact name, sender label, or phone number.
   // Some WhatsApp rows expose names while others expose phone/thread ids; a
   // sender-only map was why Dominique updated while other cards stayed stale.
-  const enrichedByKey = useMemo(() => {
+  const enrichedByKey = (() => {
     const rows = usageData?.recent ?? [];
     const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
     for (const r of rows) {
@@ -693,7 +693,7 @@ export default function FlaggedReviewSection() {
       }
     }
     return map;
-  }, [usageData]);
+  })();
 
   function isVoiceStub(text: string | null | undefined) {
     const t = (text ?? "").trim();
@@ -1014,7 +1014,7 @@ export default function FlaggedReviewSection() {
     deduped.push(m);
   }
 
-  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
+  const folderIds = new Set(folders.map((f) => f.id));
   const ungrouped = deduped.filter((m) => {
     const fid = assignments[m.thread_id];
     return !fid || !folderIds.has(fid);
