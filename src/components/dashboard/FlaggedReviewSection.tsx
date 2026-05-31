@@ -671,23 +671,20 @@ export default function FlaggedReviewSection() {
   const { data: usageData, refetch: refetchUsage } = useSendSmartUsage();
 
   const normalizeLookup = (s: string | null | undefined) =>
-    (s ?? "")
+    cleanSenderLabel(s)
       .normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
   const normalizePhone = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const threadContactKey = (threadId: string | null | undefined) => {
-    const raw = (threadId ?? "").split("|")[0]?.replace(/^\w+:/, "") ?? "";
-    return normalizeLookup(raw);
-  };
+  const threadContactKey = (threadId: string | null | undefined) => normalizeLookup(senderFromThreadId(threadId));
   const lookupKeysForFlagged = (item: FlaggedMessage) => {
     const keys = [
       item.thread_id,
       item.sender,
       item.subject,
+      senderLabelForItem(item),
       threadContactKey(item.thread_id),
       normalizePhone(item.sender),
       normalizePhone(item.thread_id),
@@ -713,7 +710,7 @@ export default function FlaggedReviewSection() {
     (r.latestMessage ?? r.preview ?? "").trim();
 
   const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
+    (r.thread_id ?? r.threadId ?? cleanSenderLabel(r.senderEmail) || cleanSenderLabel(r.sender) || cleanSenderLabel(r.contactName) || cleanSenderLabel(r.subject) || "")
       .trim();
 
   const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
