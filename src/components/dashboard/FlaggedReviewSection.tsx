@@ -1209,16 +1209,32 @@ export default function FlaggedReviewSection() {
   // the same sender become a backlog count surfaced on the pill.
   const groups = new Map<
     string,
-    FlaggedMessage & { backlog_count?: number; backlog_items?: FlaggedMessage[] }
+    FlaggedMessage & {
+      backlog_count?: number;
+      backlog_items?: FlaggedMessage[];
+      _seen?: Set<string>;
+    }
   >();
+  const messageFingerprint = (m: FlaggedMessage) => {
+    const text = (m.latest_message ?? m.preview ?? m.subject ?? "").trim().toLowerCase();
+    // Round timestamps to the nearest minute so the same message arriving from
+    // both the flagged-list and activity sources is treated as one.
+    const ts = m.updated_at ? Math.floor(new Date(m.updated_at).getTime() / 60000) : 0;
+    return `${ts}|${text}`;
+  };
   for (const m of sorted) {
     if (isDismissed(m)) continue;
     const senderKey = normalizeLookup(senderLabelForItem(m) || m.sender || "");
     const key = senderKey || m.thread_id;
+    const fp = messageFingerprint(m);
     const existing = groups.get(key);
     if (!existing) {
-      groups.set(key, { ...m, backlog_count: 0, backlog_items: [] });
+      const seen = new Set<string>();
+      seen.add(fp);
+      groups.set(key, { ...m, backlog_count: 0, backlog_items: [], _seen: seen });
     } else {
+      if (existing._seen?.has(fp)) continue; // duplicate of an already-tracked message
+      existing._seen?.add(fp);
       existing.backlog_count = (existing.backlog_count ?? 0) + 1;
       existing.backlog_items = [...(existing.backlog_items ?? []), m];
     }
