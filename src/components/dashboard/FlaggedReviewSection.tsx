@@ -1329,59 +1329,58 @@ export default function FlaggedReviewSection() {
           </div>
         ) : (
           <div className="relative">
-            {(() => {
-              const current = ungrouped[0];
-              const backlogCount = Math.max(0, ungrouped.length - 1);
-              const draftState = drafts[current.thread_id] ?? defaultDraft;
-              return (
-                <div className="relative mx-auto max-w-2xl">
-                  {/* Backlog stack indicator (cards peeking behind) */}
-                  {backlogCount > 0 && (
-                    <>
-                      <div
-                        aria-hidden
-                        className="absolute inset-x-6 -top-2 h-4 rounded-t-xl border border-border/60 bg-card/70 shadow-sm"
-                      />
-                      {backlogCount > 1 && (
-                        <div
-                          aria-hidden
-                          className="absolute inset-x-10 -top-4 h-4 rounded-t-xl border border-border/40 bg-card/50"
+            <div
+              className="flagged-scroll max-h-[640px] md:max-h-[560px] overflow-y-auto pr-2 pb-10"
+              style={{
+                scrollbarWidth: "thin",
+                scrollbarColor: "rgba(115,255,184,0.25) transparent",
+              }}
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {ungrouped.map((item) => {
+                  const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  return (
+                    <DraggableFlaggedCard
+                      key={item.thread_id}
+                      item={item}
+                      folders={folders}
+                      onMoveTo={moveToFolder}
+                      footer={
+                        <DraftReplyFooter
+                          item={item}
+                          enrichedMessage={enrichedMessageFor(item)}
+                          state={draftState}
+                          onChange={(patch) => updateDraft(item.thread_id, patch)}
+                          onClose={() =>
+                            updateDraft(item.thread_id, { open: false, error: null })
+                          }
+                          onGenerate={() => generateDraft(item)}
+                          onRetry={() => retryDraft(item)}
                         />
-                      )}
-                    </>
-                  )}
+                      }
+                    />
+                  );
+                })}
+              </div>
+            </div>
 
-                  <DraggableFlaggedCard
-                    key={current.thread_id}
-                    item={current}
-                    folders={folders}
-                    onMoveTo={moveToFolder}
-                    footer={
-                      <DraftReplyFooter
-                        item={current}
-                        enrichedMessage={enrichedMessageFor(current)}
-                        state={draftState}
-                        onChange={(patch) => updateDraft(current.thread_id, patch)}
-                        onClose={() =>
-                          updateDraft(current.thread_id, { open: false, error: null })
-                        }
-                        onGenerate={() => generateDraft(current)}
-                        onRetry={() => retryDraft(current)}
-                      />
-                    }
-                  />
-
-                  {backlogCount > 0 && (
-                    <div className="mt-3 flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[#2dd4a8]" />
-                        {backlogCount} more queued · showing latest
-                      </span>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-24 rounded-b-xl"
+              style={{
+                background:
+                  "linear-gradient(to bottom, hsl(var(--background) / 0) 0%, hsl(var(--background) / 0.7) 55%, hsl(var(--background) / 0.95) 100%)",
+              }}
+            />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-x-0 bottom-0 h-px"
+              style={{
+                background:
+                  "linear-gradient(to right, transparent 0%, rgba(45,212,168,0.55) 50%, transparent 100%)",
+                boxShadow: "0 0 12px rgba(115,255,184,0.35)",
+              }}
+            />
           </div>
         )}
 
