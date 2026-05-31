@@ -1129,6 +1129,7 @@ export default function FlaggedReviewSection() {
                       footer={
                         <DraftReplyFooter
                           item={item}
+                          enrichedMessage={enrichedMessageFor(item)}
                           state={draftState}
                           onChange={(patch) => updateDraft(item.thread_id, patch)}
                           onClose={() =>
