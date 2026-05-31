@@ -7,6 +7,7 @@ import {
   Trash2,
   Inbox,
   Plus,
+  Sparkles,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +15,11 @@ import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { cn } from "@/lib/utils";
 
-const MINT = "#73ffb8";
+const MINT = "#2dd4a8";
+const MINT_BRIGHT = "#73ffb8";
+
+const fontHeading = { fontFamily: "'Outfit', system-ui, sans-serif" } as const;
+const fontBody = { fontFamily: "'Figtree', system-ui, sans-serif" } as const;
 
 function sourceLabel(s: AgendaEntry["source_type"]): string {
   switch (s) {
@@ -26,6 +31,31 @@ function sourceLabel(s: AgendaEntry["source_type"]): string {
     case "calendly": return "Calendly";
     case "cal_com": return "Cal.com";
     case "csv": return "CSV";
+  }
+}
+
+function sourceInitials(entry: AgendaEntry): string {
+  if (entry.contact_name) {
+    const parts = entry.contact_name.trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+  }
+  if (entry.title) {
+    const parts = entry.title.trim().split(/\s+/).slice(0, 2);
+    return parts.map((p) => p[0]?.toUpperCase() ?? "").join("") || "?";
+  }
+  return "?";
+}
+
+function sourceColor(s: AgendaEntry["source_type"]): string {
+  switch (s) {
+    case "google_calendar": return "#4285f4";
+    case "outlook": return "#0078d4";
+    case "apple_ics": return "#555555";
+    case "whatsapp": return MINT_BRIGHT;
+    case "manual": return "#f59e0b";
+    case "calendly": return "#006bff";
+    case "cal_com": return MINT;
+    case "csv": return "#a855f7";
   }
 }
 
@@ -47,78 +77,171 @@ function detectConflicts(entries: AgendaEntry[]): Set<string> {
   return conflicting;
 }
 
-function EntryRow({
+function AgendaCard({
   entry,
   isConflict,
   onRemove,
+  featured = false,
 }: {
   entry: AgendaEntry;
   isConflict: boolean;
   onRemove: () => void;
+  featured?: boolean;
 }) {
   const start = entry.start_time ? new Date(entry.start_time) : null;
+  const monthLabel = start ? format(start, "MMM").toUpperCase() : "---";
+  const dayNum = start ? format(start, "d") : "?";
+  const dayLabel = start ? format(start, "EEE") : "---";
+  const timeStr = start ? format(start, "h:mm a") : null;
+  const initials = sourceInitials(entry);
+  const srcColor = sourceColor(entry.source_type);
+
   return (
     <div
       className={cn(
-        "group flex items-center gap-3 rounded-xl border p-3 transition-colors",
-        isConflict
-          ? "border-yellow-400/40 bg-yellow-400/5"
-          : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]",
+        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left",
+        "bg-gradient-to-br from-[#0d1b2a] via-[#102a3a] to-[#1b4332]",
+        "shadow-[0_8px_30px_-12px_rgba(45,212,168,0.25)] hover:shadow-[0_12px_40px_-12px_rgba(115,255,184,0.35)]",
+        "transition-all duration-300 hover:-translate-y-0.5",
+        featured ? "p-6" : "p-5",
       )}
+      style={fontBody}
     >
-      <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-lg border border-white/15 bg-[#0a1620]/70 text-white">
-        {start ? (
-          <>
-            <span className="text-[9px] uppercase tracking-wider text-[#73ffb8]/70">
-              {format(start, "MMM")}
-            </span>
-            <span className="text-lg font-semibold leading-none">{format(start, "d")}</span>
-          </>
-        ) : (
-          <Clock size={16} className="text-yellow-300" />
+      {/* glow blob */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full opacity-40 blur-3xl transition-opacity duration-500 group-hover:opacity-70"
+        style={{ background: `radial-gradient(closest-side, ${MINT_BRIGHT}, transparent)` }}
+      />
+      {/* subtle grid pattern */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.07]"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.6) 1px, transparent 1px)",
+          backgroundSize: "22px 22px",
+        }}
+      />
+
+      <div className="relative flex h-full flex-col gap-4">
+        <div className="flex items-start gap-4">
+          {/* Calendar tile */}
+          <div
+            className={cn(
+              "shrink-0 overflow-hidden rounded-xl border border-white/15 bg-[#0a1620]/70 backdrop-blur",
+              featured ? "w-20" : "w-16",
+            )}
+          >
+            <div
+              className="px-2 py-1 text-center text-[10px] font-semibold tracking-widest text-[#0a1620]"
+              style={{ background: `linear-gradient(135deg, ${MINT_BRIGHT}, ${MINT})` }}
+            >
+              {monthLabel}
+            </div>
+            <div className="px-2 py-2 text-center">
+              <div
+                className={cn(
+                  "leading-none text-white",
+                  featured ? "text-3xl" : "text-2xl",
+                )}
+                style={{ ...fontHeading, fontWeight: 700 }}
+              >
+                {dayNum}
+              </div>
+              <div className="mt-1 text-[10px] uppercase tracking-wider text-white/60">
+                {dayLabel}
+              </div>
+            </div>
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              {/* Avatar */}
+              <div
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-xs font-semibold"
+                style={{ ...fontHeading, color: srcColor }}
+              >
+                {initials}
+              </div>
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    "truncate text-white",
+                    featured ? "text-lg" : "text-base",
+                  )}
+                  style={{ ...fontHeading, fontWeight: 600 }}
+                >
+                  {entry.contact_name ?? entry.title ?? "Untitled"}
+                </p>
+                <p className="truncate text-[11px] text-white/50">
+                  {sourceLabel(entry.source_type)}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            {timeStr && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#2dd4a8]/30 bg-[#2dd4a8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                <Clock size={10} />
+                {timeStr}
+              </span>
+            )}
+            {entry.status === "confirmed" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                Confirmed
+              </span>
+            )}
+            {entry.status === "cancelled" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] font-medium text-white/40">
+                Cancelled
+              </span>
+            )}
+            {isConflict && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-2 py-0.5 text-[10px] font-medium text-yellow-200">
+                <AlertCircle size={10} />
+                Conflict
+              </span>
+            )}
+          </div>
+        </div>
+
+        {entry.description && (
+          <p
+            className={cn(
+              "text-white/60",
+              featured ? "text-sm line-clamp-3" : "text-xs line-clamp-2",
+            )}
+          >
+            {entry.description}
+          </p>
         )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-white">
-          {entry.contact_name ?? entry.title ?? "Untitled"}
-        </p>
-        <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-white/50">
-          {start && <span>{format(start, "EEE p")}</span>}
-          {!start && <span className="text-yellow-300">Time missing</span>}
-          <span>·</span>
-          <span>{sourceLabel(entry.source_type)}</span>
-          {isConflict && (
-            <Badge
-              variant="outline"
-              className="border-yellow-400/40 bg-yellow-400/10 text-[10px] text-yellow-200"
-            >
-              <AlertCircle size={10} className="mr-1" />
-              Conflict
-            </Badge>
-          )}
-          {entry.status === "cancelled" && (
-            <Badge variant="outline" className="border-white/15 bg-white/5 text-[10px] text-white/40">
-              Cancelled
-            </Badge>
-          )}
-          {entry.status === "confirmed" && (
-            <Badge
-              variant="outline"
-              className="border-[#2dd4a8]/40 bg-[#2dd4a8]/10 text-[10px] text-[#73ffb8]"
-            >
-              Confirmed
-            </Badge>
-          )}
+
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] text-white/80"
+            style={fontHeading}
+          >
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: srcColor, boxShadow: `0 0 8px ${srcColor}` }}
+            />
+            {sourceLabel(entry.source_type)}
+          </span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              onRemove();
+            }}
+            className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 text-white/40 hover:bg-destructive/10 hover:text-destructive-foreground"
+          >
+            <Trash2 size={14} />
+          </Button>
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onRemove}
-        className="opacity-0 transition-opacity group-hover:opacity-100 text-white/40 hover:bg-destructive/10 hover:text-destructive-foreground"
-      >
-        <Trash2 size={14} />
-      </Button>
     </div>
   );
 }
@@ -137,23 +260,32 @@ function Section({
   empty?: string;
 }) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] uppercase tracking-[0.2em] text-white/40">{title}</p>
+        <p
+          className="text-[10px] uppercase tracking-[0.25em] text-[#73ffb8]/70"
+          style={fontHeading}
+        >
+          {title}
+        </p>
         <span className="text-[10px] text-white/30">{entries.length}</span>
       </div>
       {entries.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-white/10 px-3 py-4 text-center text-xs text-white/40">
-          {empty ?? "Nothing here."}
-        </p>
+        <div className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-[#2dd4a8]/20 bg-[#0a1620]/40 px-6 py-8 text-center">
+          <Sparkles size={18} className="text-[#73ffb8]/40" />
+          <p className="text-xs text-white/40">
+            {empty ?? "Nothing here."}
+          </p>
+        </div>
       ) : (
-        <div className="space-y-2">
-          {entries.map((e) => (
-            <EntryRow
+        <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-1 gap-3 sm:grid-cols-2">
+          {entries.map((e, i) => (
+            <AgendaCard
               key={e.id}
               entry={e}
               isConflict={conflicts.has(e.id)}
               onRemove={() => onRemove(e.id)}
+              featured={i === 0 && entries.length === 1}
             />
           ))}
         </div>
@@ -170,7 +302,6 @@ export default function PersonalAgendaPanel({
   const { entries: localEntries, remove: removeLocal, upsert } = usePersonalAgenda();
   const { entries: dbEntries, remove: removeDb } = useAgendaEvents();
   const entries = useMemo(() => {
-    // DB-backed entries (e.g. synced from Google) + local entries, dedup by id
     const seen = new Set<string>();
     const all: AgendaEntry[] = [];
     for (const e of [...dbEntries, ...localEntries]) {
@@ -230,10 +361,10 @@ export default function PersonalAgendaPanel({
   };
 
   return (
-    <div className="space-y-5" style={{ fontFamily: "'Figtree', system-ui, sans-serif" }}>
+    <div className="space-y-6" style={fontBody}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-white">
-          <CalendarDays size={16} style={{ color: MINT }} />
+          <CalendarDays size={16} style={{ color: MINT_BRIGHT }} />
           <p className="text-sm font-medium">Your personal agenda</p>
         </div>
         <div className="flex items-center gap-1">
@@ -261,25 +392,25 @@ export default function PersonalAgendaPanel({
       </div>
 
       {showManual && (
-        <div className="space-y-2 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+        <div className="space-y-2 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="What's the event?"
-            className="w-full rounded-md border border-white/10 bg-[#0a1620]/60 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-[#2dd4a8]/40 focus:outline-none"
+            className="w-full rounded-lg border border-white/10 bg-[#0a1620]/60 px-3 py-2.5 text-sm text-white placeholder:text-white/30 focus:border-[#2dd4a8]/40 focus:outline-none"
           />
           <div className="grid grid-cols-2 gap-2">
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="rounded-md border border-white/10 bg-[#0a1620]/60 px-3 py-2 text-sm text-white focus:border-[#2dd4a8]/40 focus:outline-none"
+              className="rounded-lg border border-white/10 bg-[#0a1620]/60 px-3 py-2.5 text-sm text-white focus:border-[#2dd4a8]/40 focus:outline-none"
             />
             <input
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="rounded-md border border-white/10 bg-[#0a1620]/60 px-3 py-2 text-sm text-white focus:border-[#2dd4a8]/40 focus:outline-none"
+              className="rounded-lg border border-white/10 bg-[#0a1620]/60 px-3 py-2.5 text-sm text-white focus:border-[#2dd4a8]/40 focus:outline-none"
             />
           </div>
           <Button
