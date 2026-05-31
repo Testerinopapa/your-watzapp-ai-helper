@@ -969,8 +969,11 @@ export default function FlaggedReviewSection() {
         },
       )
       .subscribe();
+    })();
+
     return () => {
-      client.removeChannel(channel);
+      cancelled = true;
+      if (channel) client.removeChannel(channel);
     };
   }, [user?.id, refetch]);
 
