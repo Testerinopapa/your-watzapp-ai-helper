@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -183,6 +183,14 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
               {item.intent_category}
             </Badge>
+          )}
+          {(item.latest_message || item.preview || item.subject) && (
+            <p
+              className="text-xs text-foreground/90 line-clamp-3 whitespace-pre-wrap leading-relaxed"
+              title={item.latest_message ?? item.preview ?? item.subject ?? undefined}
+            >
+              “{item.latest_message ?? item.preview ?? item.subject}”
+            </p>
           )}
           {item.intent_reason && (
             <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
@@ -643,35 +651,49 @@ export default function FlaggedReviewSection() {
     return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
   };
 
+  const textForActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.latestMessage ?? r.preview ?? "").trim();
+
+  const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.thread_id ?? r.threadId ?? r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "")
+      .trim();
+
+  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
+    (r.decision ?? "").toLowerCase().includes("flagged");
+
   // Build a multi-key lookup from the Activity feed so flagged cards can be
   // refreshed by exact thread id, contact name, sender label, or phone number.
   // Some WhatsApp rows expose names while others expose phone/thread ids; a
   // sender-only map was why Dominique updated while other cards stayed stale.
-  const enrichedByKey = useMemo(() => {
+  const enrichedByKey = (() => {
     const rows = usageData?.recent ?? [];
-    const map = new Map<string, { text: string; createdAt: number }>();
+    const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
     for (const r of rows) {
-      const text = (r.latestMessage ?? r.preview ?? "").trim();
+      const text = textForActivity(r);
       if (!text) continue;
       const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
+      const flagged = isFlaggedActivity(r);
       for (const key of lookupKeysForActivity(r)) {
         const existing = map.get(key);
         if (!existing) {
-          map.set(key, { text, createdAt });
+          map.set(key, { text, createdAt, flagged });
           continue;
         }
         const existingIsStub = isVoiceStub(existing.text);
         const candidateIsStub = isVoiceStub(text);
-        // Prefer real transcript over stub; otherwise prefer the newer entry.
-        if (existingIsStub && !candidateIsStub) {
-          map.set(key, { text, createdAt });
-        } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
-          map.set(key, { text, createdAt });
+        // Prefer the same flagged Activity rows this panel is supposed to show,
+        // then prefer real transcripts over stubs, then the newest entry.
+        if (flagged && !existing.flagged) {
+          map.set(key, { text, createdAt, flagged });
+        } else if (flagged === existing.flagged && existingIsStub && !candidateIsStub) {
+          map.set(key, { text, createdAt, flagged });
+        } else if (flagged === existing.flagged && existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+          map.set(key, { text, createdAt, flagged });
         }
       }
     }
     return map;
-  }, [usageData]);
+  })();
 
   function isVoiceStub(text: string | null | undefined) {
     const t = (text ?? "").trim();
@@ -679,38 +701,24 @@ export default function FlaggedReviewSection() {
     return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
   }
 
+  const activityCandidateFor = (item: FlaggedMessage) =>
+    lookupKeysForFlagged(item)
+      .map((key) => enrichedByKey.get(key))
+      .filter((c): c is { text: string; createdAt: number; flagged: boolean } => Boolean(c))
+      .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
+
   const enrichedMessageFor = (item: FlaggedMessage): string | null => {
     const current = (item.latest_message ?? item.preview ?? "").trim();
-    const candidates = lookupKeysForFlagged(item)
-      .map((key) => enrichedByKey.get(key))
-      .filter((c): c is { text: string; createdAt: number } => Boolean(c))
-      .sort((a, b) => b.createdAt - a.createdAt);
-    const candidate = candidates[0];
+    const candidate = activityCandidateFor(item);
     if (!candidate) return null;
-    const classifiedTs = item.intent_classified_at
-      ? new Date(item.intent_classified_at).getTime()
-      : 0;
-
     // Always replace voice-message stubs with a real transcript when we have one.
     if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
       return candidate.text;
     }
 
-    // For non-stub cards, the flagged row's `latest_message` only refreshes
-    // when the extension calls classify-intent on each new inbound. When that
-    // doesn't fire (or races a send), the card shows stale text while a newer
-    // real inbound already exists in the Activity feed. Substitute it when:
-    //   - Activity has a real (non-stub) text that differs from the current,
-    //   - Activity's createdAt is meaningfully newer than the flagged row's
-    //     classification time (30s buffer avoids the same-inbound row that
-    //     gets appended when *we* send a reply).
-    // We compare against intent_classified_at (not updated_at) because
-    // sending/retrying drafts can bump updated_at on an old flagged row.
-    if (
-      !isVoiceStub(candidate.text) &&
-      candidate.text !== current &&
-      (!classifiedTs || candidate.createdAt > classifiedTs + 30_000)
-    ) {
+    // The Activity endpoint is the reliable stream; if it has a different real
+    // latest message for this flagged contact/thread, let it win immediately.
+    if (!isVoiceStub(candidate.text) && candidate.text !== current) {
       return candidate.text;
     }
 
@@ -719,11 +727,15 @@ export default function FlaggedReviewSection() {
 
   const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
     const enriched = enrichedMessageFor(item);
-    if (!enriched) return item;
+    const activityCreatedAt = activityCandidateFor(item)?.createdAt ?? 0;
+    if (!enriched && !activityCreatedAt) return item;
     return {
       ...item,
-      preview: enriched,
-      latest_message: enriched,
+      preview: enriched ?? item.preview,
+      latest_message: enriched ?? item.latest_message,
+      updated_at: activityCreatedAt
+        ? new Date(Math.max(new Date(item.updated_at).getTime(), activityCreatedAt)).toISOString()
+        : item.updated_at,
     };
   };
 
@@ -965,9 +977,29 @@ export default function FlaggedReviewSection() {
     }
   }, [assignments]);
 
-
-
-  const all: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
+  const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
+  const flaggedFromActivity: FlaggedMessage[] = (usageData?.recent ?? [])
+    .filter(isFlaggedActivity)
+    .map((r, index): FlaggedMessage => {
+      const text = textForActivity(r);
+      const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
+      return {
+        thread_id: fallbackId,
+        provider: "whatsapp",
+        sender: r.senderEmail ?? r.sender ?? r.contactName ?? r.subject ?? "Unknown sender",
+        subject: r.subject,
+        preview: text || r.preview,
+        latest_message: text || r.latestMessage,
+        intent_category: "misc",
+        intent_confidence: 1,
+        intent_reason: "Flagged by the Activity stream.",
+        intent_source: "activity",
+        intent_classified_at: r.createdAt,
+        updated_at: r.createdAt,
+        thread_url: null,
+      };
+    });
+  const all: FlaggedMessage[] = [...flaggedFromList, ...flaggedFromActivity];
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
     return Math.max(...candidates.map((s) => new Date(s).getTime()));
@@ -982,13 +1014,13 @@ export default function FlaggedReviewSection() {
     deduped.push(m);
   }
 
-  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
+  const folderIds = new Set(folders.map((f) => f.id));
   const ungrouped = deduped.filter((m) => {
     const fid = assignments[m.thread_id];
     return !fid || !folderIds.has(fid);
   });
 
-  const countByFolder = useMemo(() => {
+  const countByFolder = (() => {
     const map: Record<string, number> = {};
     for (const m of deduped) {
       const fid = assignments[m.thread_id];
@@ -997,7 +1029,7 @@ export default function FlaggedReviewSection() {
       }
     }
     return map;
-  }, [deduped, assignments, folderIds]);
+  })();
 
   const itemsInFolder = (folderId: string) =>
     deduped.filter((m) => assignments[m.thread_id] === folderId);
