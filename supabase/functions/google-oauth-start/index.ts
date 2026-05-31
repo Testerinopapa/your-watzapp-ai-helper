@@ -9,8 +9,9 @@ const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const CLIENT_ID = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID")!;
 
 const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-oauth-callback`;
+// calendar.events grants read + write on events (least privilege for create/update/delete).
 const SCOPES = [
-  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.events",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
   "openid",
