@@ -892,8 +892,29 @@ export default function FlaggedReviewSection() {
   useEffect(() => {
     if (!user?.id) return;
     const client = getFlaggedRealtimeClient();
-    const channel = client
-      .channel(`flagged-thread-states-${user.id}`)
+    let cancelled = false;
+    let channel: ReturnType<typeof client.channel> | null = null;
+
+    (async () => {
+      // Realtime on the external project requires the user's JWT so the
+      // `user_id=eq.${user.id}` filter actually delivers postgres_changes.
+      // Without this, the subscription is silent and we always fall through
+      // to the 60s "extension didn't pick this up" timeout even when the
+      // send succeeded.
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          client.realtime.setAuth(session.access_token);
+        }
+      } catch {
+        /* ignore */
+      }
+      if (cancelled) return;
+
+      channel = client
+        .channel(`flagged-thread-states-${user.id}`)
       .on(
         "postgres_changes",
         {
@@ -948,8 +969,11 @@ export default function FlaggedReviewSection() {
         },
       )
       .subscribe();
+    })();
+
     return () => {
-      client.removeChannel(channel);
+      cancelled = true;
+      if (channel) client.removeChannel(channel);
     };
   }, [user?.id, refetch]);
 
