@@ -642,33 +642,64 @@ export default function FlaggedReviewSection() {
   const normalizeSender = (s: string | null | undefined) =>
     (s ?? "").trim().toLowerCase();
   const enrichedBySender = useMemo(() => {
-    const map = new Map<string, string>();
+    // Keep the freshest (latest createdAt) non-empty activity entry per sender,
+    // preferring entries that have a real transcript over voice-message stubs.
+    const map = new Map<string, { text: string; createdAt: number }>();
     for (const r of usageData?.recent ?? []) {
       const key = normalizeSender(r.senderEmail);
       if (!key) continue;
       const text = (r.latestMessage ?? r.preview ?? "").trim();
       if (!text) continue;
-      // Prefer entries that actually contain a transcript (have characters
-      // after a trailing "]" or aren't just a bare "[Voice message]" stub).
+      const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
       const existing = map.get(key);
-      if (!existing || text.length > existing.length) map.set(key, text);
+      if (!existing) {
+        map.set(key, { text, createdAt });
+        continue;
+      }
+      const existingIsStub = isVoiceStub(existing.text);
+      const candidateIsStub = isVoiceStub(text);
+      // Prefer real transcript over stub; otherwise prefer the newer entry.
+      if (existingIsStub && !candidateIsStub) {
+        map.set(key, { text, createdAt });
+      } else if (existingIsStub === candidateIsStub && createdAt > existing.createdAt) {
+        map.set(key, { text, createdAt });
+      }
     }
     return map;
   }, [usageData]);
 
-  const isVoiceStub = (text: string | null | undefined) => {
+  function isVoiceStub(text: string | null | undefined) {
     const t = (text ?? "").trim();
     if (!t) return true;
-    // "[Voice message] 1×", "[Voice message]", "[Voice message 0:05]" with no transcript
     return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
-  };
+  }
 
   const enrichedMessageFor = (item: FlaggedMessage): string | null => {
-    const current = item.latest_message ?? item.preview ?? "";
-    if (!isVoiceStub(current) && current.trim().length > 0) return null;
+    const current = (item.latest_message ?? item.preview ?? "").trim();
     const key = normalizeSender(item.sender);
     const candidate = enrichedBySender.get(key);
-    if (candidate && !isVoiceStub(candidate)) return candidate;
+    if (!candidate) return null;
+
+    // Always replace voice-message stubs with a real transcript if we have one.
+    if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
+      return candidate.text;
+    }
+
+    // Otherwise, replace the flagged-list preview when the Activity feed has
+    // a strictly newer message for this sender — the flagged list can be
+    // stale for some threads while Activity reflects the latest inbound.
+    const itemTs = Math.max(
+      item.intent_classified_at ? new Date(item.intent_classified_at).getTime() : 0,
+      item.updated_at ? new Date(item.updated_at).getTime() : 0,
+    );
+    if (
+      candidate.createdAt > itemTs &&
+      candidate.text &&
+      candidate.text !== current
+    ) {
+      return candidate.text;
+    }
+
     return null;
   };
 
