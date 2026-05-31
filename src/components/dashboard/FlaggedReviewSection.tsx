@@ -895,12 +895,58 @@ export default function FlaggedReviewSection() {
     let cancelled = false;
     let channel: ReturnType<typeof client.channel> | null = null;
 
+    const applyRow = (row: Record<string, unknown> | undefined, source: string) => {
+      if (!row) return;
+      const threadId = row.thread_id as string | undefined;
+      if (!threadId) return;
+      const status = row.status_value as string | undefined;
+      const lastKey = row.last_auto_sent_message_key as string | undefined;
+      const lastAt = row.last_auto_sent_at as string | undefined;
+      const lastError = row.last_error as string | undefined;
+
+      console.log("[flagged] thread_states update", source, {
+        threadId,
+        status,
+        lastKey,
+        lastAt,
+        lastError,
+      });
+
+      setDrafts((prev) => {
+        const cur = prev[threadId];
+        if (!cur || !cur.draftId || cur.phase !== "waiting") return prev;
+
+        const keyMatches = lastKey && lastKey === cur.draftId;
+        const looksSent =
+          status === "sent" ||
+          status === "delivered" ||
+          status === "completed" ||
+          !!keyMatches;
+
+        if (looksSent) {
+          clearTimeoutFor(threadId);
+          return {
+            ...prev,
+            [threadId]: {
+              ...cur,
+              phase: "sent",
+              sentAt: lastAt ?? new Date().toISOString(),
+              error: null,
+            },
+          };
+        }
+        if (lastError) {
+          clearTimeoutFor(threadId);
+          return {
+            ...prev,
+            [threadId]: { ...cur, phase: "error", error: lastError },
+          };
+        }
+        return prev;
+      });
+    };
+
     (async () => {
-      // Realtime on the external project requires the user's JWT so the
-      // `user_id=eq.${user.id}` filter actually delivers postgres_changes.
-      // Without this, the subscription is silent and we always fall through
-      // to the 60s "extension didn't pick this up" timeout even when the
-      // send succeeded.
       try {
         const {
           data: { session },
@@ -915,64 +961,67 @@ export default function FlaggedReviewSection() {
 
       channel = client
         .channel(`flagged-thread-states-${user.id}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "thread_states",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          const row = (payload.new ?? payload.old) as
-            | Record<string, unknown>
-            | undefined;
-          if (row) {
-            const threadId = row.thread_id as string | undefined;
-            const status = row.status_value as string | undefined;
-            const lastKey = row.last_auto_sent_message_key as string | undefined;
-            const lastAt = row.last_auto_sent_at as string | undefined;
-            const lastError = row.last_error as string | undefined;
-
-            if (threadId) {
-              setDrafts((prev) => {
-                const cur = prev[threadId];
-                if (!cur || !cur.draftId) return prev;
-
-                let next = cur;
-                if (
-                  status === "sent" &&
-                  lastKey &&
-                  lastKey === cur.draftId
-                ) {
-                  clearTimeoutFor(threadId);
-                  next = {
-                    ...cur,
-                    phase: "sent",
-                    sentAt: lastAt ?? new Date().toISOString(),
-                    error: null,
-                  };
-                } else if (lastError && cur.phase === "waiting") {
-                  clearTimeoutFor(threadId);
-                  next = {
-                    ...cur,
-                    phase: "error",
-                    error: lastError,
-                  };
-                }
-                if (next === cur) return prev;
-                return { ...prev, [threadId]: next };
-              });
-            }
-          }
-          refetch();
-        },
-      )
-      .subscribe();
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "thread_states",
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            applyRow(
+              (payload.new ?? payload.old) as Record<string, unknown> | undefined,
+              "realtime",
+            );
+            refetch();
+          },
+        )
+        .subscribe((status) => {
+          console.log("[flagged] realtime status:", status);
+        });
     })();
+
+    // Polling fallback — every 4s, check thread_states for any draft in
+    // "waiting" phase via REST. This sidesteps realtime entirely if the
+    // subscription isn't delivering events.
+    const pollId = setInterval(async () => {
+      const waitingThreadIds = Object.entries(draftsRef.current)
+        .filter(([, d]) => d.phase === "waiting" && d.draftId)
+        .map(([tid]) => tid);
+      if (waitingThreadIds.length === 0) return;
+
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) return;
+
+        const inList = waitingThreadIds
+          .map((t) => `"${t.replace(/"/g, '\\"')}"`)
+          .join(",");
+        const url =
+          `${FLAGGED_SUPABASE_URL}/rest/v1/thread_states` +
+          `?select=thread_id,status_value,last_auto_sent_message_key,last_auto_sent_at,last_error` +
+          `&thread_id=in.(${encodeURIComponent(inList)})`;
+
+        const res = await fetch(url, {
+          headers: {
+            apikey: FLAGGED_ANON_KEY,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+        if (!res.ok) return;
+        const rows = (await res.json()) as Record<string, unknown>[];
+        for (const r of rows) applyRow(r, "poll");
+      } catch (e) {
+        console.log("[flagged] poll error", e);
+      }
+    }, 4000);
 
     return () => {
       cancelled = true;
+      clearInterval(pollId);
       if (channel) client.removeChannel(channel);
     };
   }, [user?.id, refetch]);
