@@ -1021,6 +1021,30 @@ export default function FlaggedReviewSection() {
     }
   }, [assignments]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
+    } catch {
+      /* ignore */
+    }
+  }, [dismissed]);
+
+  const dismissKeysFor = (m: FlaggedMessage): string[] => {
+    const keys = [m.thread_id];
+    const sk = normalizeLookup(m.sender ?? "");
+    if (sk) keys.push(`sender:${sk}`);
+    return keys;
+  };
+  const isDismissed = (m: FlaggedMessage) => dismissKeysFor(m).some((k) => dismissed.has(k));
+  const dismissItem = (m: FlaggedMessage) => {
+    const keys = dismissKeysFor(m);
+    setDismissed((prev) => {
+      const next = new Set(prev);
+      for (const k of keys) next.add(k);
+      return next;
+    });
+  };
+
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
   const activityGroups = new Map<string, FlaggedMessage>();
   for (const [index, r] of (usageData?.recent ?? []).filter(isFlaggedActivity).entries()) {
