@@ -688,10 +688,9 @@ export default function FlaggedReviewSection() {
     const key = normalizeSender(item.sender);
     const candidate = enrichedBySender.get(key);
     if (!candidate) return null;
-    const itemTs = Math.max(
-      new Date(item.updated_at).getTime(),
-      item.intent_classified_at ? new Date(item.intent_classified_at).getTime() : 0,
-    );
+    const classifiedTs = item.intent_classified_at
+      ? new Date(item.intent_classified_at).getTime()
+      : 0;
 
     // ONLY replace voice-message stubs with a real transcript. Do NOT use the
     // Activity feed to override an otherwise-valid incoming message — Activity
@@ -705,8 +704,14 @@ export default function FlaggedReviewSection() {
 
     // Exception: if Activity has a newer real transcript paired with a nearby
     // voice/review stub, treat it as the latest inbound voice message even when
-    // the flagged row itself failed to advance.
-    if (!isVoiceStub(candidate.text) && candidate.hasNearbyStub && candidate.createdAt > itemTs) {
+    // the flagged row itself failed to advance. Compare against classification
+    // time, not updated_at, because sending/retrying drafts can bump updated_at
+    // on an old flagged row and make stale text like "n acredito" look newer.
+    if (
+      !isVoiceStub(candidate.text) &&
+      candidate.hasNearbyStub &&
+      (!classifiedTs || candidate.createdAt > classifiedTs)
+    ) {
       return candidate.text;
     }
 
