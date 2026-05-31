@@ -58,6 +58,7 @@ import {
   FLAGGED_ANON_KEY,
   type FlaggedMessage,
 } from "@/hooks/useFlaggedMessages";
+import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   DndContext,
