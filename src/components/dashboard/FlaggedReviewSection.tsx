@@ -1333,6 +1333,12 @@ export default function FlaggedReviewSection() {
           </div>
         )}
 
+        {(deduped.length > 0 || activeItem) && (
+          <TrashDropZone isAnyDragging={activeItem !== null} />
+        )}
+
+
+
         {/* Create folder dialog */}
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogContent className="max-w-md">
