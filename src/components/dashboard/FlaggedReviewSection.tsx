@@ -46,7 +46,6 @@ import {
   Copy,
   Check,
   Loader2,
-  AlertTriangle,
   CheckCircle2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
