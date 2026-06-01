@@ -527,14 +527,14 @@ export default function PersonalAgendaPanel({
         title="Today"
         entries={today}
         conflicts={conflicts}
-        onRemove={remove}
+        onRemove={confirmRemove}
         empty="Nothing scheduled for today."
       />
       <Section
         title="Upcoming"
         entries={upcoming}
         conflicts={conflicts}
-        onRemove={remove}
+        onRemove={confirmRemove}
         empty="No upcoming entries yet."
       />
       {noTime.length > 0 && (
@@ -542,7 +542,7 @@ export default function PersonalAgendaPanel({
           title="Needs time"
           entries={noTime}
           conflicts={conflicts}
-          onRemove={remove}
+          onRemove={confirmRemove}
         />
       )}
       {past.length > 0 && (
@@ -550,7 +550,7 @@ export default function PersonalAgendaPanel({
           title="Past"
           entries={past.slice(0, 5)}
           conflicts={conflicts}
-          onRemove={remove}
+          onRemove={confirmRemove}
         />
       )}
     </div>
