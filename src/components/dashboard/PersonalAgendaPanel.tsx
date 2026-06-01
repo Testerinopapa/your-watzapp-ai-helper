@@ -101,10 +101,13 @@ function AgendaCard({
   featured?: boolean;
 }) {
   const start = entry.start_time ? new Date(entry.start_time) : null;
-  const monthLabel = start ? format(start, "MMM").toUpperCase() : "---";
-  const dayNum = start ? format(start, "d") : "?";
-  const dayLabel = start ? format(start, "EEE") : "---";
-  const timeStr = start ? format(start, "h:mm a") : null;
+  const tz = entry.timezone || undefined;
+  const fmt = (opts: Intl.DateTimeFormatOptions) =>
+    start ? new Intl.DateTimeFormat("en-US", { ...opts, timeZone: tz }).format(start) : null;
+  const monthLabel = fmt({ month: "short" })?.toUpperCase() ?? "---";
+  const dayNum = fmt({ day: "numeric" }) ?? "?";
+  const dayLabel = fmt({ weekday: "short" }) ?? "---";
+  const timeStr = fmt({ hour: "numeric", minute: "2-digit", hour12: true });
   const initials = sourceInitials(entry);
   const srcColor = sourceColor(entry.source_type);
 
