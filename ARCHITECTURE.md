@@ -123,7 +123,26 @@ User clicks "Draft reply" (or "Manage Appointment" for appointment messages)
        c. If date extracted → invoke google-calendar-push (upsert)
        d. If no date → event saved with null start_time (appears in "Needs time")
        e. Toast feedback: synced / saved-locally / needs-time
+    5. IF scheduling-related AND draft looks like a cancellation:
+       a. Find existing event by thread_id + user_id
+       b. Mark status="cancelled", clear source_event_id (frees up for rebooking)
+       c. If event had source_event_id → invoke google-calendar-push (delete)
+       d. Toast: "Cancelled & removed from Google Calendar" / "Marked cancelled locally"
+    6. IF scheduling-related AND draft looks like a reschedule:
+       a. Cancel existing event (same as step 5)
+       b. Extract new date/time from draft
+       c. INSERT fresh event (source_event_id = thread_id:rescheduled:N to avoid upsert conflict)
+       d. If date extracted → invoke google-calendar-push (upsert new)
+       e. If no date → new event with status="needs_confirmation" (appears in "Needs time")
 ```
+
+### Intent Detection Helpers (`src/lib/extractDateTime.ts`)
+
+| Helper | Detects | Example matches |
+|--------|---------|-----------------|
+| `looksLikeConfirmation` | Positive booking language | "confirmed", "booked", "see you then" |
+| `looksLikeCancellation` | Cancellation language | "cancel", "can't make it", "won't work", "rain check" |
+| `looksLikeReschedule` | Reschedule language + time indicator | "reschedule", "how about Tuesday?", "can we move to Wednesday?" |
 
 ### Date/Time Extraction (`src/lib/extractDateTime.ts`)
 
