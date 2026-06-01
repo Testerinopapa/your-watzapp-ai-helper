@@ -73,18 +73,25 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const agendaId: string | undefined = body?.agenda_event_id;
     const action: "upsert" | "delete" = body?.action === "delete" ? "delete" : "upsert";
+    const sourceEventId: string | null = body?.source_event_id ?? null;
     if (!agendaId) return json({ error: "agenda_event_id required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-    const { data: row, error: rowErr } = await admin
-      .from("agenda_events")
-      .select("*")
-      .eq("id", agendaId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (rowErr) throw rowErr;
-    if (!row) return json({ error: "not_found" }, 404);
+    // For delete with explicit source_event_id we can skip row lookup
+    // because the caller already removed the DB row.
+    let row: any = null;
+    if (action !== "delete" || !sourceEventId) {
+      const { data: rowData, error: rowErr } = await admin
+        .from("agenda_events")
+        .select("*")
+        .eq("id", agendaId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (rowErr) throw rowErr;
+      if (!rowData) return json({ error: "not_found" }, 404);
+      row = rowData;
+    }
 
     const { data: tok, error: tokErr } = await admin
       .from("google_oauth_tokens")
