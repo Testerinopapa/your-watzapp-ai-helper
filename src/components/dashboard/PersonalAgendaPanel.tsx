@@ -373,6 +373,7 @@ export default function PersonalAgendaPanel({
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   const addManual = async () => {
     if (!title.trim()) return;
