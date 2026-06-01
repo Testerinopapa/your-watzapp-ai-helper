@@ -315,7 +315,10 @@ export function looksLikeConfirmation(text: string): boolean {
  */
 export function looksLikeCancellation(text: string): boolean {
   const lower = text.toLowerCase();
-  return /\b(cancel|cancelled|canceled|cancelling|canceling|cannot make|can't make|cant make|not going to make|won't be able|no longer|call off|called off|need to cancel|have to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|won't work|doesn't work|isn't going to work|not available anymore|raincheck|rain check)\b/i.test(lower);
+  // Must match an active cancellation statement, NOT a polite offer like
+  // "let me know if you need to cancel". Conjugated forms (cancelled/
+  // cancelling) are safe; bare "cancel" and vague "won't work" are excluded.
+  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check)\b/i.test(lower);
 }
 
 /**
