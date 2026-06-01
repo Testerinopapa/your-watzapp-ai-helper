@@ -126,11 +126,11 @@ Deno.serve(async (req) => {
     }
 
     const baseUrl = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-    const existingEventId: string | null = row.source_event_id ?? null;
 
     if (action === "delete") {
-      if (!existingEventId) return json({ ok: true, skipped: "no_google_event" });
-      const res = await fetch(`${baseUrl}/${encodeURIComponent(existingEventId)}`, {
+      const eventId = sourceEventId ?? row?.source_event_id ?? null;
+      if (!eventId) return json({ ok: true, skipped: "no_google_event" });
+      const res = await fetch(`${baseUrl}/${encodeURIComponent(eventId)}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -140,6 +140,8 @@ Deno.serve(async (req) => {
       }
       return json({ ok: true });
     }
+
+    const existingEventId: string | null = row.source_event_id ?? null;
 
     // Upsert
     if (!row.start_time) return json({ error: "start_time_required" }, 400);
