@@ -43,22 +43,31 @@ interface FlaggedListResponse {
 }
 
 export function useFlaggedMessages(limit = 20) {
+  const { session, loading } = useAuth();
   return useQuery<FlaggedMessage[]>({
-    queryKey: ["flagged-messages", limit],
+    queryKey: ["flagged-messages", limit, session?.user?.id ?? null],
+    enabled: !loading && !!session,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
     refetchInterval: 15_000,
+    retry: (failureCount, error) => {
+      // Don't spam retries on auth errors
+      if (/unauthorized|not signed in/i.test(String(error?.message))) return false;
+      return failureCount < 2;
+    },
     queryFn: async () => {
+      // Always pull a fresh token at request time so we don't send an expired JWT.
       const {
-        data: { session },
+        data: { session: current },
       } = await supabase.auth.getSession();
-      if (!session) throw new Error("Not signed in");
+      const token = current?.access_token ?? session?.access_token;
+      if (!token) throw new Error("Not signed in");
 
       const res = await fetch(`${FLAGGED_LIST_URL}?limit=${limit}`, {
         method: "GET",
         headers: {
           apikey: FLAGGED_ANON_KEY,
-          Authorization: `Bearer ${session.access_token}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
@@ -78,3 +87,4 @@ export function useFlaggedMessages(limit = 20) {
     },
   });
 }
+
