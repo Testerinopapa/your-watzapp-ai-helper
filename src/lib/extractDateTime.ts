@@ -135,18 +135,19 @@ function extractMonthDayTime(
   return { date: withTime, source: match[0], confidence: "high" };
 }
 
-// "Tuesday at 10am", "next monday at 3pm"
+// "Tuesday at 10am", "next monday at 3pm", "on Wednesday at 2pm", "this Friday at 4"
 function extractDayNameTime(
   text: string,
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(next\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
 
-  const isNext = !!match[1];
+  const prefix = (match[1] ?? "").toLowerCase();
+  const isNext = prefix === "next";
   const dayKey = match[2].toLowerCase();
   const dayOfWeek = DAYS[dayKey];
   if (dayOfWeek === undefined) return null;
@@ -251,18 +252,19 @@ function extractMonthDay(
   return { date, source: match[0], confidence: "medium" };
 }
 
-// "next Monday", "Tuesday" (no time)
+// "next Monday", "Tuesday", "on Wednesday" (no time)
 function extractDayName(
   text: string,
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(next\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b(?!\s*(?:at|by|morning|evening|afternoon|night))/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b(?!\s*(?:at|by|morning|evening|afternoon|night))/i;
 
   const match = re.exec(text);
   if (!match) return null;
 
-  const isNext = !!match[1];
+  const prefix = (match[1] ?? "").toLowerCase();
+  const isNext = prefix === "next";
   const dayKey = match[2].toLowerCase();
   const dayOfWeek = DAYS[dayKey];
   if (dayOfWeek === undefined) return null;
@@ -305,7 +307,7 @@ function guessYear(monthIndex: number, now: Date): number {
  */
 export function looksLikeConfirmation(text: string): boolean {
   const lower = text.toLowerCase();
-  return /\b(confirm|confirmed|booked|scheduled?|reserved?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours)\b/i.test(lower);
+  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar)\b/i.test(lower);
 }
 
 /**
