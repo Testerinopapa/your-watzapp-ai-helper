@@ -93,8 +93,18 @@ calendar-query:
 ## Reply/Draft Flow (FlaggedReviewSection)
 
 ```
-User clicks "Draft reply" on a flagged message card
-  → Opens inline form: instruction textarea + "Generate & send" button
+User clicks "Draft reply" (or "Manage Appointment" for appointment messages)
+  → Opens inline form: instruction textarea + button
+  → For appointment messages (intent_category = appointment|booking|reservation):
+      - Label: "Appointment instructions"
+      - Placeholder/auto-fill: "Check calendar, reply and update google calendar"
+      - Button: "Manage Appointment" / "Regenerate & manage"
+      - Amber-500 styling on button, amber left border on card
+  → For non-appointment messages:
+      - Label: "How should we reply?"
+      - Placeholder: "e.g. Politely confirm and propose Tuesday at 10am."
+      - Button: "Generate & send" / "Regenerate & send"
+      - Mint green (#2dd4a8) styling
   → callDraftFunction():
     1. If scheduling-related (detected by needsCalendarContext regex):
        a. Sync Google Calendar via google-calendar-sync

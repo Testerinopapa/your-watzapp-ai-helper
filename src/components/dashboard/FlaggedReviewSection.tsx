@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import {
   Flag,
+  CalendarCheck,
   MessageCircle,
   Clock,
   RefreshCw,
@@ -178,7 +179,10 @@ type FlaggedCardInnerProps = {
   elevated?: boolean;
 };
 
+const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
+
 function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
+  const isAppt = APPOINTMENT_CATEGORIES.has((item.intent_category ?? "").toLowerCase().trim());
   const tone = toneFor(item.updated_at);
   const styles = toneStyles[tone];
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
@@ -196,9 +200,15 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
     <Card
       className={cn(
         "border-l-4 transition-colors",
-        styles.border,
+        isAppt
+          ? "border-l-[#f59e0b] bg-[#0a0a1a]/95 ring-1 ring-amber-500/20 shadow-[0_8px_30px_-12px_rgba(245,158,11,0.25)]"
+          : styles.border,
         elevated &&
+          !isAppt &&
           "border-l-[#2dd4a8] bg-[#0a0a1a]/95 ring-1 ring-[rgba(115,255,184,0.55)] shadow-[0_20px_50px_-15px_rgba(45,212,168,0.55)]",
+        elevated &&
+          isAppt &&
+          "border-l-[#f59e0b] ring-1 ring-amber-500/40 shadow-[0_20px_50px_-15px_rgba(245,158,11,0.55)]",
       )}
     >
       <CardContent className="p-4 space-y-3">
@@ -207,7 +217,11 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             {leading}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-                <MessageCircle size={14} className="text-muted-foreground shrink-0" />
+                {isAppt ? (
+                  <CalendarCheck size={14} className="text-amber-400 shrink-0" />
+                ) : (
+                  <MessageCircle size={14} className="text-muted-foreground shrink-0" />
+                )}
                 <span className="truncate">{senderLabel}</span>
                 {backlog > 0 && (
                   <button
@@ -235,7 +249,9 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                styles.badge,
+                isAppt
+                  ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
+                  : styles.badge,
               )}
             >
               <Clock size={11} />
@@ -248,7 +264,13 @@ function FlaggedCardInner({ item, trailing, leading, footer, elevated }: Flagged
 
         <div className="space-y-1">
           {item.intent_category && (
-            <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-[10px] uppercase tracking-wide",
+                isAppt && "border-amber-400/30 text-amber-400 bg-amber-400/5",
+              )}
+            >
               {item.intent_category}
             </Badge>
           )}
@@ -354,6 +376,7 @@ function DraftReplyFooter({
   onClose,
   onGenerate,
   onRetry,
+  isAppointment = false,
 }: {
   item: FlaggedMessage;
   enrichedMessage?: string | null;
@@ -362,6 +385,7 @@ function DraftReplyFooter({
   onClose: () => void;
   onGenerate: () => void;
   onRetry: () => void;
+  isAppointment?: boolean;
 }) {
   const incoming = (
     enrichedMessage ??
@@ -405,11 +429,22 @@ function DraftReplyFooter({
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => onChange({ open: true })}
-          className="h-7 gap-1.5 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
+          onClick={() => {
+            if (isAppointment && !state.instruction) {
+              onChange({ open: true, instruction: "Check calendar, reply and update google calendar" });
+            } else {
+              onChange({ open: true });
+            }
+          }}
+          className={cn(
+            "h-7 gap-1.5 text-[11px]",
+            isAppointment
+              ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
+              : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
+          )}
         >
           <Sparkles size={12} />
-          Draft reply
+          {isAppointment ? "Manage Appointment" : "Draft reply"}
         </Button>
       </div>
     );
@@ -437,13 +472,17 @@ function DraftReplyFooter({
           htmlFor={`draft-instr-${item.thread_id}`}
           className="block text-[11px] font-medium text-muted-foreground mb-1"
         >
-          How should we reply?
+          {isAppointment ? "Appointment instructions" : "How should we reply?"}
         </label>
         <Textarea
           id={`draft-instr-${item.thread_id}`}
           value={state.instruction}
           onChange={(e) => onChange({ instruction: e.target.value })}
-          placeholder="e.g. Politely confirm and propose Tuesday at 10am."
+          placeholder={
+            isAppointment
+              ? "Check calendar, reply and update google calendar"
+              : "e.g. Politely confirm and propose Tuesday at 10am."
+          }
           maxLength={2000}
           rows={3}
           className="text-xs bg-background"
@@ -456,7 +495,12 @@ function DraftReplyFooter({
           size="sm"
           onClick={onGenerate}
           disabled={!canGenerate}
-          className="h-7 gap-1.5 text-[11px] bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]"
+          className={cn(
+            "h-7 gap-1.5 text-[11px]",
+            isAppointment
+              ? "bg-amber-500 text-black hover:bg-amber-400"
+              : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
+          )}
         >
           {state.loading ? (
             <Loader2 size={12} className="animate-spin" />
@@ -466,8 +510,12 @@ function DraftReplyFooter({
           {state.loading
             ? "Generating…"
             : state.draft
-              ? "Regenerate & send"
-              : "Generate & send"}
+              ? isAppointment
+                ? "Regenerate & manage"
+                : "Regenerate & send"
+              : isAppointment
+                ? "Manage Appointment"
+                : "Generate & send"}
         </Button>
         <Button
           variant="ghost"
@@ -1551,6 +1599,9 @@ export default function FlaggedReviewSection() {
                           }
                           onGenerate={() => generateDraft(item)}
                           onRetry={() => retryDraft(item)}
+                          isAppointment={APPOINTMENT_CATEGORIES.has(
+                            (item.intent_category ?? "").toLowerCase().trim(),
+                          )}
                         />
                       }
                     />
