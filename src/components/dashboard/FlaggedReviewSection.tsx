@@ -112,12 +112,20 @@ const DEFAULT_FOLDERS: FolderDef[] = [
   { id: "follow-up", name: "Follow-up" },
 ];
 
+const ISO_TIMESTAMP_LABEL_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})(?::\d+)?$/i;
+
 const cleanSenderLabel = (value: string | null | undefined) => {
   const cleaned = (value ?? "")
     .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-  if (!cleaned || /^unknown sender$/i.test(cleaned) || /^activity:/i.test(cleaned)) return "";
+  if (
+    !cleaned ||
+    /^unknown sender$/i.test(cleaned) ||
+    /^activity:/i.test(cleaned) ||
+    ISO_TIMESTAMP_LABEL_RE.test(cleaned)
+  ) return "";
   return cleaned;
 };
 
@@ -1169,8 +1177,10 @@ export default function FlaggedReviewSection() {
   const activityGroups = new Map<string, FlaggedMessage>();
   for (const [index, r] of activityRows.filter(isFlaggedActivity).entries()) {
     const text = textForActivity(r);
-    const fallbackId = activityThreadId(r) || `activity:${r.createdAt}:${index}`;
-    const sender = senderLabelForActivity(r) || senderFromThreadId(fallbackId) || fallbackId;
+    const realThreadId = activityThreadId(r);
+    const sender = senderLabelForActivity(r) || senderFromThreadId(realThreadId);
+    if (!sender) continue;
+    const fallbackId = realThreadId || `activity:${r.createdAt}:${index}`;
     const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText = existing?.latest_message ?? existing?.preview ?? "";
@@ -1185,7 +1195,7 @@ export default function FlaggedReviewSection() {
         thread_id: existing?.thread_id ?? fallbackId,
         provider: "whatsapp",
         sender,
-        subject: r.subject ?? existing?.subject ?? null,
+        subject: cleanSenderLabel(r.subject) || existing?.subject || null,
         preview: useText ? text || r.preview : existing.preview,
         latest_message: useText ? text || r.latestMessage : existing.latest_message,
         intent_category: "misc",
