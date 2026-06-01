@@ -51,7 +51,6 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { extractDateTime, looksLikeConfirmation, looksLikeCancellation, looksLikeReschedule } from "@/lib/extractDateTime";
 import {
   useFlaggedMessages,
   FLAGGED_SUPABASE_URL,
@@ -989,11 +988,6 @@ export default function FlaggedReviewSection() {
     return raw || `Request failed (${status})`;
   };
 
-  const needsCalendarContext = (item: FlaggedMessage, incomingMessage: string, userInstruction: string) => {
-    const text = `${item.intent_category ?? ""} ${incomingMessage} ${userInstruction}`.toLowerCase();
-    return /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/.test(text);
-  };
-
   const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
     const enriched = enrichedMessageFor(item);
@@ -1009,108 +1003,64 @@ export default function FlaggedReviewSection() {
     const userInstruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
     if (!incomingMessage || !userInstruction) return;
 
-    // For scheduling-related messages, first sync Google Calendar into
-    // agenda_events, then prepend the user's busy blocks to the instruction.
-    // If we can't verify the calendar, do not draft a positive confirmation.
+    // Sync Google Calendar and prepend busy blocks to the instruction.
+    // Always provides calendar context so the AI can make informed replies.
     let instruction = userInstruction;
-    if (needsCalendarContext(item, incomingMessage, userInstruction)) {
-      try {
-        const { error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
-        if (syncError) {
-          throw new Error(syncError.message || "Calendar sync failed");
-        }
+    try {
+      const { error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+      if (syncError) throw new Error(syncError.message || "Calendar sync failed");
 
-        const nowIso = new Date().toISOString();
-        const horizonIso = new Date(
-          Date.now() + 30 * 24 * 60 * 60 * 1000,
-        ).toISOString();
-        const { data: events } = await supabase
-          .from("agenda_events")
-          .select("title, start_time, end_time, timezone, location")
-          .gte("end_time", nowIso)
-          .lte("start_time", horizonIso)
-          .order("start_time", { ascending: true })
-          .limit(250);
+      const nowIso = new Date().toISOString();
+      const horizonIso = new Date(
+        Date.now() + 30 * 24 * 60 * 60 * 1000,
+      ).toISOString();
+      const { data: events } = await supabase
+        .from("agenda_events")
+        .select("title, start_time, end_time, timezone, location")
+        .gte("end_time", nowIso)
+        .lte("start_time", horizonIso)
+        .order("start_time", { ascending: true })
+        .limit(250);
 
-        if (events === null) {
-          throw new Error("Calendar events could not be loaded");
-        }
+      if (events === null) throw new Error("Calendar events could not be loaded");
 
-        const tz =
-          Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-        const fmt = new Intl.DateTimeFormat("en-GB", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: tz,
+      const tz =
+        Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+      const fmt = new Intl.DateTimeFormat("en-GB", {
+        weekday: "short", month: "short", day: "numeric",
+        hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz,
+      });
+      const fmtTime = new Intl.DateTimeFormat("en-GB", {
+        hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz,
+      });
+
+      const lines = (events ?? [])
+        .filter((e) => e.start_time && e.end_time)
+        .map((e) => {
+          const startDate = new Date(e.start_time as string);
+          const endDate = new Date(e.end_time as string);
+          const start = fmt.format(startDate);
+          const end = fmtTime.format(endDate);
+          const loc = e.location ? ` @ ${e.location}` : "";
+          const title = e.title?.trim() || "(busy)";
+          return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}`;
         });
-        const fmtTime = new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: tz,
-        });
 
-        const lines = (events ?? [])
-          .filter((e) => e.start_time && e.end_time)
-          .map((e) => {
-            const startDate = new Date(e.start_time as string);
-            const endDate = new Date(e.end_time as string);
-            const start = fmt.format(startDate);
-            const end = fmtTime.format(endDate);
-            const loc = e.location ? ` @ ${e.location}` : "";
-            const title = e.title?.trim() || "(busy)";
-            return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}`;
-          });
+      const calendarBlock =
+        lines.length > 0
+          ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days:\n${lines.join("\n")}`
+          : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}).`;
 
-        const calendarBlock =
-          lines.length > 0
-            ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days. Treat each block as fully booked:\n${lines.join(
-                "\n",
-              )}`
-            : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}).`;
+      const calendarRules =
+        lines.length > 0
+          ? `\n\nREPLY RULES:\n1. If the contact wants to CANCEL: acknowledge empathetically, confirm the cancellation explicitly, mention the event being cancelled.\n2. If the contact wants to RESCHEDULE: reference the original time, check any proposed new time against CALENDAR CONTEXT, only confirm free slots.\n3. If the contact wants to BOOK: NEVER confirm any time that overlaps a CALENDAR CONTEXT block. Offer the nearest free alternative if a conflict exists.\n4. If unsure about intent, ask the contact to clarify what they want.`
+          : `\n\nREPLY RULES:\n1. If the contact wants to CANCEL: acknowledge empathetically, confirm the cancellation.\n2. If the contact wants to RESCHEDULE or BOOK: any reasonable time can be proposed (no scheduled events).\n3. Confirm with warmth and clarity.`;
 
-        const intentText = `${incomingMessage}\n${userInstruction}`;
-        const isCancellation = looksLikeCancellation(intentText);
-        const isReschedule = !isCancellation && looksLikeReschedule(intentText);
-
-        let calendarRules = "";
-        if (isCancellation) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE the cancellation directly and empathetically in your reply.\n2. Confirm you've noted they want to cancel — mention specifically what's being cancelled (reference the appointment from CALENDAR CONTEXT if identifiable).\n3. Offer to reschedule if appropriate (e.g. "let me know if you'd like to set another time").\n4. Do NOT propose new times unless they explicitly ask to reschedule.`;
-        } else if (isReschedule) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE they want to change the time. Reference the original appointment from CALENDAR CONTEXT.\n2. Check the proposed new time against CALENDAR CONTEXT — only confirm if it does NOT overlap any block.\n3. If no specific new time is proposed, suggest one based on available slots around their original time.\n4. Make clear the old time will be removed and the new time booked.`;
-        } else if (lines.length > 0) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps a CALENDAR CONTEXT block above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against the CALENDAR CONTEXT. If it conflicts (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any CALENDAR CONTEXT block.`;
-        } else {
-          calendarRules = `\n\nBOOKING REPLY RULES:\n1. Any reasonable time can be proposed — the user has no scheduled events.\n2. If the contact proposes a specific time, confirm with warmth and clarity.`;
-        }
-
-        instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(
-          0,
-          8000,
-        );
-
-      } catch (err) {
-        console.warn("[flagged] failed to load calendar context", err);
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : "Calendar could not be verified.";
-        updateDraft(id, {
-          loading: false,
-          error: `Calendar could not be verified, so I stopped before drafting: ${message}`,
-          phase: "error",
-        });
-        toast({
-          title: "Calendar not verified",
-          description: "I stopped the draft so we don't confirm an already-booked slot.",
-          variant: "destructive",
-        });
-        return;
-      }
+      instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(0, 8000);
+    } catch (err) {
+      console.warn("[flagged] failed to load calendar context", err);
+      // Continue without calendar context — the AI can still draft a reply,
+      // but intent classification below will handle the calendar side.
     }
 
     updateDraft(id, {
@@ -1176,17 +1126,31 @@ export default function FlaggedReviewSection() {
         sentAt: new Date().toISOString(),
       });
 
-      // ── Calendar update based on draft intent (mutually exclusive) ──
-      const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
+      // ── Claude-powered intent classification ──
       const draftText = String(draft);
-      console.log("[flagged] draft sent, isScheduling:", isScheduling,
-        "| confirm:", looksLikeConfirmation(draftText),
-        "| cancel:", looksLikeCancellation(draftText),
-        "| reschedule:", looksLikeReschedule(draftText),
-        "| draft:", draftText.slice(0, 200));
+      let classified: {
+        intent: string;
+        start_time: string | null;
+        end_time: string | null;
+        timezone: string | null;
+        title: string | null;
+        confidence: string;
+      } | null = null;
+      try {
+        const { data } = await supabase.functions.invoke("classify-intent", {
+          body: { draft: draftText, incomingMessage, userInstruction },
+        });
+        classified = data as typeof classified;
+        console.log("[flagged] classify-intent result:", classified);
+      } catch (e) {
+        console.warn("[flagged] classify-intent failed, treating as none", e);
+        classified = { intent: "none", start_time: null, end_time: null, timezone: null, title: null, confidence: "low" };
+      }
 
-      // Cancellation first: most specific, rarely overlaps with other categories
-      if (isScheduling && looksLikeCancellation(draftText)) {
+      const calendarTz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+
+      // ── Cancellation: contact cancels a scheduled appointment ──
+      if (classified?.intent === "cancellation") {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1198,71 +1162,41 @@ export default function FlaggedReviewSection() {
               .maybeSingle();
 
             if (existing && existing.status !== "cancelled") {
+              const googleEventId = existing.source_event_id;
+
+              // Push delete FIRST (needs source_event_id from DB)
+              if (googleEventId) {
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: { agenda_event_id: existing.id, action: "delete", source_event_id: googleEventId },
+                });
+              }
+
+              // THEN nullify in DB
               await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
 
-              if (existing.source_event_id) {
-                const { data: pushData, error: pushErr } =
-                  await supabase.functions.invoke("google-calendar-push", {
-                    body: {
-                      agenda_event_id: existing.id,
-                      action: "delete",
-                    },
-                  });
-                const errCode =
-                  (pushData as { error?: string } | null)?.error;
-                if (pushErr || errCode) {
-                  console.warn(
-                    "[flagged] calendar delete failed after cancellation draft",
-                    pushErr ?? errCode,
-                  );
-                  toast({
-                    title: "Marked cancelled locally",
-                    description:
-                      errCode === "not_connected"
-                        ? "Connect Google Calendar to remove it there too."
-                        : "Google Calendar removal skipped.",
-                  });
-                } else {
-                  toast({
-                    title: "Cancelled & removed from Google Calendar",
-                    description: `${existing.title || "Appointment"} has been cancelled.`,
-                  });
-                }
-              } else {
-                toast({
-                  title: "Appointment cancelled",
-                  description: `${existing.title || "Appointment"} removed from your agenda.`,
-                });
-              }
-            } else if (!existing) {
               toast({
-                title: "Reply sent (no event found)",
-                description:
-                  "No existing appointment was found for this thread to cancel.",
+                title: googleEventId ? "Cancelled & removed from Google Calendar" : "Appointment cancelled",
+                description: `${existing.title || "Appointment"} has been cancelled.`,
               });
+            } else if (!existing) {
+              toast({ title: "Reply sent (no event found)", description: "No appointment found for this thread." });
             }
           }
         } catch (e) {
           console.warn("[flagged] failed to cancel event", e);
-          toast({
-            title: "Reply sent, cancellation skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
+          toast({ title: "Reply sent, cancellation skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
 
-      // Reschedule: cancel old + create new at a different time
-      else if (isScheduling && looksLikeReschedule(draftText)) {
+      // ── Reschedule: cancel old + create new ──
+      else if (classified?.intent === "reschedule") {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
-            // 1. Cancel existing event for this thread
+            // 1. Cancel old event
             const { data: existing } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status")
@@ -1271,104 +1205,69 @@ export default function FlaggedReviewSection() {
               .maybeSingle();
 
             if (existing && existing.status !== "cancelled") {
+              const oldGoogleEventId = existing.source_event_id;
+              if (oldGoogleEventId) {
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: { agenda_event_id: existing.id, action: "delete", source_event_id: oldGoogleEventId },
+                });
+              }
               await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
-
-              if (existing.source_event_id) {
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: existing.id, action: "delete" },
-                });
-              }
             }
 
-            // 2. Create fresh event at new time
-            const extracted = extractDateTime(
-              draftText,
-              userInstruction,
-              item.subject,
-            );
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-            const title =
-              item.subject?.trim() ||
-              (item.sender ? `Appointment with ${item.sender}` : "Appointment");
-
-            const newEvent = {
-              user_id: userData.user.id,
-              source_type: "whatsapp",
-              source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
-              thread_id: item.thread_id,
-              contact_name: item.sender ?? null,
-              contact_channel: item.provider ?? null,
-              title,
-              description: (item.preview ?? item.latest_message ?? null) as string | null,
-              start_time: extracted?.date.toISOString() ?? null,
-              timezone: extracted ? tz : null,
-              status: extracted ? "confirmed" : "needs_confirmation",
-              imported_at: new Date().toISOString(),
-            };
+            // 2. Create new event with Claude-extracted time
+            const hasTime = !!classified?.start_time;
+            const title = classified?.title?.trim() || item.subject?.trim() || (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
-              .insert(newEvent)
+              .insert({
+                user_id: userData.user.id,
+                source_type: "whatsapp",
+                source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
+                thread_id: item.thread_id,
+                contact_name: item.sender ?? null,
+                contact_channel: item.provider ?? null,
+                title,
+                description: (item.preview ?? item.latest_message ?? null) as string | null,
+                start_time: classified?.start_time ?? null,
+                end_time: classified?.end_time ?? null,
+                timezone: classified?.timezone ?? (hasTime ? calendarTz : null),
+                status: hasTime ? "confirmed" : "needs_confirmation",
+                imported_at: new Date().toISOString(),
+              })
               .select("id")
               .single();
 
             if (insErr) throw insErr;
 
-            if (inserted?.id && extracted) {
-              const { data: pushData, error: pushErr } =
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: inserted.id, action: "upsert" },
-                });
-              const errCode =
-                (pushData as { error?: string } | null)?.error;
-              if (pushErr || errCode) {
-                toast({
-                  title: "Rescheduled (Google sync skipped)",
-                  description:
-                    errCode === "not_connected"
-                      ? "Connect Google Calendar to sync the new time."
-                      : "New time saved locally.",
-                });
-              } else {
-                toast({
-                  title: "Rescheduled & synced to Google Calendar",
-                  description: `${title} moved to a new time.`,
-                });
-              }
-            } else if (inserted?.id) {
-              toast({
-                title: "Rescheduled (needs time)",
-                description: `${title} — set a time in the Agenda panel to sync.`,
+            if (inserted?.id && hasTime) {
+              const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
+                body: { agenda_event_id: inserted.id, action: "upsert" },
               });
+              const errCode = (pushData as { error?: string } | null)?.error;
+              toast({
+                title: pushErr || errCode ? "Rescheduled (Google sync skipped)" : "Rescheduled & synced to Google Calendar",
+                description: pushErr || errCode
+                  ? errCode === "not_connected" ? "Connect Google Calendar to sync." : "New time saved locally."
+                  : `${title} moved to a new time.`,
+              });
+            } else if (inserted?.id) {
+              toast({ title: "Rescheduled (needs time)", description: `${title} — set a time in Agenda to sync.` });
             }
           }
         } catch (e) {
           console.warn("[flagged] failed to reschedule event", e);
-          toast({
-            title: "Reply sent, reschedule skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
+          toast({ title: "Reply sent, reschedule skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
 
-      // Confirmation: book a new appointment (most generic, check last)
-      else if (isScheduling && looksLikeConfirmation(draftText)) {
-        const extracted = extractDateTime(
-          draftText,
-          userInstruction,
-          item.subject,
-        );
-        console.log("[flagged] confirmation block entered, extracted:", extracted);
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-        const title =
-          item.subject?.trim() ||
-          (item.sender ? `Appointment with ${item.sender}` : "Appointment");
+      // ── Confirmation: book a new appointment ──
+      else if (classified?.intent === "confirmation") {
+        const hasTime = !!classified?.start_time;
+        const title = classified?.title?.trim() || item.subject?.trim() || (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
         const eventRow: Record<string, unknown> = {
           source_type: "whatsapp",
@@ -1378,8 +1277,9 @@ export default function FlaggedReviewSection() {
           contact_channel: item.provider ?? null,
           title,
           description: (item.preview ?? item.latest_message ?? null) as string | null,
-          start_time: extracted?.date.toISOString() ?? null,
-          timezone: extracted ? tz : null,
+          start_time: classified?.start_time ?? null,
+          end_time: classified?.end_time ?? null,
+          timezone: classified?.timezone ?? (hasTime ? calendarTz : null),
           status: "confirmed",
           imported_at: new Date().toISOString(),
         };
@@ -1388,7 +1288,6 @@ export default function FlaggedReviewSection() {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
             eventRow.user_id = userData.user.id;
-
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
               .upsert(eventRow as never, {
@@ -1400,51 +1299,28 @@ export default function FlaggedReviewSection() {
 
             if (insErr) throw insErr;
 
-            if (inserted?.id && extracted) {
-              const { data: pushData, error: pushErr } =
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: inserted.id, action: "upsert" },
-                });
-              const errCode =
-                (pushData as { error?: string } | null)?.error;
-              if (pushErr || errCode) {
-                console.warn(
-                  "[flagged] calendar push failed after draft",
-                  pushErr ?? errCode,
-                );
-                toast({
-                  title: extracted
-                    ? "Saved to agenda (Google sync skipped)"
-                    : "Added to agenda",
-                  description:
-                    errCode === "not_connected"
-                      ? "Connect Google Calendar to sync."
-                      : "Calendar event saved locally.",
-                });
-              } else {
-                toast({
-                  title: "Confirmed & synced to Google Calendar",
-                  description: `${title} added to your calendar.`,
-                });
-              }
-            } else if (inserted?.id) {
-              toast({
-                title: "Added to agenda (needs time)",
-                description: `${title} — set a time in the Agenda panel to sync.`,
+            if (inserted?.id && hasTime) {
+              const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
+                body: { agenda_event_id: inserted.id, action: "upsert" },
               });
+              const errCode = (pushData as { error?: string } | null)?.error;
+              toast({
+                title: pushErr || errCode ? "Saved to agenda (Google sync skipped)" : "Confirmed & synced to Google Calendar",
+                description: pushErr || errCode
+                  ? errCode === "not_connected" ? "Connect Google Calendar to sync." : "Calendar event saved locally."
+                  : `${title} added to your calendar.`,
+              });
+            } else if (inserted?.id) {
+              toast({ title: "Added to agenda (needs time)", description: `${title} — set a time in Agenda to sync.` });
             }
           }
         } catch (e) {
           console.warn("[flagged] failed to push booking to calendar", e);
-          toast({
-            title: "Reply sent, calendar update skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
+          toast({ title: "Reply sent, calendar update skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
+
+      // intent === "none": no calendar action needed
     } catch (e) {
       updateDraft(id, {
         loading: false,
