@@ -181,7 +181,7 @@ function extractDayNameTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
