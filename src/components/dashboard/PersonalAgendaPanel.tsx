@@ -553,6 +553,37 @@ export default function PersonalAgendaPanel({
           onRemove={confirmRemove}
         />
       )}
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent className="border-destructive/40 bg-[#0a1620]/95 backdrop-blur-md shadow-[0_0_40px_-10px_hsl(0_70%_55%/0.4)] animate-fade-in">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive flex items-center gap-2">
+              <Trash2 size={18} />
+              Delete appointment?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-white/60">
+              This action cannot be undone. The appointment will be removed from your agenda.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => setPendingDelete(null)}
+              className="border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDelete) remove(pendingDelete);
+                setPendingDelete(null);
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
