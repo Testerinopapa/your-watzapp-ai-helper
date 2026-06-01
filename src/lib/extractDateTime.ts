@@ -60,7 +60,7 @@ export function extractDateTime(
 const MONTHS: Record<string, number> = {
   january: 0, jan: 0,
   february: 1, feb: 1,
-  march: 2, mar: 2,
+  march: 2,
   april: 3, apr: 3,
   may: 3,
   june: 4, jun: 4,
@@ -70,6 +70,30 @@ const MONTHS: Record<string, number> = {
   october: 8, oct: 8,
   november: 9, nov: 9,
   december: 10, dec: 10,
+  // Italian
+  gennaio: 0, gen: 0,
+  febbraio: 1,
+  marzo: 2, mar: 2,
+  aprile: 3,
+  maggio: 3, mag: 3,
+  giugno: 4, giu: 4,
+  luglio: 5, lug: 5,
+  agosto: 6, ago: 6,
+  settembre: 7, set: 7,
+  ottobre: 8, ott: 8,
+  novembre: 9,
+  dicembre: 10, dic: 10,
+  // Spanish
+  enero: 0, ene: 0,
+  febrero: 1,
+  abril: 3,
+  mayo: 3,
+  junio: 4,
+  julio: 5,
+  septiembre: 7,
+  octubre: 8,
+  noviembre: 9,
+  diciembre: 10,
 };
 
 type DayIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -82,6 +106,22 @@ const DAYS: Record<string, DayIndex> = {
   thursday: 4, thu: 4, thur: 4, thurs: 4,
   friday: 5, fri: 5,
   saturday: 6, sat: 6,
+  // Italian
+  domenica: 0, dom: 0,
+  "lunedì": 1, lunedi: 1, lun: 1,
+  "martedì": 2, martedi: 2, mar: 2,
+  "mercoledì": 3, mercoledi: 3, mer: 3,
+  "giovedì": 4, giovedi: 4, gio: 4,
+  "venerdì": 5, venerdi: 5, ven: 5,
+  sabato: 6, sab: 6,
+  // Spanish
+  domingo: 0,
+  lunes: 1,
+  martes: 2,
+  "miércoles": 3, miercoles: 3, "mié": 3, mie: 3,
+  jueves: 4, jue: 4,
+  viernes: 5, vie: 5,
+  "sábado": 6, sabado: 6,
 };
 
 const TIME_REGEX = /(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)?/gi;
@@ -115,7 +155,7 @@ function extractMonthDayTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -141,7 +181,7 @@ function extractDayNameTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -234,7 +274,7 @@ function extractMonthDay(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(?:,?\s*(\d{4})\s*)?/i;
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(?:,?\s*(\d{4})\s*)?/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -258,7 +298,7 @@ function extractDayName(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b(?!\s*(?:at|by|morning|evening|afternoon|night))/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\b(?!\s*(?:at|by|morning|evening|afternoon|night|alle|a\s+las))/i;
 
   const match = re.exec(text);
   if (!match) return null;
