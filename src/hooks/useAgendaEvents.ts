@@ -51,9 +51,16 @@ export function useAgendaEvents() {
   useEffect(() => { load(); }, [load]);
 
   const remove = useCallback(async (id: string) => {
-    await supabase.from("agenda_events").delete().eq("id", id);
-    await load();
-  }, [load]);
+    const previous = entries.find((e) => e.id === id);
+    setEntries((prev) => prev.filter((e) => e.id !== id));
+    const { error } = await supabase.from("agenda_events").delete().eq("id", id);
+    if (error) {
+      console.error("agenda_events delete failed", error);
+      if (previous) {
+        setEntries((prev) => [...prev, previous]);
+      }
+    }
+  }, [entries]);
 
   return { entries, loading, refresh: load, remove };
 }
