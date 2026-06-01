@@ -50,6 +50,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { extractDateTime, looksLikeConfirmation } from "@/lib/extractDateTime";
 import {
   useFlaggedMessages,
   FLAGGED_SUPABASE_URL,
@@ -1116,6 +1117,95 @@ export default function FlaggedReviewSection() {
         phase: "sent",
         sentAt: new Date().toISOString(),
       });
+
+      // ── Push confirmed booking to Google Calendar ──
+      const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
+      if (isScheduling && looksLikeConfirmation(String(draft))) {
+        const extracted = extractDateTime(
+          String(draft),
+          userInstruction,
+          item.subject,
+        );
+        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+        const title =
+          item.subject?.trim() ||
+          (item.sender ? `Appointment with ${item.sender}` : "Appointment");
+
+        const eventRow: Record<string, unknown> = {
+          source_type: "whatsapp",
+          source_event_id: item.thread_id,
+          thread_id: item.thread_id,
+          contact_name: item.sender ?? null,
+          contact_channel: item.provider ?? null,
+          title,
+          description: (item.preview ?? item.latest_message ?? null) as string | null,
+          start_time: extracted?.date.toISOString() ?? null,
+          timezone: extracted ? tz : null,
+          status: "confirmed",
+          imported_at: new Date().toISOString(),
+        };
+
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData.user) {
+            eventRow.user_id = userData.user.id;
+
+            const { data: inserted, error: insErr } = await supabase
+              .from("agenda_events")
+              .upsert(eventRow, {
+                onConflict: "user_id,source_type,source_event_id",
+                ignoreDuplicates: false,
+              })
+              .select("id")
+              .single();
+
+            if (insErr) throw insErr;
+
+            if (inserted?.id && extracted) {
+              const { data: pushData, error: pushErr } =
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: { agenda_event_id: inserted.id, action: "upsert" },
+                });
+              const errCode =
+                (pushData as { error?: string } | null)?.error;
+              if (pushErr || errCode) {
+                console.warn(
+                  "[flagged] calendar push failed after draft",
+                  pushErr ?? errCode,
+                );
+                toast({
+                  title: extracted
+                    ? "Saved to agenda (Google sync skipped)"
+                    : "Added to agenda",
+                  description:
+                    errCode === "not_connected"
+                      ? "Connect Google Calendar to sync."
+                      : "Calendar event saved locally.",
+                });
+              } else {
+                toast({
+                  title: "Confirmed & synced to Google Calendar",
+                  description: `${title} added to your calendar.`,
+                });
+              }
+            } else if (inserted?.id) {
+              toast({
+                title: "Added to agenda (needs time)",
+                description: `${title} — set a time in the Agenda panel to sync to Google.`,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[flagged] failed to push booking to calendar", e);
+          toast({
+            title: "Reply sent, calendar update skipped",
+            description:
+              (e as Error)?.message?.slice(0, 120) ??
+              "Could not update calendar.",
+            variant: "destructive",
+          });
+        }
+      }
     } catch (e) {
       updateDraft(id, {
         loading: false,
