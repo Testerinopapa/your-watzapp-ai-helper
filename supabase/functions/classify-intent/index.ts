@@ -54,7 +54,7 @@ const OUTPUT_SCHEMA = {
       description: "How confident is this classification?",
     },
   },
-  required: ["intent", "start_time", "timezone", "title", "confidence"],
+  required: ["intent", "confidence"],
 };
 
 Deno.serve(async (req) => {
@@ -98,7 +98,7 @@ Assistant's drafted reply: "${draft}"
 
 Today's date is ${today}. Current time is ${now}.
 
-If intent is confirmation or reschedule, extract the proposed date and time. Use today's date as reference (e.g. "next Tuesday" = the Tuesday after today). Always include the timezone offset in the ISO string based on context clues.`;
+If intent is confirmation or reschedule, extract the proposed date and time. Use today's date as reference (e.g. "next Tuesday" = the Tuesday after today). Include the timezone offset in the ISO string. For timezone: if the conversation is in Italian use Europe/Rome, if in Spanish use Europe/Madrid, if in English use America/New_York unless context suggests otherwise. If truly unknown, use UTC.`;
 
     const msg = await anthropic.messages.create({
       model: "claude-3-5-haiku-20241022",
@@ -123,6 +123,8 @@ If intent is confirmation or reschedule, extract the proposed date and time. Use
     }
 
     const result = toolBlock.input as Record<string, unknown>;
+    console.log("[classify-intent] raw result:", JSON.stringify(result));
+    console.log(`[classify-intent] intent=${result.intent} confidence=${result.confidence} start_time=${result.start_time ?? "null"}`);
 
     return json({
       intent: result.intent ?? "none",
