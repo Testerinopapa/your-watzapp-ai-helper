@@ -1155,7 +1155,12 @@ export default function FlaggedReviewSection() {
       });
 
       // ── Claude-powered intent classification ──
-      const draftText = String(draft);
+      // Strip meta-commentary that draft-whatsapp-manual sometimes leaks
+      // ("Here's the reply:", "The user is free at that time", etc.)
+      const draftText = String(draft).replace(
+        /^(?:(?:here'?s?(?:\s+is)?\s+(?:the|a|my)\s+reply|the user is free|perfetto!?|perfect!?|great!?|got it!?|okay!?|alright!?)[\s:!,\-—–]*)+/i,
+        "",
+      ).trim();
       let classified: {
         intent: string;
         start_time: string | null;
