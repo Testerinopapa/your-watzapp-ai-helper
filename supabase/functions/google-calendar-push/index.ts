@@ -141,7 +141,13 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
 
-    const existingEventId: string | null = row.source_event_id ?? null;
+    // Only treat source_event_id as a real Google Calendar event ID when the
+    // row already originated from Google Calendar. For other sources (e.g.
+    // "whatsapp", "manual") source_event_id may be a thread ID or other
+    // opaque value that Google does not know about — in that case we must
+    // POST a new event rather than PATCH a non-existent one.
+    const existingEventId: string | null =
+      row.source_type === "google_calendar" ? (row.source_event_id ?? null) : null;
 
     // Upsert
     if (!row.start_time) return json({ error: "start_time_required" }, 400);
