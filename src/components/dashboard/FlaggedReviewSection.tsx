@@ -1152,7 +1152,7 @@ export default function FlaggedReviewSection() {
 
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
-              .upsert(eventRow, {
+              .upsert(eventRow as never, {
                 onConflict: "user_id,source_type,source_event_id",
                 ignoreDuplicates: false,
               })
