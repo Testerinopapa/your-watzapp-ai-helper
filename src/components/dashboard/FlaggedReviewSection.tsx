@@ -1072,7 +1072,9 @@ export default function FlaggedReviewSection() {
           ? `\n\nREPLY RULES:\n1. If the contact wants to CANCEL: acknowledge empathetically, confirm the cancellation explicitly, mention the event being cancelled.\n2. If the contact wants to RESCHEDULE: reference the original time, check any proposed new time against CALENDAR CONTEXT, only confirm free slots.\n3. If the contact wants to BOOK: NEVER confirm any time that overlaps a CALENDAR CONTEXT block. Offer the nearest free alternative if a conflict exists.\n4. If unsure about intent, ask the contact to clarify what they want.`
           : `\n\nREPLY RULES:\n1. If the contact wants to CANCEL: acknowledge empathetically, confirm the cancellation.\n2. If the contact wants to RESCHEDULE or BOOK: any reasonable time can be proposed (no scheduled events).\n3. Confirm with warmth and clarity.`;
 
-      instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(0, 8000);
+      const outputRule = `\n\nOUTPUT FORMAT (critical):\n- Reply ONLY with the WhatsApp message text. Nothing else.\n- Do NOT include any reasoning, analysis, meta-commentary, or thinking.\n- Do NOT prefix with phrases like "Here's the reply", "The user is free", "Perfetto!", "Got it!", or similar.\n- Just the message. The contact's language. No extra words.`;
+
+      instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}${outputRule}`.slice(0, 8000);
       const truncated = instruction.length >= 8000;
       console.debug(
         `%c🔵 context built: ${lines.length} busy blocks, instruction ${instruction.length} chars${truncated ? " ⚠️ TRUNCATED" : ""}`,
