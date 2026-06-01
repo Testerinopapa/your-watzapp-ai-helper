@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const FLAGGED_SUPABASE_URL = "https://ocpphyjkstvfespxrajk.supabase.co";
 export const FLAGGED_ANON_KEY =
