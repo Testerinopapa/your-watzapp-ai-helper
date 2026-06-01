@@ -1168,9 +1168,15 @@ export default function FlaggedReviewSection() {
 
       // ── Calendar update based on draft intent (mutually exclusive) ──
       const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
+      const draftText = String(draft);
+      console.log("[flagged] draft sent, isScheduling:", isScheduling,
+        "| confirm:", looksLikeConfirmation(draftText),
+        "| cancel:", looksLikeCancellation(draftText),
+        "| reschedule:", looksLikeReschedule(draftText),
+        "| draft:", draftText.slice(0, 200));
 
       // Cancellation first: most specific, rarely overlaps with other categories
-      if (isScheduling && looksLikeCancellation(String(draft))) {
+      if (isScheduling && looksLikeCancellation(draftText)) {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1242,7 +1248,7 @@ export default function FlaggedReviewSection() {
       }
 
       // Reschedule: cancel old + create new at a different time
-      else if (isScheduling && looksLikeReschedule(String(draft))) {
+      else if (isScheduling && looksLikeReschedule(draftText)) {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1269,7 +1275,7 @@ export default function FlaggedReviewSection() {
 
             // 2. Create fresh event at new time
             const extracted = extractDateTime(
-              String(draft),
+              draftText,
               userInstruction,
               item.subject,
             );
@@ -1342,12 +1348,13 @@ export default function FlaggedReviewSection() {
       }
 
       // Confirmation: book a new appointment (most generic, check last)
-      else if (isScheduling && looksLikeConfirmation(String(draft))) {
+      else if (isScheduling && looksLikeConfirmation(draftText)) {
         const extracted = extractDateTime(
-          String(draft),
+          draftText,
           userInstruction,
           item.subject,
         );
+        console.log("[flagged] confirmation block entered, extracted:", extracted);
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
         const title =
           item.subject?.trim() ||
