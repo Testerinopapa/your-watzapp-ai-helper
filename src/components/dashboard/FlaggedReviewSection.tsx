@@ -1068,10 +1068,10 @@ export default function FlaggedReviewSection() {
 
         const calendarBlock =
           lines.length > 0
-            ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days. Treat each block as fully booked and unavailable:\n${lines.join(
+            ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days. Treat each block as fully booked:\n${lines.join(
                 "\n",
               )}`
-            : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}). Any reasonable time can be proposed.`;
+            : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}).`;
 
         const intentText = `${incomingMessage}\n${userInstruction}`;
         const isCancellation = looksLikeCancellation(intentText);
@@ -1084,6 +1084,8 @@ export default function FlaggedReviewSection() {
           calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE they want to change the time. Reference the original appointment from CALENDAR CONTEXT.\n2. Check the proposed new time against CALENDAR CONTEXT — only confirm if it does NOT overlap any block.\n3. If no specific new time is proposed, suggest one based on available slots around their original time.\n4. Make clear the old time will be removed and the new time booked.`;
         } else if (lines.length > 0) {
           calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps a CALENDAR CONTEXT block above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against the CALENDAR CONTEXT. If it conflicts (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any CALENDAR CONTEXT block.`;
+        } else {
+          calendarRules = `\n\nBOOKING REPLY RULES:\n1. Any reasonable time can be proposed — the user has no scheduled events.\n2. If the contact proposes a specific time, confirm with warmth and clarity.`;
         }
 
         instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(
