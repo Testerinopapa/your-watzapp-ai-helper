@@ -342,3 +342,40 @@ function guessYear(monthIndex: number, now: Date): number {
   if (monthIndex < currentMonth) return currentYear + 1;
   return currentYear;
 }
+
+/**
+ * Quick check: does the text look like a booking confirmation?
+ * Used to decide whether to parse dates and push to calendar.
+ */
+export function looksLikeConfirmation(text: string): boolean {
+  const lower = text.toLowerCase();
+  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar|confermo|confermato|conferma|confermando|prenotato|prenotazione|prenoto|fissato|fissiamo|appuntamento confermato|confirmado|confirmo|confirmamos|reservado|reservación|reservo|agendado|agendamiento|cita confirmada)\b/i.test(lower);
+}
+
+/**
+ * Quick check: does the text look like a cancellation?
+ * Used to decide whether to mark the agenda event as cancelled
+ * and delete it from Google Calendar.
+ */
+export function looksLikeCancellation(text: string): boolean {
+  const lower = text.toLowerCase();
+  // English: conjugated forms only (cancelled/cancelling), not bare "cancel"
+  // Italian: annullare/annullato/disdire/disdetto/rinunciare
+  // Spanish: cancelar/cancelado/anular/anulado
+  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annulla|annulliamo|disdire|disdett[ao]|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd)|purtroppo.*(?:annull|disd)|cancelar|cancelado|cancelo|cancelamos|anular|anulado|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
+}
+
+/**
+ * Quick check: does the text look like a reschedule?
+ * Signals that the old event should be cancelled and a new one
+ * created at a different time. Needs both cancellation language
+ * AND a new date/time proposal in the text.
+ */
+export function looksLikeReschedule(text: string): boolean {
+  const lower = text.toLowerCase();
+  const hasRescheduleLanguage = /\b(reschedule|rescheduled|rescheduling|change (?:the |our )?(?:time|date|appointment|meeting)|move (?:the |our )?(?:time|date|appointment|meeting)|push (?:back|forward|out)|bump|another time|different time|different day|another day|instead|how about|what about|would.*work|does.*work for|could we do|can we do|what if we|new time|new date|switch|swap|shift|spostare|spostiamo|spostato|rimandare|rimandiamo|rimandato|rinviare|rinviamo|rinviato|cambiare (?:data|ora|orario|appuntamento)|cambiamo (?:data|ora|orario)|un'?altra (?:data|ora|volta)|un altro (?:giorno|orario|momento)|possiamo (?:fare|vederci|sentirci)|che ne dici|che ne dite|reprogramar|reprogramado|cambiar (?:fecha|hora|cita)|cambiamos|movemos|movido|otra (?:fecha|hora|vez)|otro (?:d[íi]a|horario))\b/i.test(lower);
+  // Time indicator: English + Italian + Spanish day/month names (mirrors the
+  // patterns used in extractDayNameTime / extractMonthDayTime regexes)
+  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b(?:luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic|ene|abr|may|jul|sep|oct|nov|dic)\w*\s+\d{1,2}\b|\b(?:tomorrow|today|domani|oggi|mañana|hoy)\b)/i.test(lower);
+  return hasRescheduleLanguage && hasTimeIndicator;
+}
