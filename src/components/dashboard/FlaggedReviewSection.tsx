@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { extractDateTime, looksLikeConfirmation } from "@/lib/extractDateTime";
+import { extractDateTime, looksLikeConfirmation, looksLikeCancellation, looksLikeReschedule } from "@/lib/extractDateTime";
 import {
   useFlaggedMessages,
   FLAGGED_SUPABASE_URL,
@@ -1247,6 +1247,178 @@ export default function FlaggedReviewSection() {
           console.warn("[flagged] failed to push booking to calendar", e);
           toast({
             title: "Reply sent, calendar update skipped",
+            description:
+              (e as Error)?.message?.slice(0, 120) ??
+              "Could not update calendar.",
+            variant: "destructive",
+          });
+        }
+      }
+
+      // ── Handle cancellation: contact cancels a scheduled appointment ──
+      if (isScheduling && looksLikeCancellation(String(draft))) {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData.user) {
+            const { data: existing } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title")
+              .eq("thread_id", item.thread_id)
+              .eq("user_id", userData.user.id)
+              .maybeSingle();
+
+            if (existing && existing.status !== "cancelled") {
+              await supabase
+                .from("agenda_events")
+                .update({ status: "cancelled", source_event_id: null })
+                .eq("id", existing.id);
+
+              if (existing.source_event_id) {
+                const { data: pushData, error: pushErr } =
+                  await supabase.functions.invoke("google-calendar-push", {
+                    body: {
+                      agenda_event_id: existing.id,
+                      action: "delete",
+                    },
+                  });
+                const errCode =
+                  (pushData as { error?: string } | null)?.error;
+                if (pushErr || errCode) {
+                  console.warn(
+                    "[flagged] calendar delete failed after cancellation draft",
+                    pushErr ?? errCode,
+                  );
+                  toast({
+                    title: "Marked cancelled locally",
+                    description:
+                      errCode === "not_connected"
+                        ? "Connect Google Calendar to remove it there too."
+                        : "Google Calendar removal skipped.",
+                  });
+                } else {
+                  toast({
+                    title: "Cancelled & removed from Google Calendar",
+                    description: `${existing.title || "Appointment"} has been cancelled.`,
+                  });
+                }
+              } else {
+                toast({
+                  title: "Appointment cancelled",
+                  description: `${existing.title || "Appointment"} removed from your agenda.`,
+                });
+              }
+            } else if (!existing) {
+              toast({
+                title: "Reply sent (no event found)",
+                description:
+                  "No existing appointment was found for this thread to cancel.",
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[flagged] failed to cancel event", e);
+          toast({
+            title: "Reply sent, cancellation skipped",
+            description:
+              (e as Error)?.message?.slice(0, 120) ??
+              "Could not update calendar.",
+            variant: "destructive",
+          });
+        }
+      }
+
+      // ── Handle reschedule: contact moves to a new time ──
+      if (isScheduling && looksLikeReschedule(String(draft))) {
+        try {
+          const { data: userData } = await supabase.auth.getUser();
+          if (userData.user) {
+            // 1. Cancel existing event for this thread
+            const { data: existing } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status")
+              .eq("thread_id", item.thread_id)
+              .eq("user_id", userData.user.id)
+              .maybeSingle();
+
+            if (existing && existing.status !== "cancelled") {
+              await supabase
+                .from("agenda_events")
+                .update({ status: "cancelled", source_event_id: null })
+                .eq("id", existing.id);
+
+              if (existing.source_event_id) {
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: { agenda_event_id: existing.id, action: "delete" },
+                });
+              }
+            }
+
+            // 2. Create fresh event at new time
+            const extracted = extractDateTime(
+              String(draft),
+              userInstruction,
+              item.subject,
+            );
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+            const title =
+              item.subject?.trim() ||
+              (item.sender ? `Appointment with ${item.sender}` : "Appointment");
+
+            const newEvent: Record<string, unknown> = {
+              user_id: userData.user.id,
+              source_type: "whatsapp",
+              source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
+              thread_id: item.thread_id,
+              contact_name: item.sender ?? null,
+              contact_channel: item.provider ?? null,
+              title,
+              description: (item.preview ?? item.latest_message ?? null) as string | null,
+              start_time: extracted?.date.toISOString() ?? null,
+              timezone: extracted ? tz : null,
+              status: extracted ? "confirmed" : "needs_confirmation",
+              imported_at: new Date().toISOString(),
+            };
+
+            const { data: inserted, error: insErr } = await supabase
+              .from("agenda_events")
+              .insert(newEvent)
+              .select("id")
+              .single();
+
+            if (insErr) throw insErr;
+
+            if (inserted?.id && extracted) {
+              const { data: pushData, error: pushErr } =
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: { agenda_event_id: inserted.id, action: "upsert" },
+                });
+              const errCode =
+                (pushData as { error?: string } | null)?.error;
+              if (pushErr || errCode) {
+                toast({
+                  title: "Rescheduled (Google sync skipped)",
+                  description:
+                    errCode === "not_connected"
+                      ? "Connect Google Calendar to sync the new time."
+                      : "New time saved locally.",
+                });
+              } else {
+                toast({
+                  title: "Rescheduled & synced to Google Calendar",
+                  description: `${title} moved to a new time.`,
+                });
+              }
+            } else if (inserted?.id) {
+              toast({
+                title: "Rescheduled (needs time)",
+                description: `${title} — set a time in the Agenda panel to sync.`,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn("[flagged] failed to reschedule event", e);
+          toast({
+            title: "Reply sent, reschedule skipped",
             description:
               (e as Error)?.message?.slice(0, 120) ??
               "Could not update calendar.",

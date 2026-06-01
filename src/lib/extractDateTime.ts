@@ -307,3 +307,27 @@ export function looksLikeConfirmation(text: string): boolean {
   const lower = text.toLowerCase();
   return /\b(confirm|confirmed|booked|scheduled?|reserved?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours)\b/i.test(lower);
 }
+
+/**
+ * Quick check: does the text look like a cancellation?
+ * Used to decide whether to mark the agenda event as cancelled
+ * and delete it from Google Calendar.
+ */
+export function looksLikeCancellation(text: string): boolean {
+  const lower = text.toLowerCase();
+  return /\b(cancel|cancelled|canceled|cancelling|canceling|cannot make|can't make|cant make|not going to make|won't be able|no longer|call off|called off|need to cancel|have to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|won't work|doesn't work|isn't going to work|not available anymore|raincheck|rain check)\b/i.test(lower);
+}
+
+/**
+ * Quick check: does the text look like a reschedule?
+ * Signals that the old event should be cancelled and a new one
+ * created at a different time. Needs both cancellation language
+ * AND a new date/time proposal in the text.
+ */
+export function looksLikeReschedule(text: string): boolean {
+  const lower = text.toLowerCase();
+  const hasRescheduleLanguage = /\b(reschedule|rescheduled|rescheduling|change (the |our )?(time|date|appointment|meeting)|move (the |our )?(time|date|appointment|meeting)|push (back|forward|out)|bump|another time|different time|different day|another day|instead|how about|what about|would.*work|does.*work for|could we do|can we do|what if we|new time|new date|switch|swap|shift)\b/i.test(lower);
+  // Also needs some date/time indicator for confidence
+  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}\b|\b(?:tomorrow|today)\b)/i;
+  return hasRescheduleLanguage && hasTimeIndicator;
+}
