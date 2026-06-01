@@ -331,6 +331,6 @@ export function looksLikeReschedule(text: string): boolean {
   const lower = text.toLowerCase();
   const hasRescheduleLanguage = /\b(reschedule|rescheduled|rescheduling|change (the |our )?(time|date|appointment|meeting)|move (the |our )?(time|date|appointment|meeting)|push (back|forward|out)|bump|another time|different time|different day|another day|instead|how about|what about|would.*work|does.*work for|could we do|can we do|what if we|new time|new date|switch|swap|shift)\b/i.test(lower);
   // Also needs some date/time indicator for confidence
-  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}\b|\b(?:tomorrow|today)\b)/i;
+  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}\b|\b(?:tomorrow|today)\b)/i.test(lower);
   return hasRescheduleLanguage && hasTimeIndicator;
 }
