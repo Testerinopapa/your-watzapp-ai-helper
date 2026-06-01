@@ -101,7 +101,7 @@ Today's date is ${today}. Current time is ${now}.
 If intent is confirmation or reschedule, extract the proposed date and time. Use today's date as reference (e.g. "next Tuesday" = the Tuesday after today). Include the timezone offset in the ISO string. For timezone: if the conversation is in Italian use Europe/Rome, if in Spanish use Europe/Madrid, if in English use America/New_York unless context suggests otherwise. If truly unknown, use UTC.`;
 
     const msg = await anthropic.messages.create({
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-haiku-4-5",
       max_tokens: 300,
       system:
         "You are a calendar intent classifier. Your only job is to classify appointment-related messages and extract dates. Respond only with valid JSON matching the schema. Work in any language. If the date/time is ambiguous, give your best guess and set confidence accordingly.",
