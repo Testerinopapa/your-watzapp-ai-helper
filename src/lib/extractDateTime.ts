@@ -201,19 +201,20 @@ function extractDayNameTime(
   return { date: withTime, source: match[0], confidence: "high" };
 }
 
-// "tomorrow at 3pm", "today at 2pm"
+// "tomorrow at 3pm", "today at 2pm", "domani alle 16", "mañana a las 15"
 function extractRelativeDayTime(
   text: string,
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(tomorrow|today)\s+(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(tomorrow|today|domani|oggi|mañana|hoy)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
 
-  const base =
-    match[1].toLowerCase() === "tomorrow" ? addDays(now, 1) : now;
+  const word = match[1].toLowerCase();
+  const isTomorrow = word === "tomorrow" || word === "domani" || word === "mañana";
+  const base = isTomorrow ? addDays(now, 1) : now;
 
   const withTime = parseTime(match[2], base);
   if (!withTime) return null;
@@ -317,17 +318,18 @@ function extractDayName(
   return { date: withTime, source: match[0], confidence: "medium" };
 }
 
-// "tomorrow", "today" (no time)
+// "tomorrow", "today", "domani", "oggi", "mañana", "hoy" (no time)
 function extractRelativeDay(
   text: string,
   now: Date,
 ): ExtractedDateTime | null {
-  const re = /\b(tomorrow|today)\b/i;
+  const re = /\b(tomorrow|today|domani|oggi|mañana|hoy)\b/i;
   const match = re.exec(text);
   if (!match) return null;
 
-  const base =
-    match[1].toLowerCase() === "tomorrow" ? addDays(now, 1) : now;
+  const word = match[1].toLowerCase();
+  const isTomorrow = word === "tomorrow" || word === "domani" || word === "mañana";
+  const base = isTomorrow ? addDays(now, 1) : now;
   const date = setHours(startOfDay(base), 9);
 
   return { date, source: match[0], confidence: "medium" };
@@ -357,10 +359,10 @@ export function looksLikeConfirmation(text: string): boolean {
  */
 export function looksLikeCancellation(text: string): boolean {
   const lower = text.toLowerCase();
-  // Must match an active cancellation statement, NOT a polite offer like
-  // "let me know if you need to cancel". Conjugated forms (cancelled/
-  // cancelling) are safe; bare "cancel" and vague "won't work" are excluded.
-  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check)\b/i.test(lower);
+  // English: conjugated forms only (cancelled/cancelling), not bare "cancel"
+  // Italian: annullare/annullato/disdire/disdetto/rinunciare
+  // Spanish: cancelar/cancelado/anular/anulado
+  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annulla|annulliamo|disdire|disdett[ao]|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd)|purtroppo.*(?:annull|disd)|cancelar|cancelado|cancelo|cancelamos|anular|anulado|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
 }
 
 /**
@@ -371,8 +373,9 @@ export function looksLikeCancellation(text: string): boolean {
  */
 export function looksLikeReschedule(text: string): boolean {
   const lower = text.toLowerCase();
-  const hasRescheduleLanguage = /\b(reschedule|rescheduled|rescheduling|change (the |our )?(time|date|appointment|meeting)|move (the |our )?(time|date|appointment|meeting)|push (back|forward|out)|bump|another time|different time|different day|another day|instead|how about|what about|would.*work|does.*work for|could we do|can we do|what if we|new time|new date|switch|swap|shift)\b/i.test(lower);
-  // Also needs some date/time indicator for confidence
-  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\w*\s+\d{1,2}\b|\b(?:tomorrow|today)\b)/i.test(lower);
+  const hasRescheduleLanguage = /\b(reschedule|rescheduled|rescheduling|change (?:the |our )?(?:time|date|appointment|meeting)|move (?:the |our )?(?:time|date|appointment|meeting)|push (?:back|forward|out)|bump|another time|different time|different day|another day|instead|how about|what about|would.*work|does.*work for|could we do|can we do|what if we|new time|new date|switch|swap|shift|spostare|spostiamo|spostato|rimandare|rimandiamo|rimandato|rinviare|rinviamo|rinviato|cambiare (?:data|ora|orario|appuntamento)|cambiamo (?:data|ora|orario)|un'?altra (?:data|ora|volta)|un altro (?:giorno|orario|momento)|possiamo (?:fare|vederci|sentirci)|che ne dici|che ne dite|reprogramar|reprogramado|cambiar (?:fecha|hora|cita)|cambiamos|movemos|movido|otra (?:fecha|hora|vez)|otro (?:d[íi]a|horario))\b/i.test(lower);
+  // Time indicator: English + Italian + Spanish day/month names (mirrors the
+  // patterns used in extractDayNameTime / extractMonthDayTime regexes)
+  const hasTimeIndicator = /(\b(?:mon|tue|wed|thu|fri|sat|sun)(?:sday|rsday|nesday|rday|day)?\b|\b(?:luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica|lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b|\b\d{1,2}(?::\d{2})?\s*(?:am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|gen|feb|mar|apr|mag|giu|lug|ago|set|ott|nov|dic|ene|abr|may|jul|sep|oct|nov|dic)\w*\s+\d{1,2}\b|\b(?:tomorrow|today|domani|oggi|mañana|hoy)\b)/i.test(lower);
   return hasRescheduleLanguage && hasTimeIndicator;
 }
