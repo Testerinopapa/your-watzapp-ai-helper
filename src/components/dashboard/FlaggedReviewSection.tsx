@@ -1001,13 +1001,29 @@ export default function FlaggedReviewSection() {
       .trim()
       .slice(0, 4000);
     const userInstruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
-    if (!incomingMessage || !userInstruction) return;
+    if (!incomingMessage || !userInstruction) {
+      console.warn("%c⚠️ pipeline aborted: missing %s", "color:#f59e0b", !incomingMessage ? "incomingMessage" : "userInstruction");
+      return;
+    }
+
+    const t0 = performance.now();
+    const pipelineId = `[${new Date().toISOString().slice(11, 23)}]`;
+    console.groupCollapsed(
+      `%c📨 flagged pipeline ${pipelineId} %c${item.sender ?? "unknown"} %c→ ${(item.intent_category ?? "general").toUpperCase()}`,
+      "color:#73ffb8;font-weight:bold", "color:#fff", "color:#f59e0b",
+    );
+    console.log("thread_id:", item.thread_id);
+    console.log("provider:", item.provider ?? "whatsapp");
+    console.log("incoming →", incomingMessage.slice(0, 300));
+    console.log("instruction →", userInstruction.slice(0, 300));
 
     // Sync Google Calendar and prepend busy blocks to the instruction.
-    // Always provides calendar context so the AI can make informed replies.
     let instruction = userInstruction;
     try {
-      const { error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+      console.debug("%c🔵 [1/6] Syncing Google Calendar…", "color:#60a5fa");
+      const syncStart = performance.now();
+      const { data: syncData, error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+      console.debug(`%c🔵 sync done in ${(performance.now() - syncStart).toFixed(0)}ms`, "color:#60a5fa", syncData);
       if (syncError) throw new Error(syncError.message || "Calendar sync failed");
 
       const nowIso = new Date().toISOString();
@@ -1057,12 +1073,18 @@ export default function FlaggedReviewSection() {
           : `\n\nREPLY RULES:\n1. If the contact wants to CANCEL: acknowledge empathetically, confirm the cancellation.\n2. If the contact wants to RESCHEDULE or BOOK: any reasonable time can be proposed (no scheduled events).\n3. Confirm with warmth and clarity.`;
 
       instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(0, 8000);
+      const truncated = instruction.length >= 8000;
+      console.debug(
+        `%c🔵 context built: ${lines.length} busy blocks, instruction ${instruction.length} chars${truncated ? " ⚠️ TRUNCATED" : ""}`,
+        "color:#60a5fa",
+      );
     } catch (err) {
-      console.warn("[flagged] failed to load calendar context", err);
+      console.warn("%c🔵 calendar context skipped", "color:#f59e0b", err);
       // Continue without calendar context — the AI can still draft a reply,
       // but intent classification below will handle the calendar side.
     }
 
+    console.debug("%c🤖 [2/6] Calling draft-whatsapp-manual…", "color:#a78bfa");
     updateDraft(id, {
       loading: true,
       error: null,
@@ -1078,7 +1100,7 @@ export default function FlaggedReviewSection() {
 
       const provider = (item.provider || "whatsapp").trim();
 
-
+      const draftStart = performance.now();
       const res = await fetch(
         `${FLAGGED_SUPABASE_URL}/functions/v1/draft-whatsapp-manual`,
         {
@@ -1117,6 +1139,12 @@ export default function FlaggedReviewSection() {
         (body && (body.draft_id ?? body.draftId)) ?? null;
       if (!draft) throw new Error("No draft returned");
 
+      console.debug(
+        `%c🤖 draft done in ${(performance.now() - draftStart).toFixed(0)}ms — ${String(draft).length} chars`,
+        "color:#a78bfa",
+      );
+      console.debug(`%c🤖 draft preview: %c${String(draft).slice(0, 250)}`, "color:#a78bfa", "color:#d4d4d8");
+
       updateDraft(id, {
         loading: false,
         draft: String(draft),
@@ -1137,13 +1165,32 @@ export default function FlaggedReviewSection() {
         confidence: string;
       } | null = null;
       try {
+        console.debug("%c🧠 [3/6] Classifying intent via Claude…", "color:#c084fc");
+        const classifyStart = performance.now();
         const { data } = await supabase.functions.invoke("classify-intent", {
           body: { draft: draftText, incomingMessage, userInstruction },
         });
         classified = data as typeof classified;
-        console.log("[flagged] classify-intent result:", classified);
+        const elapsed = (performance.now() - classifyStart).toFixed(0);
+        const intentColor = classified?.intent === "confirmation" ? "#2dd4a8"
+          : classified?.intent === "cancellation" ? "#ef4444"
+          : classified?.intent === "reschedule" ? "#f59e0b"
+          : "#94a3b8";
+        console.debug(
+          `%c🧠 classify done in ${elapsed}ms → %c${classified?.intent?.toUpperCase()} %c(confidence: ${classified?.confidence})`,
+          "color:#c084fc", `color:${intentColor};font-weight:bold`, "color:#94a3b8",
+        );
+        if (classified?.start_time) {
+          console.debug(`%c🧠   start: ${classified.start_time}`, "color:#c084fc");
+        }
+        if (classified?.timezone) {
+          console.debug(`%c🧠   tz:    ${classified.timezone}`, "color:#c084fc");
+        }
+        if (classified?.title) {
+          console.debug(`%c🧠   title: ${classified.title}`, "color:#c084fc");
+        }
       } catch (e) {
-        console.warn("[flagged] classify-intent failed, treating as none", e);
+        console.warn("%c🧠 classify-intent failed, treating as none", "color:#ef4444", e);
         classified = { intent: "none", start_time: null, end_time: null, timezone: null, title: null, confidence: "low" };
       }
 
@@ -1151,6 +1198,7 @@ export default function FlaggedReviewSection() {
 
       // ── Cancellation: contact cancels a scheduled appointment ──
       if (classified?.intent === "cancellation") {
+        console.debug("%c❌ [4/6] CANCELLATION branch", "color:#ef4444;font-weight:bold");
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1161,38 +1209,54 @@ export default function FlaggedReviewSection() {
               .eq("user_id", userData.user.id)
               .maybeSingle();
 
+            console.debug("%c❌   find-existing:", "color:#ef4444", existing ?? "(none)");
+
             if (existing && existing.status !== "cancelled") {
               const googleEventId = existing.source_event_id;
 
               // Push delete FIRST (needs source_event_id from DB)
               if (googleEventId) {
-                await supabase.functions.invoke("google-calendar-push", {
+                console.debug(`%c❌   [5/6] Deleting from Google Calendar: ${googleEventId}`, "color:#ef4444");
+                const pushStart = performance.now();
+                const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
                   body: { agenda_event_id: existing.id, action: "delete", source_event_id: googleEventId },
                 });
+                console.debug(
+                  `%c❌   push-delete done in ${(performance.now() - pushStart).toFixed(0)}ms`,
+                  "color:#ef4444",
+                  { ok: (pushData as any)?.ok, skipped: (pushData as any)?.skipped, error: pushErr },
+                );
+              } else {
+                console.debug("%c❌   no googleEventId — skipping Google delete", "color:#f59e0b");
               }
 
               // THEN nullify in DB
-              await supabase
+              const { error: updErr } = await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
+              console.debug(`%c❌   [6/6] DB update → cancelled${updErr ? " ❌ " + updErr.message : ""}`, "color:#ef4444");
 
               toast({
                 title: googleEventId ? "Cancelled & removed from Google Calendar" : "Appointment cancelled",
                 description: `${existing.title || "Appointment"} has been cancelled.`,
               });
             } else if (!existing) {
+              console.debug("%c❌   no event found for this thread — nothing to cancel", "color:#f59e0b");
               toast({ title: "Reply sent (no event found)", description: "No appointment found for this thread." });
+            } else {
+              console.debug("%c❌   already cancelled — skipping", "color:#94a3b8");
             }
           }
         } catch (e) {
-          console.warn("[flagged] failed to cancel event", e);
+          console.error("%c❌ cancellation failed", "color:#ef4444", e);
           toast({ title: "Reply sent, cancellation skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
 
       // ── Reschedule: cancel old + create new ──
       else if (classified?.intent === "reschedule") {
+        console.debug("%c🔄 [4/6] RESCHEDULE branch", "color:#f59e0b;font-weight:bold");
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1204,50 +1268,72 @@ export default function FlaggedReviewSection() {
               .eq("user_id", userData.user.id)
               .maybeSingle();
 
+            console.debug("%c🔄   old-event:", "color:#f59e0b", existing ?? "(none)");
+
             if (existing && existing.status !== "cancelled") {
               const oldGoogleEventId = existing.source_event_id;
               if (oldGoogleEventId) {
-                await supabase.functions.invoke("google-calendar-push", {
+                console.debug(`%c🔄   [5/6] Deleting old Google event: ${oldGoogleEventId}`, "color:#f59e0b");
+                const pushStart = performance.now();
+                const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
                   body: { agenda_event_id: existing.id, action: "delete", source_event_id: oldGoogleEventId },
                 });
+                console.debug(
+                  `%c🔄   push-delete done in ${(performance.now() - pushStart).toFixed(0)}ms`,
+                  "color:#f59e0b",
+                  { ok: (pushData as any)?.ok, skipped: (pushData as any)?.skipped, error: pushErr },
+                );
+              } else {
+                console.debug("%c🔄   no old googleEventId — skipping Google delete", "color:#f59e0b");
               }
-              await supabase
+              const { error: updErr } = await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
+              console.debug(`%c🔄   DB old-event → cancelled${updErr ? " ❌ " + updErr.message : ""}`, "color:#f59e0b");
             }
 
             // 2. Create new event with Claude-extracted time
             const hasTime = !!classified?.start_time;
             const title = classified?.title?.trim() || item.subject?.trim() || (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
+            const newEvent = {
+              user_id: userData.user.id,
+              source_type: "whatsapp",
+              source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
+              thread_id: item.thread_id,
+              contact_name: item.sender ?? null,
+              contact_channel: item.provider ?? null,
+              title,
+              description: (item.preview ?? item.latest_message ?? null) as string | null,
+              start_time: classified?.start_time ?? null,
+              end_time: classified?.end_time ?? null,
+              timezone: classified?.timezone ?? (hasTime ? calendarTz : null),
+              status: hasTime ? "confirmed" : "needs_confirmation",
+              imported_at: new Date().toISOString(),
+            };
+            console.debug("%c🔄   inserting new event:", "color:#f59e0b", { title, start_time: newEvent.start_time, status: newEvent.status });
+
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
-              .insert({
-                user_id: userData.user.id,
-                source_type: "whatsapp",
-                source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
-                thread_id: item.thread_id,
-                contact_name: item.sender ?? null,
-                contact_channel: item.provider ?? null,
-                title,
-                description: (item.preview ?? item.latest_message ?? null) as string | null,
-                start_time: classified?.start_time ?? null,
-                end_time: classified?.end_time ?? null,
-                timezone: classified?.timezone ?? (hasTime ? calendarTz : null),
-                status: hasTime ? "confirmed" : "needs_confirmation",
-                imported_at: new Date().toISOString(),
-              })
+              .insert(newEvent)
               .select("id")
               .single();
 
             if (insErr) throw insErr;
 
             if (inserted?.id && hasTime) {
+              console.debug(`%c🔄   [6/6] Pushing new event to Google Calendar…`, "color:#f59e0b");
+              const pushStart = performance.now();
               const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
                 body: { agenda_event_id: inserted.id, action: "upsert" },
               });
               const errCode = (pushData as { error?: string } | null)?.error;
+              console.debug(
+                `%c🔄   push-upsert done in ${(performance.now() - pushStart).toFixed(0)}ms`,
+                "color:#f59e0b",
+                { ok: (pushData as any)?.ok, skipped: (pushData as any)?.skipped, error: pushErr, errCode },
+              );
               toast({
                 title: pushErr || errCode ? "Rescheduled (Google sync skipped)" : "Rescheduled & synced to Google Calendar",
                 description: pushErr || errCode
@@ -1255,17 +1341,19 @@ export default function FlaggedReviewSection() {
                   : `${title} moved to a new time.`,
               });
             } else if (inserted?.id) {
+              console.debug("%c🔄   no time extracted — event saved as 'needs_time'", "color:#f59e0b");
               toast({ title: "Rescheduled (needs time)", description: `${title} — set a time in Agenda to sync.` });
             }
           }
         } catch (e) {
-          console.warn("[flagged] failed to reschedule event", e);
+          console.error("%c🔄 reschedule failed", "color:#f59e0b", e);
           toast({ title: "Reply sent, reschedule skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
 
       // ── Confirmation: book a new appointment ──
       else if (classified?.intent === "confirmation") {
+        console.debug("%c✅ [4/6] CONFIRMATION branch", "color:#2dd4a8;font-weight:bold");
         const hasTime = !!classified?.start_time;
         const title = classified?.title?.trim() || item.subject?.trim() || (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
@@ -1288,6 +1376,8 @@ export default function FlaggedReviewSection() {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
             eventRow.user_id = userData.user.id;
+            console.debug("%c✅   upserting agenda_events:", "color:#2dd4a8", { title, start_time: eventRow.start_time, source_event_id: eventRow.source_event_id });
+
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
               .upsert(eventRow as never, {
@@ -1298,12 +1388,20 @@ export default function FlaggedReviewSection() {
               .single();
 
             if (insErr) throw insErr;
+            console.debug(`%c✅   upsert ok — id: ${(inserted as any)?.id}`, "color:#2dd4a8");
 
             if (inserted?.id && hasTime) {
+              console.debug(`%c✅   [5/6] Pushing to Google Calendar…`, "color:#2dd4a8");
+              const pushStart = performance.now();
               const { data: pushData, error: pushErr } = await supabase.functions.invoke("google-calendar-push", {
                 body: { agenda_event_id: inserted.id, action: "upsert" },
               });
               const errCode = (pushData as { error?: string } | null)?.error;
+              console.debug(
+                `%c✅   push-upsert done in ${(performance.now() - pushStart).toFixed(0)}ms`,
+                "color:#2dd4a8",
+                { ok: (pushData as any)?.ok, skipped: (pushData as any)?.skipped, error: pushErr, errCode },
+              );
               toast({
                 title: pushErr || errCode ? "Saved to agenda (Google sync skipped)" : "Confirmed & synced to Google Calendar",
                 description: pushErr || errCode
@@ -1311,17 +1409,29 @@ export default function FlaggedReviewSection() {
                   : `${title} added to your calendar.`,
               });
             } else if (inserted?.id) {
+              console.debug("%c✅   no time extracted — event saved as 'needs_time'", "color:#f59e0b");
               toast({ title: "Added to agenda (needs time)", description: `${title} — set a time in Agenda to sync.` });
             }
           }
         } catch (e) {
-          console.warn("[flagged] failed to push booking to calendar", e);
+          console.error("%c✅ confirmation push failed", "color:#ef4444", e);
           toast({ title: "Reply sent, calendar update skipped", description: (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.", variant: "destructive" });
         }
       }
 
       // intent === "none": no calendar action needed
+      if (classified?.intent === "none") {
+        console.debug("%c⚪ [4/6] NONE — no calendar action", "color:#94a3b8");
+      }
+
+      console.debug(
+        `%c🏁 pipeline ${pipelineId} done in ${(performance.now() - t0).toFixed(0)}ms`,
+        "color:#73ffb8;font-weight:bold",
+      );
+      console.groupEnd();
     } catch (e) {
+      console.error(`%c💥 pipeline ${pipelineId} draft failed`, "color:#ef4444", e);
+      console.groupEnd();
       updateDraft(id, {
         loading: false,
         error: (e as Error)?.message ?? "Failed to generate draft",
