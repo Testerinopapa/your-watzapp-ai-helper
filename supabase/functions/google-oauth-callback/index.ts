@@ -9,7 +9,7 @@ const CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET")!;
 
 const REDIRECT_URI = `${SUPABASE_URL}/functions/v1/google-oauth-callback`;
 const DEFAULT_APP = "https://your-watzapp-ai-helper.lovable.app";
-const REQUIRED_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly";
+const REQUIRED_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
 
 function hasCalendarScope(scope: string | null | undefined) {
   return (scope ?? "").split(/\s+/).includes(REQUIRED_CALENDAR_SCOPE);
