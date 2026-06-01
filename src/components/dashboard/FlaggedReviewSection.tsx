@@ -1278,7 +1278,7 @@ export default function FlaggedReviewSection() {
               item.subject?.trim() ||
               (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
-            const newEvent: Record<string, unknown> = {
+            const newEvent = {
               user_id: userData.user.id,
               source_type: "whatsapp",
               source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
