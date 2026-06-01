@@ -331,19 +331,22 @@ export default function PersonalAgendaPanel({
   const remove = async (id: string) => {
     const dbEntry = dbEntriesById.get(id);
     if (dbEntry) {
-      // Best-effort: remove from Google Calendar first if this was synced and
-      // the row still exists server-side. Swallow not_found / not_connected
-      // so the local delete always succeeds.
-      if (dbEntry.source_type === "google_calendar" && dbEntry.source_event_id) {
-        try {
-          await supabase.functions.invoke("google-calendar-push", {
-            body: { agenda_event_id: id, action: "delete" },
-          });
-        } catch (e) {
-          console.warn("google-calendar-push delete failed (continuing)", e);
-        }
-      }
+      // Remove locally first for instant UI feedback, then clean up Google
+      // Calendar in the background so the user never waits on the network.
       await removeDb(id);
+      if (dbEntry.source_type === "google_calendar" && dbEntry.source_event_id) {
+        supabase.functions
+          .invoke("google-calendar-push", {
+            body: {
+              agenda_event_id: id,
+              action: "delete",
+              source_event_id: dbEntry.source_event_id,
+            },
+          })
+          .catch((e) => {
+            console.warn("google-calendar-push delete failed (continuing)", e);
+          });
+      }
       return;
     }
     return removeLocal(id);
