@@ -307,7 +307,7 @@ function guessYear(monthIndex: number, now: Date): number {
  */
 export function looksLikeConfirmation(text: string): boolean {
   const lower = text.toLowerCase();
-  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar)\b/i.test(lower);
+  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar|confermo|confermato|conferma|confermando|prenotato|prenotazione|prenoto|fissato|fissiamo|appuntamento confermato|confirmado|confirmo|confirmamos|reservado|reservación|reservo|agendado|agendamiento|cita confirmada)\b/i.test(lower);
 }
 
 /**
