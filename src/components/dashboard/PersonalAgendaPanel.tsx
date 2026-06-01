@@ -348,6 +348,7 @@ export default function PersonalAgendaPanel({
     }
     return removeLocal(id);
   };
+  const confirmRemove = (id: string) => setPendingDelete(id);
   const conflicts = useMemo(() => detectConflicts(entries), [entries]);
   const now = new Date();
   const todayStart = startOfDay(now);
