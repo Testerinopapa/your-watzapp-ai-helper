@@ -1284,7 +1284,14 @@ export default function FlaggedReviewSection() {
               (r) => r.status !== "cancelled",
             );
 
-            if (toCancel.length === 0) {
+            if ((existingRows ?? []).length > 0 && toCancel.length === 0) {
+              console.log("[flagged][cancel] all events already cancelled for thread");
+              toast({
+                title: "Already cancelled",
+                description:
+                  "This appointment was already cancelled in a previous action.",
+              });
+            } else if (toCancel.length === 0) {
               const cancellationTime = extractDateTime(incomingMessage, userInstruction, item.subject);
               const contact = senderLabelForItem(item);
               console.log("[flagged][cancel] thread lookup empty; trying date/contact fallback", {
@@ -1483,6 +1490,7 @@ export default function FlaggedReviewSection() {
 
             // 2. Create fresh event at new time
             const extracted = extractDateTime(
+              incomingMessage,
               draftText,
               userInstruction,
               item.subject,
@@ -1558,6 +1566,7 @@ export default function FlaggedReviewSection() {
       // Confirmation: book a new appointment (most generic, check last)
       else if (isScheduling && looksLikeConfirmation(draftText)) {
         const extracted = extractDateTime(
+          incomingMessage,
           draftText,
           userInstruction,
           item.subject,
