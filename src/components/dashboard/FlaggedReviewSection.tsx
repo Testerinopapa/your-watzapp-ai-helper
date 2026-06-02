@@ -181,6 +181,22 @@ type FlaggedCardInnerProps = {
 
 const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
+const normalizeEventText = (value: string | null | undefined) =>
+  (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+const eventMatchesContact = (
+  row: { title?: string | null; contact_name?: string | null; description?: string | null },
+  contact: string,
+) => {
+  const normalizedContact = normalizeEventText(contact);
+  if (!normalizedContact) return false;
+  const haystack = normalizeEventText(`${row.title ?? ""} ${row.contact_name ?? ""} ${row.description ?? ""}`);
+  return haystack.includes(normalizedContact);
+};
+
 function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
   const isAppt = APPOINTMENT_CATEGORIES.has((item.intent_category ?? "").toLowerCase().trim());
   const tone = toneFor(item.updated_at);
