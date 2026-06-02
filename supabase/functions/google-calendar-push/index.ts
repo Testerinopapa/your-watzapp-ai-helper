@@ -159,37 +159,19 @@ Deno.serve(async (req) => {
     // sending a "Z" string together with timeZone makes some clients/calendars
     // misinterpret the moment. The floating wall-clock + timeZone form is the
     // most reliable.
-    const startDate = new Date(row.start_time as string);
+    const startTime = body.start_time || row.start_time;
+    const startDate = new Date(startTime as string);
     const endDate = row.end_time
       ? new Date(row.end_time as string)
       : new Date(startDate.getTime() + 30 * 60 * 1000);
 
-    const tz: string | null = row.timezone ?? null;
-
-    // Format a Date as "YYYY-MM-DDTHH:mm:ss" wall-time in the given IANA tz.
-    const formatWall = (d: Date, timeZone: string) => {
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).formatToParts(d).reduce<Record<string, string>>((acc, p) => {
-        if (p.type !== "literal") acc[p.type] = p.value;
-        return acc;
-      }, {});
-      const hour = parts.hour === "24" ? "00" : parts.hour;
-      return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`;
-    };
+    const tz: string | null = (body.timezone as string) || (row.timezone as string) || null;
 
     const startField = tz
-      ? { dateTime: formatWall(startDate, tz), timeZone: tz }
+      ? { dateTime: startDate.toISOString(), timeZone: tz }
       : { dateTime: startDate.toISOString() };
     const endField = tz
-      ? { dateTime: formatWall(endDate, tz), timeZone: tz }
+      ? { dateTime: endDate.toISOString(), timeZone: tz }
       : { dateTime: endDate.toISOString() };
 
     console.log("google-calendar-push payload times", {
