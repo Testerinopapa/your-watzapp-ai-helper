@@ -1079,10 +1079,12 @@ export default function FlaggedReviewSection() {
         });
 
         const lines = (events ?? [])
-          .filter((e) => e.start_time && e.end_time)
+          .filter((e) => e.start_time)
           .map((e) => {
             const startDate = new Date(e.start_time as string);
-            const endDate = new Date(e.end_time as string);
+            const endDate = e.end_time
+              ? new Date(e.end_time as string)
+              : new Date(startDate.getTime() + 60 * 60 * 1000); // default 1h
             const start = fmt.format(startDate);
             const end = fmtTime.format(endDate);
             const loc = e.location ? ` @ ${e.location}` : "";
@@ -1096,15 +1098,15 @@ export default function FlaggedReviewSection() {
             const note = e.notes?.trim()
               ? ` (notes: ${e.notes.trim().slice(0, 140)})`
               : "";
-            return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}${contact}${desc}${note}`;
+            return `- ${start}–${end} — ${title}${loc}${contact}${desc}${note}`;
           });
 
         const calendarBlock =
           lines.length > 0
-            ? `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. Current timezone: ${tz}. The user is ALREADY BUSY at these times in the next 30 days. Treat each block as fully booked:\n${lines.join(
+            ? `CALENDAR CONTEXT — freshly synced from Google Calendar. All times below are in ${tz} (your local timezone). The user is ALREADY BUSY at these times. Treat each block as fully booked:\n${lines.join(
                 "\n",
               )}`
-            : `CALENDAR CONTEXT — freshly synced from Google Calendar at ${new Date().toISOString()}. User has no scheduled events in the next 30 days (${tz}).`;
+            : `CALENDAR CONTEXT — freshly synced from Google Calendar. User has no scheduled events (${tz}).`;
 
         const intentText = `${incomingMessage}\n${userInstruction}`;
         const isCancellation = looksLikeCancellation(intentText);

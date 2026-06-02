@@ -41,17 +41,38 @@ export function extractDateTime(
   const numericDateTime = extractNumericDateTime(combined, now);
   if (numericDateTime) return numericDateTime;
 
-  // ─── Month + day only (no time, default to 9am) ───
-  const monthDay = extractMonthDay(combined, now);
-  if (monthDay) return monthDay;
+  // ─── Standalone time check: try to find a time anywhere in the text ───
+  const standaloneTime = findStandaloneTime(combined);
 
-  // ─── Day name only (no time, default to 9am) ───
+  // ─── Month + day only (no time, default to 9am, or use standalone time) ───
+  const monthDay = extractMonthDay(combined, now);
+  if (monthDay) {
+    if (standaloneTime) {
+      const withTime = parseTime(standaloneTime, monthDay.date);
+      if (withTime) return { date: withTime, source: `${monthDay.source} + ${standaloneTime}`, confidence: "high" };
+    }
+    return monthDay;
+  }
+
+  // ─── Day name only (no time, default to 9am, or use standalone time) ───
   const dayName = extractDayName(combined, now);
-  if (dayName) return { ...dayName, confidence: "medium" };
+  if (dayName) {
+    if (standaloneTime) {
+      const withTime = parseTime(standaloneTime, dayName.date);
+      if (withTime) return { date: withTime, source: `${dayName.source} + ${standaloneTime}`, confidence: "high" };
+    }
+    return { ...dayName, confidence: "medium" };
+  }
 
   // ─── Relative day only ───
   const relativeDay = extractRelativeDay(combined, now);
-  if (relativeDay) return { ...relativeDay, confidence: "medium" };
+  if (relativeDay) {
+    if (standaloneTime) {
+      const withTime = parseTime(standaloneTime, relativeDay.date);
+      if (withTime) return { date: withTime, source: `${relativeDay.source} + ${standaloneTime}`, confidence: "high" };
+    }
+    return { ...relativeDay, confidence: "medium" };
+  }
 
   return null;
 }
@@ -149,13 +170,41 @@ function parseTime(
   return setMinutes(setHours(baseDate, hours), minutes);
 }
 
+/**
+ * Find a standalone time reference anywhere in free text.
+ * Returns the first time substring found (e.g. "2pm", "14:00"),
+ * or null if no time reference exists.
+ */
+function findStandaloneTime(text: string): string | null {
+  // Match time references that appear as standalone tokens:
+  // "2pm", "14:00", "at 10am", "alle 16", "a las 3pm", "at 3 PM"
+  // but NOT part of a longer number (e.g. not "1234pm")
+  const re =
+    /(?:(?:at|alle|a\s+las)\s+)?\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)\b/gi;
+  const matches = [...text.matchAll(re)];
+  for (const m of matches) {
+    const t = m[1].trim();
+    // Validate with parseTime (returns null for garbage)
+    TIME_REGEX.lastIndex = 0;
+    if (TIME_REGEX.test(t)) return t;
+  }
+  // Fallback: try bare numbers that look like 24h times (e.g. "14:00")
+  const bareRe = /\b(\d{2}:\d{2})\b/g;
+  const bareMatches = [...text.matchAll(bareRe)];
+  for (const m of bareMatches) {
+    const [h] = m[1].split(":").map(Number);
+    if (h >= 0 && h <= 23) return m[1];
+  }
+  return null;
+}
+
 // "June 3rd at 2pm", "Jun 3 at 14:00", "June 3, 2026 at 2:30 PM"
 function extractMonthDayTime(
   text: string,
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)\s+(\d{1,2})(?:st|nd|rd|th)?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)\s+(\d{1,2})(?:st|nd|rd|th)?[,.]?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -181,7 +230,7 @@ function extractDayNameTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)(?!\d*\s*(?:st|nd|rd|th)\b)/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)[,.]?\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)(?!\d*\s*(?:st|nd|rd|th)\b)/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -207,7 +256,7 @@ function extractRelativeDayTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(tomorrow|today|domani|oggi|mañana|hoy)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(tomorrow|today|domani|oggi|mañana|hoy)[,.]?\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
 
   const match = re.exec(text);
   if (!match) return null;
