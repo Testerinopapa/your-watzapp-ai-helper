@@ -1180,23 +1180,48 @@ export default function FlaggedReviewSection() {
       const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
       const draftText = String(draft);
       const intentTextForSignal = `${incomingMessage}\n${userInstruction}`;
-      // Trust the contact's intent as well as the AI draft: the AI is
-      // instructed to acknowledge a cancellation empathetically and may
-      // not echo a literal "cancel" verb (e.g. "Mi dispiace, nessun problema").
-      // Reschedule wins when the DRAFT itself proposes a new time, even if
-      // the incoming message used "cancel" wording (cancel-to-reschedule).
+      const reasonText = String(item.intent_reason ?? "").toLowerCase();
+
+      // The flagged-message pill (intent_reason) is the authoritative
+      // classification of the CONTACT's request. Trust it over draft inference.
+      const reasonMentionsReschedule =
+        /\b(reschedul|move|postpone|push back|shift|change (?:the |our )?(?:time|date|appointment|meeting)|spostare|rinviare|reprogramar)\b/i.test(
+          reasonText,
+        );
+      const reasonMentionsCancel =
+        /\b(cancel|call off|drop|annull|disd|rinunci|cancelar|anular)\b/i.test(
+          reasonText,
+        );
+      const classifiedCancel = reasonMentionsCancel && !reasonMentionsReschedule;
+      const classifiedReschedule = reasonMentionsReschedule;
+
       const draftReschedule = looksLikeReschedule(draftText);
       const draftCancel = looksLikeCancellation(draftText);
       const intentReschedule = looksLikeReschedule(intentTextForSignal);
       const intentCancel = looksLikeCancellation(intentTextForSignal);
-      const rescheduleSignal = draftReschedule || (intentReschedule && !draftCancel);
-      const cancelSignal = !rescheduleSignal && (draftCancel || intentCancel);
+
+      // Priority: pill classification > draft inference > intent text
+      const cancelSignal = classifiedCancel
+        ? true
+        : classifiedReschedule
+          ? false
+          : draftReschedule
+            ? false
+            : draftCancel || intentCancel;
+      const rescheduleSignal = classifiedCancel
+        ? false
+        : classifiedReschedule
+          ? true
+          : !cancelSignal && (draftReschedule || intentReschedule);
+
       console.log("[flagged] draft sent, isScheduling:", isScheduling,
         "| confirm:", looksLikeConfirmation(draftText),
         "| cancel:", cancelSignal,
         "| reschedule:", rescheduleSignal,
+        "| classifiedC/R:", classifiedCancel, classifiedReschedule,
         "| draftR/C:", draftReschedule, draftCancel,
         "| intentR/C:", intentReschedule, intentCancel,
+        "| reason:", reasonText.slice(0, 160),
         "| draft:", draftText.slice(0, 200));
 
       // Cancellation first: most specific, rarely overlaps with other categories
