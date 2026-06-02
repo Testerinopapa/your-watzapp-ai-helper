@@ -1201,23 +1201,37 @@ export default function FlaggedReviewSection() {
 
       // Cancellation first: most specific, rarely overlaps with other categories
       if (isScheduling && cancelSignal) {
+        console.log("[flagged][cancel] entering cancel branch", {
+          thread_id: item.thread_id,
+        });
         try {
-          const { data: userData } = await supabase.auth.getUser();
+          const { data: userData, error: userErr } = await supabase.auth.getUser();
+          console.log("[flagged][cancel] auth", {
+            user_id: userData?.user?.id,
+            userErr,
+          });
           if (userData.user) {
-            const { data: existing } = await supabase
+            const { data: existing, error: rowErr } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status, title")
               .eq("thread_id", item.thread_id)
               .eq("user_id", userData.user.id)
               .maybeSingle();
+            console.log("[flagged][cancel] db lookup", { existing, rowErr });
 
             if (existing && existing.status !== "cancelled") {
-              await supabase
+              const { error: updateErr } = await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
+              console.log("[flagged][cancel] row updated to cancelled", { updateErr });
 
               if (existing.source_event_id) {
+                console.log("[flagged][cancel] invoking google-calendar-push", {
+                  agenda_event_id: existing.id,
+                  source_event_id: existing.source_event_id,
+                  action: "delete",
+                });
                 const { data: pushData, error: pushErr } =
                   await supabase.functions.invoke("google-calendar-push", {
                     body: {
@@ -1227,9 +1241,14 @@ export default function FlaggedReviewSection() {
                   });
                 const errCode =
                   (pushData as { error?: string } | null)?.error;
+                console.log("[flagged][cancel] google-calendar-push response", {
+                  pushData,
+                  pushErr,
+                  errCode,
+                });
                 if (pushErr || errCode) {
                   console.warn(
-                    "[flagged] calendar delete failed after cancellation draft",
+                    "[flagged][cancel] calendar delete FAILED",
                     pushErr ?? errCode,
                   );
                   toast({
@@ -1240,27 +1259,32 @@ export default function FlaggedReviewSection() {
                         : "Google Calendar removal skipped.",
                   });
                 } else {
+                  console.log("[flagged][cancel] calendar delete SUCCESS");
                   toast({
                     title: "Cancelled & removed from Google Calendar",
                     description: `${existing.title || "Appointment"} has been cancelled.`,
                   });
                 }
               } else {
+                console.log("[flagged][cancel] no source_event_id, skipping calendar push");
                 toast({
                   title: "Appointment cancelled",
                   description: `${existing.title || "Appointment"} removed from your agenda.`,
                 });
               }
             } else if (!existing) {
+              console.log("[flagged][cancel] no agenda row found for thread");
               toast({
                 title: "Reply sent (no event found)",
                 description:
                   "No existing appointment was found for this thread to cancel.",
               });
+            } else {
+              console.log("[flagged][cancel] row already cancelled, skipping");
             }
           }
         } catch (e) {
-          console.warn("[flagged] failed to cancel event", e);
+          console.warn("[flagged][cancel] threw exception", e);
           toast({
             title: "Reply sent, cancellation skipped",
             description:
