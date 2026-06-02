@@ -1609,8 +1609,10 @@ export default function FlaggedReviewSection() {
             });
             if (updErr) throw updErr;
 
-            console.log("[flagged][reschedule] calling google-calendar-push upsert", {
+            console.log("[flagged][reschedule] calling google-calendar-push upsert (PATCH)", {
               agenda_event_id: existingWithGoogle.id,
+              start_time: extracted.date.toISOString(),
+              timezone: tz,
             });
             const { data: pushData, error: pushErr } =
               await supabase.functions.invoke("google-calendar-push", {
@@ -1711,8 +1713,10 @@ export default function FlaggedReviewSection() {
           if (insErr) throw insErr;
 
           if (inserted?.id) {
-            console.log("[flagged][reschedule] calling google-calendar-push upsert", {
+            console.log("[flagged][reschedule] calling google-calendar-push upsert (insert)", {
               agenda_event_id: inserted.id,
+              start_time: extracted.date.toISOString(),
+              timezone: tz,
             });
             const { data: pushData, error: pushErr } =
               await supabase.functions.invoke("google-calendar-push", {
@@ -1799,6 +1803,11 @@ export default function FlaggedReviewSection() {
             if (insErr) throw insErr;
 
             if (inserted?.id && extracted) {
+              console.log("[flagged][confirm] calling google-calendar-push upsert", {
+                agenda_event_id: inserted.id,
+                start_time: extracted.date.toISOString(),
+                timezone: tz,
+              });
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: { agenda_event_id: inserted.id, action: "upsert", start_time: extracted.date.toISOString(), timezone: tz },
