@@ -129,6 +129,11 @@ Deno.serve(async (req) => {
 
     if (action === "delete") {
       const eventId = sourceEventId ?? row?.source_event_id ?? null;
+      console.log("[google-calendar-push] delete action", {
+        agenda_event_id: agendaId,
+        eventId: eventId ?? null,
+        source: sourceEventId ? "request_body" : row ? "db_row" : "none",
+      });
       if (!eventId) return json({ ok: true, skipped: "no_google_event" });
       const res = await fetch(`${baseUrl}/${encodeURIComponent(eventId)}`, {
         method: "DELETE",
@@ -195,6 +200,17 @@ Deno.serve(async (req) => {
       : baseUrl;
     const method = existingEventId ? "PATCH" : "POST";
 
+    console.log("[google-calendar-push] Google API call", {
+      method,
+      url,
+      existingEventId: existingEventId ?? null,
+      payload: {
+        summary: payload.summary,
+        start: payload.start,
+        end: payload.end,
+      },
+    });
+
     const res = await fetch(url, {
       method,
       headers: {
@@ -205,9 +221,22 @@ Deno.serve(async (req) => {
     });
     if (!res.ok) {
       const t = await res.text();
+      console.error("[google-calendar-push] Google API error", {
+        method,
+        status: res.status,
+        body: t,
+      });
       throw new Error(`Google ${method} failed: ${res.status} ${t}`);
     }
     const ev = await res.json();
+
+    console.log("[google-calendar-push] Google API response", {
+      eventId: ev.id,
+      htmlLink: ev.htmlLink,
+      googleStart: ev.start,
+      googleEnd: ev.end,
+      status: ev.status,
+    });
 
     const { error: updErr } = await admin
       .from("agenda_events")
