@@ -1502,19 +1502,20 @@ export default function FlaggedReviewSection() {
           const { data: userData } = await supabase.auth.getUser();
           if (!userData.user) return;
 
-          // 1. Extract the new time — two-pass to avoid AI draft pollution.
-          //    The draft may mention old and new times; the contact's message
-          //    and user instruction are the cleanest signal.
-          let extracted = extractDateTime(incomingMessage, userInstruction);
-          console.log("[flagged][reschedule] pass 1 (contact+instruction)", {
+          // 1. Extract the NEW time. For reschedule, the contact's message
+          //    typically mentions the OLD time first ("move from X to Y")
+          //    so the AI draft is the better primary source — it states the
+          //    proposed new time upfront. Fall back to the contact's message
+          //    only if the draft has no parsible time.
+          let extracted = extractDateTime(draftText);
+          console.log("[flagged][reschedule] pass 1 (draft)", {
             extracted: extracted
               ? { iso: extracted.date.toISOString(), source: extracted.source }
               : null,
           });
           if (!extracted) {
-            // Fall back to draft + subject only if no time found in the clean signal.
-            extracted = extractDateTime(draftText, item.subject);
-            console.log("[flagged][reschedule] pass 2 (draft+subject)", {
+            extracted = extractDateTime(incomingMessage, userInstruction, item.subject);
+            console.log("[flagged][reschedule] pass 2 (contact+instruction)", {
               extracted: extracted
                 ? { iso: extracted.date.toISOString(), source: extracted.source }
                 : null,
