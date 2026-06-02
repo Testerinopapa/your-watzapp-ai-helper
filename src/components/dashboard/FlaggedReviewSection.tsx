@@ -1107,7 +1107,9 @@ export default function FlaggedReviewSection() {
               (currentContact &&
                 e.contact_name &&
                 normalizeEventText(e.contact_name).includes(normalizeEventText(currentContact)));
-            const tag = isOwnEvent ? " [SAME CONTACT — NOT a conflict for reschedule]" : "";
+            const tag = isOwnEvent
+              ? " [SAME CONTACT — this appointment is being rescheduled, the old slot opens up]"
+              : "";
             return `- ${start}–${end} — ${title}${loc}${contact}${desc}${note}${tag}`;
           });
 
@@ -1475,7 +1477,7 @@ export default function FlaggedReviewSection() {
         }
       }
 
-      // Reschedule: cancel old + create new at a different time
+      // Reschedule: update existing event to new time, or cancel+create
       else if (isScheduling && rescheduleSignal) {
         console.log("[flagged][reschedule] entering reschedule branch", {
           thread_id: item.thread_id,
@@ -1485,137 +1487,218 @@ export default function FlaggedReviewSection() {
         });
         try {
           const { data: userData } = await supabase.auth.getUser();
-          if (userData.user) {
-            // 1. Cancel existing events for this thread
-            const { data: existingRows } = await supabase
-              .from("agenda_events")
-              .select("id, source_event_id, status, title")
-              .eq("thread_id", item.thread_id)
-              .eq("user_id", userData.user.id)
-              .neq("status", "cancelled");
+          if (!userData.user) return;
 
-            console.log("[flagged][reschedule] existing events to cancel", {
-              count: existingRows?.length ?? 0,
-              rows: existingRows,
+          // 1. Extract the new time BEFORE touching existing events.
+          const extracted = extractDateTime(
+            incomingMessage,
+            draftText,
+            userInstruction,
+            item.subject,
+          );
+          console.log("[flagged][reschedule] extracted new time", {
+            extracted: extracted
+              ? { iso: extracted.date.toISOString(), source: extracted.source }
+              : null,
+          });
+          if (!extracted) {
+            console.log("[flagged][reschedule] no time parsed, skipping new event");
+            toast({
+              title: "Reply sent, time unclear",
+              description:
+                "Could not determine the new appointment time. Set it manually in the Agenda panel.",
+            });
+            return;
+          }
+
+          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+
+          // 2. Find the event to reschedule — prefer one with a Google Calendar
+          //    event ID so we can PATCH it in-place instead of delete+create.
+          const { data: existingRows } = await supabase
+            .from("agenda_events")
+            .select("id, source_event_id, status, title, contact_name, description, start_time")
+            .eq("thread_id", item.thread_id)
+            .eq("user_id", userData.user.id)
+            .neq("status", "cancelled")
+            .order("start_time", { ascending: true });
+
+          console.log("[flagged][reschedule] existing events", {
+            count: existingRows?.length ?? 0,
+            rows: existingRows,
+          });
+
+          const existingWithGoogle = (existingRows ?? []).find((r) => r.source_event_id);
+          const others = (existingRows ?? []).filter((r) => r !== existingWithGoogle);
+
+          // ── PATCH path: event has source_event_id → update it in-place ──
+          if (existingWithGoogle) {
+            console.log("[flagged][reschedule] PATCHING existing event", {
+              id: existingWithGoogle.id,
+              source_event_id: existingWithGoogle.source_event_id,
+              old_start: existingWithGoogle.start_time,
+              new_start: extracted.date.toISOString(),
             });
 
-            for (const existing of (existingRows ?? [])) {
-              if (existing.source_event_id) {
-                // Delete from Google Calendar FIRST, while source_event_id
-                // is still intact on the row.
-                console.log("[flagged][reschedule] calling google-calendar-push delete", {
-                  agenda_event_id: existing.id,
-                  source_event_id: existing.source_event_id,
-                });
-                const { data: delData, error: delErr } =
-                  await supabase.functions.invoke("google-calendar-push", {
-                    body: {
-                      agenda_event_id: existing.id,
-                      source_event_id: existing.source_event_id,
-                      action: "delete",
-                    },
-                  });
-                console.log("[flagged][reschedule] google-calendar-push delete response", {
-                  id: existing.id,
-                  delData,
-                  delErr,
-                });
-              }
-              const { error: updErr } = await supabase
+            // Clean up any duplicate non-Google events for this thread.
+            for (const other of others) {
+              await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
-                .eq("id", existing.id);
-              console.log("[flagged][reschedule] row updated to cancelled", {
-                id: existing.id,
-                updErr,
-              });
+                .eq("id", other.id);
             }
 
-            // 2. Create fresh event only when a clear time was agreed upon
-            const extracted = extractDateTime(
-              incomingMessage,
-              draftText,
-              userInstruction,
-              item.subject,
-            );
-            console.log("[flagged][reschedule] extracted new time", {
-              extracted: extracted
-                ? { iso: extracted.date.toISOString(), source: extracted.source }
-                : null,
-            });
-            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-            const title =
-              item.subject?.trim() ||
+            // Keep the original title — don't use item.subject which may
+            // be "Reschedule appointment" from mock/test data.
+            const keepTitle =
+              existingWithGoogle.title?.trim() ||
               (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
-            if (!extracted) {
-              console.log("[flagged][reschedule] no time parsed, skipping new event");
-              toast({
-                title: "Reply sent, time unclear",
-                description:
-                  "Could not determine the new appointment time. Set it manually in the Agenda panel.",
-              });
-              return;
-            }
-
-            const newEvent = {
-              user_id: userData.user.id,
-              source_type: "whatsapp",
-              source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
-              thread_id: item.thread_id,
-              contact_name: item.sender ?? null,
-              contact_channel: item.provider ?? null,
-              title,
-              description: (item.preview ?? item.latest_message ?? null) as string | null,
-              start_time: extracted.date.toISOString(),
-              timezone: tz,
-              status: "confirmed",
-              imported_at: new Date().toISOString(),
-            };
-
-            console.log("[flagged][reschedule] inserting new event", newEvent);
-            const { data: inserted, error: insErr } = await supabase
+            const { error: updErr } = await supabase
               .from("agenda_events")
-              .insert(newEvent)
-              .select("id")
-              .single();
+              .update({
+                start_time: extracted.date.toISOString(),
+                timezone: tz,
+                status: "confirmed",
+                title: keepTitle,
+              })
+              .eq("id", existingWithGoogle.id);
 
-            console.log("[flagged][reschedule] insert result", {
-              inserted,
-              insErr,
+            console.log("[flagged][reschedule] PATCH db update", {
+              id: existingWithGoogle.id,
+              updErr,
+            });
+            if (updErr) throw updErr;
+
+            console.log("[flagged][reschedule] calling google-calendar-push upsert", {
+              agenda_event_id: existingWithGoogle.id,
+            });
+            const { data: pushData, error: pushErr } =
+              await supabase.functions.invoke("google-calendar-push", {
+                body: { agenda_event_id: existingWithGoogle.id, action: "upsert" },
+              });
+            const errCode = (pushData as { error?: string } | null)?.error;
+            console.log("[flagged][reschedule] google-calendar-push upsert response", {
+              pushData,
+              pushErr,
+              errCode,
             });
 
-            if (insErr) throw insErr;
+            if (pushErr || errCode) {
+              toast({
+                title: "Rescheduled (Google sync skipped)",
+                description:
+                  errCode === "not_connected"
+                    ? "Connect Google Calendar to sync the new time."
+                    : "New time saved locally.",
+              });
+            } else {
+              toast({
+                title: "Rescheduled & synced to Google Calendar",
+                description: `${keepTitle} moved to a new time.`,
+              });
+            }
+            return;
+          }
 
-            if (inserted?.id) {
-              console.log("[flagged][reschedule] calling google-calendar-push upsert", {
-                agenda_event_id: inserted.id,
+          // ── DELETE+CREATE path: no Google-linked event exists ──
+          console.log("[flagged][reschedule] no Google-linked event, using delete+create");
+
+          for (const existing of (existingRows ?? [])) {
+            if (existing.source_event_id) {
+              console.log("[flagged][reschedule] calling google-calendar-push delete", {
+                agenda_event_id: existing.id,
+                source_event_id: existing.source_event_id,
               });
-              const { data: pushData, error: pushErr } =
+              const { data: delData, error: delErr } =
                 await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: inserted.id, action: "upsert" },
+                  body: {
+                    agenda_event_id: existing.id,
+                    source_event_id: existing.source_event_id,
+                    action: "delete",
+                  },
                 });
-              const errCode =
-                (pushData as { error?: string } | null)?.error;
-              console.log("[flagged][reschedule] google-calendar-push upsert response", {
-                pushData,
-                pushErr,
-                errCode,
+              console.log("[flagged][reschedule] google-calendar-push delete response", {
+                id: existing.id,
+                delData,
+                delErr,
               });
-              if (pushErr || errCode) {
-                toast({
-                  title: "Rescheduled (Google sync skipped)",
-                  description:
-                    errCode === "not_connected"
-                      ? "Connect Google Calendar to sync the new time."
-                      : "New time saved locally.",
-                });
-              } else {
-                toast({
-                  title: "Rescheduled & synced to Google Calendar",
-                  description: `${title} moved to a new time.`,
-                });
-              }
+            }
+            const { error: updErr } = await supabase
+              .from("agenda_events")
+              .update({ status: "cancelled", source_event_id: null })
+              .eq("id", existing.id);
+            console.log("[flagged][reschedule] row updated to cancelled", {
+              id: existing.id,
+              updErr,
+            });
+          }
+
+          // Build title from existing event if available, otherwise sender-based.
+          const bestExisting = (existingRows ?? []).find(
+            (r) => r.title?.trim() && r.title.trim().toLowerCase() !== "reschedule appointment",
+          );
+          const title =
+            bestExisting?.title?.trim() ||
+            (item.sender ? `Appointment with ${item.sender}` : "Appointment");
+
+          const newEvent = {
+            user_id: userData.user.id,
+            source_type: "whatsapp",
+            source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
+            thread_id: item.thread_id,
+            contact_name: item.sender ?? null,
+            contact_channel: item.provider ?? null,
+            title,
+            description: (item.preview ?? item.latest_message ?? null) as string | null,
+            start_time: extracted.date.toISOString(),
+            timezone: tz,
+            status: "confirmed",
+            imported_at: new Date().toISOString(),
+          };
+
+          console.log("[flagged][reschedule] inserting new event", newEvent);
+          const { data: inserted, error: insErr } = await supabase
+            .from("agenda_events")
+            .insert(newEvent)
+            .select("id")
+            .single();
+
+          console.log("[flagged][reschedule] insert result", {
+            inserted,
+            insErr,
+          });
+
+          if (insErr) throw insErr;
+
+          if (inserted?.id) {
+            console.log("[flagged][reschedule] calling google-calendar-push upsert", {
+              agenda_event_id: inserted.id,
+            });
+            const { data: pushData, error: pushErr } =
+              await supabase.functions.invoke("google-calendar-push", {
+                body: { agenda_event_id: inserted.id, action: "upsert" },
+              });
+            const errCode =
+              (pushData as { error?: string } | null)?.error;
+            console.log("[flagged][reschedule] google-calendar-push upsert response", {
+              pushData,
+              pushErr,
+              errCode,
+            });
+            if (pushErr || errCode) {
+              toast({
+                title: "Rescheduled (Google sync skipped)",
+                description:
+                  errCode === "not_connected"
+                    ? "Connect Google Calendar to sync the new time."
+                    : "New time saved locally.",
+              });
+            } else {
+              toast({
+                title: "Rescheduled & synced to Google Calendar",
+                description: `${title} moved to a new time.`,
+              });
             }
           }
         } catch (e) {
