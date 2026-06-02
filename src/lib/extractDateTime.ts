@@ -362,7 +362,7 @@ export function looksLikeCancellation(text: string): boolean {
   // English: conjugated forms only (cancelled/cancelling), not bare "cancel"
   // Italian: annullare/annullato/disdire/disdetto/rinunciare
   // Spanish: cancelar/cancelado/anular/anulado
-  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annulla|annulliamo|disdire|disdett[ao]|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd)|purtroppo.*(?:annull|disd)|cancelar|cancelado|cancelo|cancelamos|anular|anulado|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
+  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annullata|annulla|annulliamo|annullamento|cancellare|cancellato|cancellata|cancellazione|disdire|disdett[ao]|disdetta|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd|cancell)|mi dispiace.*(?:annull|disd|cancell)|purtroppo.*(?:annull|disd|cancell)|ho (?:annullato|cancellato|rimosso|tolto)|cancelar|cancelado|cancelada|cancelaci[óo]n|cancelo|cancelamos|anular|anulado|anulaci[óo]n|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
 }
 
 /**
