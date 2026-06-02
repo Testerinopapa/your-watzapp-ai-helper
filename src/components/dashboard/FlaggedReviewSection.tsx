@@ -614,11 +614,15 @@ function DraggableFlaggedCard({
   item,
   folders,
   onMoveTo,
+  onActivate,
+  expanded,
   footer,
 }: {
   item: FlaggedMessage;
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
+  onActivate?: () => void;
+  expanded?: boolean;
   footer?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
@@ -626,7 +630,6 @@ function DraggableFlaggedCard({
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [isHovered, setIsHovered] = useState(false);
-  const [isFocused, setIsFocused] = useState(false);
 
   const setRefs = (node: HTMLDivElement | null) => {
     wrapperRef.current = node;
@@ -634,16 +637,17 @@ function DraggableFlaggedCard({
   };
 
   const handleFocusClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Ignore clicks on interactive children (buttons, links, inputs, the drag handle).
+    // Ignore clicks on interactive children.
     const target = e.target as HTMLElement;
     if (target.closest("button, a, input, textarea, [role='menuitem']")) return;
-    setIsFocused(true);
-    wrapperRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    window.setTimeout(() => setIsFocused(false), 900);
+    onActivate?.();
+    window.requestAnimationFrame(() => {
+      wrapperRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   };
 
-  // Mimic the drag-utility visual on hover (slight rotate + lift + glow ring).
-  const liftActive = (isHovered || isFocused) && !isDragging;
+  // Mimic the drag-utility visual on hover.
+  const liftActive = isHovered && !isDragging && !expanded;
 
   return (
     <div
@@ -655,13 +659,13 @@ function DraggableFlaggedCard({
         "group/card relative cursor-pointer transition-all duration-300 ease-out will-change-transform",
         isDragging && "opacity-40",
         liftActive && "-rotate-[1.5deg] scale-[1.02] z-10",
-        isFocused && "animate-scale-in",
+        expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
       )}
     >
       <FlaggedCardInner
         item={item}
         footer={footer}
-        elevated={liftActive}
+        elevated={liftActive || expanded}
         leading={
           <TooltipProvider delayDuration={250}>
             <Tooltip>
@@ -2210,12 +2214,27 @@ export default function FlaggedReviewSection() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {ungrouped.map((item) => {
                   const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  const isAppt = APPOINTMENT_CATEGORIES.has(
+                    (item.intent_category ?? "").toLowerCase().trim(),
+                  );
                   return (
                     <DraggableFlaggedCard
                       key={item.thread_id}
                       item={item}
                       folders={folders}
                       onMoveTo={moveToFolder}
+                      expanded={draftState.open}
+                      onActivate={() => {
+                        if (draftState.open) return;
+                        updateDraft(item.thread_id, {
+                          open: true,
+                          instruction:
+                            draftState.instruction ||
+                            (isAppt
+                              ? "Check calendar, reply and update google calendar"
+                              : ""),
+                        });
+                      }}
                       footer={
                         <DraftReplyFooter
                           item={item}
@@ -2227,9 +2246,7 @@ export default function FlaggedReviewSection() {
                           }
                           onGenerate={() => generateDraft(item)}
                           onRetry={() => retryDraft(item)}
-                          isAppointment={APPOINTMENT_CATEGORIES.has(
-                            (item.intent_category ?? "").toLowerCase().trim(),
-                          )}
+                          isAppointment={isAppt}
                         />
                       }
                     />
