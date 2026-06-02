@@ -207,12 +207,14 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             logAppointmentSync("thread_id lookup skipped: no thread_id on item");
           }
 
-          // 2) Fallback: time-window match around composedStart (±12h).
+          // 2) Fallback: time-window match around composedStart (±14 days,
+          //    very wide because composedStart often defaults to message
+          //    recency, not the real appointment time).
           if (!dbRow && composedStart) {
             const target = new Date(composedStart).getTime();
-
-            const lo = new Date(target - 12 * 60 * 60 * 1000).toISOString();
-            const hi = new Date(target + 12 * 60 * 60 * 1000).toISOString();
+            const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+            const lo = new Date(target - WINDOW_MS).toISOString();
+            const hi = new Date(target + WINDOW_MS).toISOString();
             const { data: byTime, error: timeErr } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status, title, start_time")
@@ -220,7 +222,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .neq("status", "cancelled")
               .gte("start_time", lo)
               .lte("start_time", hi)
-              .limit(50);
+              .limit(100);
             logAppointmentSync("time-window lookup completed", {
               window_lo: lo,
               window_hi: hi,
@@ -229,7 +231,9 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               error: timeErr?.message ?? null,
             });
             if (byTime && byTime.length > 0) {
-              const sorted = [...byTime].sort(
+              const withGoogle = byTime.filter((r) => r.source_event_id);
+              const pool = withGoogle.length > 0 ? withGoogle : byTime;
+              const sorted = [...pool].sort(
                 (a, b) =>
                   Math.abs(new Date(a.start_time!).getTime() - target) -
                   Math.abs(new Date(b.start_time!).getTime() - target),
@@ -237,6 +241,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               dbRow = sorted[0];
               logAppointmentSync("time-window fallback matched", {
                 row_id: dbRow.id,
+                preferred_google_row: withGoogle.length > 0,
               });
             }
           } else if (!dbRow) {
@@ -244,7 +249,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
           }
 
 
-          // 3) Last-resort: contact-name fallback over next 180 days.
+          // 3) Contact-name fallback over next 180 days.
           if (!dbRow && item.sender) {
             const now = new Date().toISOString();
             const horizon = new Date(
@@ -267,10 +272,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               error: contactErr?.message ?? null,
             });
             if (byContact && byContact.length > 0) {
+              const withGoogle = byContact.filter((r) => r.source_event_id);
+              const pool = withGoogle.length > 0 ? withGoogle : byContact;
               const target = composedStart
                 ? new Date(composedStart).getTime()
                 : Date.now();
-              const sorted = [...byContact].sort(
+              const sorted = [...pool].sort(
                 (a, b) =>
                   Math.abs(new Date(a.start_time!).getTime() - target) -
                   Math.abs(new Date(b.start_time!).getTime() - target),
@@ -278,11 +285,48 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               dbRow = sorted[0];
               logAppointmentSync("contact-name fallback matched", {
                 row_id: dbRow.id,
+                preferred_google_row: withGoogle.length > 0,
               });
             }
           } else if (!dbRow) {
             logAppointmentSync("contact-name lookup skipped: no sender on item");
           }
+
+          // 4) Last-resort: ANY non-cancelled row with a source_event_id,
+          //    ignoring time/contact entirely. Defeats time divergence.
+          if (!dbRow) {
+            const { data: anyRow, error: anyErr } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title, start_time, contact_name, thread_id")
+              .eq("user_id", userData.user.id)
+              .neq("status", "cancelled")
+              .not("source_event_id", "is", null)
+              .order("start_time", { ascending: true })
+              .limit(500);
+            logAppointmentSync("any-row fallback completed", {
+              count: anyRow?.length ?? 0,
+              rows: anyRow ?? null,
+              error: anyErr?.message ?? null,
+            });
+            if (anyRow && anyRow.length > 0) {
+              const target = composedStart
+                ? new Date(composedStart).getTime()
+                : Date.now();
+              const sorted = [...anyRow].sort(
+                (a, b) =>
+                  Math.abs(new Date(a.start_time!).getTime() - target) -
+                  Math.abs(new Date(b.start_time!).getTime() - target),
+              );
+              dbRow = sorted[0];
+              logAppointmentSync("any-row fallback matched", {
+                row_id: dbRow.id,
+                row_thread_id: (dbRow as { thread_id?: string | null }).thread_id ?? null,
+                row_contact: (dbRow as { contact_name?: string | null }).contact_name ?? null,
+              });
+            }
+          }
+
+
 
 
           logAppointmentSync("agenda_events lookup completed", {
