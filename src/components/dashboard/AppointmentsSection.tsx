@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -11,6 +11,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Plug,
+  Trash2,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
@@ -51,11 +52,13 @@ function AppointmentCard({
   featured = false,
   onClick,
   inAgenda = false,
+  onDismiss,
 }: {
   item: FlaggedMessage;
   featured?: boolean;
   onClick?: () => void;
   inAgenda?: boolean;
+  onDismiss?: () => void;
 }) {
   const when = recencyDate(item);
   const age = formatDistanceToNow(when, { addSuffix: true });
@@ -64,11 +67,18 @@ function AppointmentCard({
   const monthLabel = format(when, "MMM").toUpperCase();
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
       className={cn(
-        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left",
+        "group relative w-full overflow-hidden rounded-2xl border border-white/10 text-left cursor-pointer",
         "bg-gradient-to-br from-[#0d1b2a] via-[#102a3a] to-[#1b4332]",
         "shadow-[0_8px_30px_-12px_rgba(45,212,168,0.25)] hover:shadow-[0_12px_40px_-12px_rgba(115,255,184,0.35)]",
         "transition-all duration-300 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2dd4a8]",
@@ -183,7 +193,7 @@ function AppointmentCard({
               featured ? "text-sm line-clamp-4" : "text-xs line-clamp-3",
             )}
           >
-            “{item.preview ?? item.latest_message}”
+            "{item.preview ?? item.latest_message}"
           </p>
         )}
 
@@ -202,14 +212,47 @@ function AppointmentCard({
                 ` · ${Math.round(item.intent_confidence * 100)}%`}
             </span>
           )}
-          <ArrowUpRight
-            size={16}
-            className="text-white/30 transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#73ffb8]"
-          />
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDismiss?.();
+              }}
+              className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 text-white/40 hover:bg-destructive/10 hover:text-destructive-foreground"
+              aria-label="Dismiss appointment"
+            >
+              <Trash2 size={14} />
+            </Button>
+            <ArrowUpRight
+              size={16}
+              className="text-white/30 transition-all duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-[#73ffb8]"
+            />
+          </div>
         </div>
       </div>
-    </button>
+    </div>
   );
+}
+
+const DISMISSED_KEY = "lovable.appointments.dismissed";
+
+function readDismissed(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? new Set(parsed as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDismissed(ids: Set<string>) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DISMISSED_KEY, JSON.stringify([...ids]));
 }
 
 export default function AppointmentsSection() {
@@ -220,6 +263,11 @@ export default function AppointmentsSection() {
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
   const [tab, setTab] = useState<"booked" | "agenda">("booked");
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed());
+
+  useEffect(() => {
+    writeDismissed(dismissed);
+  }, [dismissed]);
 
   const openCard = (m: FlaggedMessage) => {
     setSelected(m);
@@ -259,9 +307,15 @@ export default function AppointmentsSection() {
     if (local?.status === "cancelled") return true;
     return false;
   };
-  const fresh = deduped.filter((m) => !isStale(m));
+  const fresh = deduped
+    .filter((m) => !isStale(m))
+    .filter((m) => !dismissed.has(m.thread_id));
 
   const [featured, ...rest] = fresh;
+
+  const dismiss = (threadId: string) => {
+    setDismissed((prev) => new Set([...prev, threadId]));
+  };
 
   return (
     <section
@@ -416,6 +470,7 @@ export default function AppointmentsSection() {
                     featured
                     inAgenda={!!findByThreadId(featured.thread_id)}
                     onClick={() => openCard(featured)}
+                    onDismiss={() => dismiss(featured.thread_id)}
                   />
                 </div>
               )}
@@ -431,6 +486,7 @@ export default function AppointmentsSection() {
                     item={item}
                     inAgenda={!!findByThreadId(item.thread_id)}
                     onClick={() => openCard(item)}
+                    onDismiss={() => dismiss(item.thread_id)}
                   />
                 </div>
               ))}
