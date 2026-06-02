@@ -1299,8 +1299,10 @@ export default function FlaggedReviewSection() {
               });
 
               if (cancellationTime) {
-                const windowStart = new Date(cancellationTime.date.getTime() - 2 * 60 * 60 * 1000).toISOString();
-                const windowEnd = new Date(cancellationTime.date.getTime() + 2 * 60 * 60 * 1000).toISOString();
+                // Wide ±12h window to tolerate timezone mismatches between
+                // the message-parsed local time and the event stored time.
+                const windowStart = new Date(cancellationTime.date.getTime() - 12 * 60 * 60 * 1000).toISOString();
+                const windowEnd = new Date(cancellationTime.date.getTime() + 12 * 60 * 60 * 1000).toISOString();
                 const { data: fallbackRows, error: fallbackErr } = await supabase
                   .from("agenda_events")
                   .select("id, source_event_id, status, title, contact_name, description, start_time, end_time")
@@ -1309,7 +1311,7 @@ export default function FlaggedReviewSection() {
                   .gte("start_time", windowStart)
                   .lte("start_time", windowEnd)
                   .order("start_time", { ascending: true })
-                  .limit(20);
+                  .limit(50);
 
                 const matchedFallbackRows = (fallbackRows ?? []).filter((r) =>
                   eventMatchesContact(r, contact),
@@ -1323,6 +1325,44 @@ export default function FlaggedReviewSection() {
                   fallbackErr,
                 });
                 toCancel = matchedFallbackRows;
+              }
+
+              // Last-resort fallback: search broadly by contact name only.
+              if (toCancel.length === 0 && contact) {
+                const broadStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                const broadEnd = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
+                const { data: contactRows, error: contactErr } = await supabase
+                  .from("agenda_events")
+                  .select("id, source_event_id, status, title, contact_name, description, start_time, end_time")
+                  .eq("user_id", userData.user.id)
+                  .neq("status", "cancelled")
+                  .gte("start_time", broadStart)
+                  .lte("start_time", broadEnd)
+                  .order("start_time", { ascending: true })
+                  .limit(500);
+
+                const matchedByContact = (contactRows ?? []).filter((r) =>
+                  eventMatchesContact(r, contact),
+                );
+                console.log("[flagged][cancel] contact-only fallback lookup", {
+                  contactCount: contactRows?.length ?? 0,
+                  matchedCount: matchedByContact.length,
+                  matched: matchedByContact,
+                  contactErr,
+                });
+
+                if (matchedByContact.length > 0) {
+                  if (cancellationTime) {
+                    const target = cancellationTime.date.getTime();
+                    matchedByContact.sort((a, b) => {
+                      const da = Math.abs(new Date(a.start_time as string).getTime() - target);
+                      const db = Math.abs(new Date(b.start_time as string).getTime() - target);
+                      return da - db;
+                    });
+                  }
+                  toCancel = [matchedByContact[0]];
+                  console.log("[flagged][cancel] contact-only fallback chose", toCancel);
+                }
               }
             }
 
