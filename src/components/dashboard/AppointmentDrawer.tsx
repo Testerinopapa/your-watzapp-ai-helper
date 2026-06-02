@@ -105,6 +105,16 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
     });
   }, [entries, selectedDate, time, item]);
 
+  const logAppointmentSync = (step: string, details?: Record<string, unknown>) => {
+    console.info(`[appointment-drawer] ${step}`, {
+      thread_id: item?.thread_id,
+      sender: item?.sender,
+      existing_local_id: existing?.id,
+      existing_local_status: existing?.status,
+      ...details,
+    });
+  };
+
   if (!item) return null;
 
   const composedStart = (() => {
@@ -117,6 +127,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
 
   const save = async (nextStatus?: AgendaStatus) => {
     const finalStatus = nextStatus ?? status;
+    logAppointmentSync("save started", {
+      requested_status: nextStatus ?? null,
+      final_status: finalStatus,
+      composed_start: composedStart,
+      has_thread_id: Boolean(item.thread_id),
+    });
     const entry: AgendaEntry = {
       id: existing?.id ?? `wa-${item.thread_id}`,
       source_type: "whatsapp",
@@ -134,27 +150,58 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
       last_synced_at: new Date().toISOString(),
     };
     upsert(entry);
+    logAppointmentSync("local agenda upserted", {
+      local_entry_id: entry.id,
+      final_status: finalStatus,
+    });
     if (nextStatus) setStatus(nextStatus);
 
     // If cancelling, also sync to the agenda_events DB row and Google Calendar
     if (finalStatus === "cancelled" && item.thread_id) {
+      logAppointmentSync("cancel sync started");
       try {
-        const { data: userData } = await supabase.auth.getUser();
+        const { data: userData, error: userErr } = await supabase.auth.getUser();
+        logAppointmentSync("auth user lookup completed", {
+          has_user: Boolean(userData.user),
+          user_id: userData.user?.id ?? null,
+          error: userErr?.message ?? null,
+        });
         if (userData.user) {
-          const { data: dbRow } = await supabase
+          const { data: dbRow, error: rowErr } = await supabase
             .from("agenda_events")
             .select("id, source_event_id, status, title")
             .eq("thread_id", item.thread_id)
             .eq("user_id", userData.user.id)
             .maybeSingle();
 
+          logAppointmentSync("agenda_events lookup completed", {
+            found: Boolean(dbRow),
+            row_id: dbRow?.id ?? null,
+            row_status: dbRow?.status ?? null,
+            has_source_event_id: Boolean(dbRow?.source_event_id),
+            source_event_id: dbRow?.source_event_id ?? null,
+            error: rowErr?.message ?? null,
+          });
+
           if (dbRow && dbRow.status !== "cancelled") {
-            await supabase
+            logAppointmentSync("agenda_events cancellation update started", {
+              row_id: dbRow.id,
+            });
+            const { error: updateErr } = await supabase
               .from("agenda_events")
               .update({ status: "cancelled", source_event_id: null })
               .eq("id", dbRow.id);
 
+            logAppointmentSync("agenda_events cancellation update completed", {
+              row_id: dbRow.id,
+              error: updateErr?.message ?? null,
+            });
+
             if (dbRow.source_event_id) {
+              logAppointmentSync("google calendar delete invoke started", {
+                row_id: dbRow.id,
+                source_event_id: dbRow.source_event_id,
+              });
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: {
@@ -164,6 +211,13 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                   },
                 });
               const errCode = (pushData as { error?: string } | null)?.error;
+              logAppointmentSync("google calendar delete invoke completed", {
+                row_id: dbRow.id,
+                source_event_id: dbRow.source_event_id,
+                push_data: pushData ?? null,
+                push_error: pushErr?.message ?? null,
+                function_error_code: errCode ?? null,
+              });
               if (pushErr || errCode) {
                 console.warn(
                   "[appointment-drawer] calendar delete failed",
@@ -184,7 +238,19 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               });
               return;
             }
+            logAppointmentSync("cancel sync skipped calendar delete: row had no source_event_id", {
+              row_id: dbRow.id,
+            });
+          } else if (dbRow?.status === "cancelled") {
+            logAppointmentSync("cancel sync skipped: agenda_events row already cancelled", {
+              row_id: dbRow.id,
+              has_source_event_id: Boolean(dbRow.source_event_id),
+            });
+          } else {
+            logAppointmentSync("cancel sync skipped: no matching agenda_events row");
           }
+        } else {
+          logAppointmentSync("cancel sync skipped: no authenticated user");
         }
       } catch (e) {
         console.warn("[appointment-drawer] failed to cancel event", e);
