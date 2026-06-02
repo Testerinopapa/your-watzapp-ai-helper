@@ -23,6 +23,7 @@ import {
 } from "@/hooks/usePersonalAgenda";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
 const MINT = "#73ffb8";
