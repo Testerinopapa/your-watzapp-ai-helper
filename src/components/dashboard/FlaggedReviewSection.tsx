@@ -1078,6 +1078,8 @@ export default function FlaggedReviewSection() {
           timeZone: tz,
         });
 
+        const currentThreadId = item.thread_id;
+        const currentContact = senderLabelForItem(item);
         const lines = (events ?? [])
           .filter((e) => e.start_time)
           .map((e) => {
@@ -1098,7 +1100,15 @@ export default function FlaggedReviewSection() {
             const note = e.notes?.trim()
               ? ` (notes: ${e.notes.trim().slice(0, 140)})`
               : "";
-            return `- ${start}–${end} — ${title}${loc}${contact}${desc}${note}`;
+            // Tag events from the current thread/contact so the AI can
+            // distinguish "the appointment being moved" from real conflicts.
+            const isOwnEvent =
+              (currentThreadId && e.thread_id === currentThreadId) ||
+              (currentContact &&
+                e.contact_name &&
+                normalizeEventText(e.contact_name).includes(normalizeEventText(currentContact)));
+            const tag = isOwnEvent ? " [SAME CONTACT — NOT a conflict for reschedule]" : "";
+            return `- ${start}–${end} — ${title}${loc}${contact}${desc}${note}${tag}`;
           });
 
         const calendarBlock =
@@ -1116,7 +1126,7 @@ export default function FlaggedReviewSection() {
         if (isCancellation) {
           calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE the cancellation directly and empathetically in your reply.\n2. Confirm you've noted they want to cancel — mention specifically what's being cancelled (reference the appointment from CALENDAR CONTEXT if identifiable).\n3. Offer to reschedule if appropriate (e.g. "let me know if you'd like to set another time").\n4. Do NOT propose new times unless they explicitly ask to reschedule.`;
         } else if (isReschedule) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE they want to change the time. Reference the original appointment from CALENDAR CONTEXT.\n2. Check the proposed new time against CALENDAR CONTEXT — only confirm if it does NOT overlap any block.\n3. If no specific new time is proposed, suggest one based on available slots around their original time.\n4. Make clear the old time will be removed and the new time booked.`;
+          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE they want to change the time. Reference the original appointment from CALENDAR CONTEXT.\n2. Check the proposed new time against CALENDAR CONTEXT — but IGNORE any events from the same contact or thread, because those are the appointments being moved and will be deleted before the new one is created. Only OTHER people's events count as real conflicts.\n3. If no specific new time is proposed, suggest one based on available slots around their original time.\n4. Make clear the old time will be removed and the new time booked.\n5. The customer's request itself is NOT a calendar event — do not treat the proposed new time as already booked.`;
         } else if (lines.length > 0) {
           calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps a CALENDAR CONTEXT block above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against the CALENDAR CONTEXT. If it conflicts (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any CALENDAR CONTEXT block.`;
         } else {
