@@ -339,6 +339,45 @@ export default function PersonalAgendaPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Migrate local-only WhatsApp/manual mock entries into agenda_events as
+  // google_calendar rows, so they live alongside real Google events and can
+  // be pushed/synced. Runs once whenever new local entries appear.
+  useEffect(() => {
+    let cancelled = false;
+    async function migrate() {
+      if (localEntries.length === 0) return;
+      const { data: userData } = await supabase.auth.getUser();
+      if (!userData.user || cancelled) return;
+      const rows = localEntries.map((e) => ({
+        user_id: userData.user!.id,
+        source_type: "google_calendar",
+        source_event_id: e.source_event_id ?? null,
+        thread_id: e.thread_id ?? null,
+        contact_name: e.contact_name ?? null,
+        contact_channel: e.contact_channel ?? null,
+        title: e.title ?? e.contact_name ?? "Untitled",
+        description: e.description ?? null,
+        start_time: e.start_time ?? null,
+        end_time: e.end_time ?? null,
+        timezone: e.timezone ?? null,
+        status: e.status ?? "imported",
+        notes: e.notes ?? null,
+        imported_at: e.imported_at ?? new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("agenda_events").insert(rows);
+      if (cancelled) return;
+      if (error) {
+        console.warn("agenda local→db migration failed", error);
+        return;
+      }
+      for (const e of localEntries) removeLocal(e.id);
+      await refreshDb();
+    }
+    migrate();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localEntries.length]);
+
   const entries = useMemo(() => {
     const seen = new Set<string>();
     const all: AgendaEntry[] = [];
