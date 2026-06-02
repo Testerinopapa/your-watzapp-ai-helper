@@ -197,15 +197,20 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .order("start_time", { ascending: true })
               .limit(1);
             logAppointmentSync("thread_id lookup completed", {
-              found: Boolean(byThread?.length),
+              thread_id: item.thread_id,
+              count: byThread?.length ?? 0,
+              rows: byThread ?? null,
               error: threadErr?.message ?? null,
             });
             if (byThread && byThread.length > 0) dbRow = byThread[0];
+          } else {
+            logAppointmentSync("thread_id lookup skipped: no thread_id on item");
           }
 
           // 2) Fallback: time-window match around composedStart (±12h).
           if (!dbRow && composedStart) {
             const target = new Date(composedStart).getTime();
+
             const lo = new Date(target - 12 * 60 * 60 * 1000).toISOString();
             const hi = new Date(target + 12 * 60 * 60 * 1000).toISOString();
             const { data: byTime } = await supabase
