@@ -115,7 +115,8 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
     return d.toISOString();
   })();
 
-  const save = (nextStatus?: AgendaStatus) => {
+  const save = async (nextStatus?: AgendaStatus) => {
+    const finalStatus = nextStatus ?? status;
     const entry: AgendaEntry = {
       id: existing?.id ?? `wa-${item.thread_id}`,
       source_type: "whatsapp",
@@ -127,13 +128,76 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
       start_time: composedStart,
       end_time: null,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      status: nextStatus ?? status,
+      status: finalStatus,
       notes,
       imported_at: existing?.imported_at ?? new Date().toISOString(),
       last_synced_at: new Date().toISOString(),
     };
     upsert(entry);
     if (nextStatus) setStatus(nextStatus);
+
+    // If cancelling, also sync to the agenda_events DB row and Google Calendar
+    if (finalStatus === "cancelled" && item.thread_id) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData.user) {
+          const { data: dbRow } = await supabase
+            .from("agenda_events")
+            .select("id, source_event_id, status, title")
+            .eq("thread_id", item.thread_id)
+            .eq("user_id", userData.user.id)
+            .maybeSingle();
+
+          if (dbRow && dbRow.status !== "cancelled") {
+            await supabase
+              .from("agenda_events")
+              .update({ status: "cancelled", source_event_id: null })
+              .eq("id", dbRow.id);
+
+            if (dbRow.source_event_id) {
+              const { data: pushData, error: pushErr } =
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: {
+                    agenda_event_id: dbRow.id,
+                    action: "delete",
+                    source_event_id: dbRow.source_event_id,
+                  },
+                });
+              const errCode = (pushData as { error?: string } | null)?.error;
+              if (pushErr || errCode) {
+                console.warn(
+                  "[appointment-drawer] calendar delete failed",
+                  pushErr ?? errCode,
+                );
+                toast({
+                  title: "Marked cancelled locally",
+                  description:
+                    errCode === "not_connected"
+                      ? "Connect Google Calendar to remove it there too."
+                      : "Google Calendar removal skipped.",
+                });
+                return;
+              }
+              toast({
+                title: "Cancelled & removed from Google Calendar",
+                description: `${dbRow.title || "Appointment"} has been cancelled.`,
+              });
+              return;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[appointment-drawer] failed to cancel event", e);
+        toast({
+          title: "Marked cancelled locally",
+          description:
+            (e as Error)?.message?.slice(0, 120) ?? "Could not update calendar.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     toast({
       title: existing ? "Agenda entry updated" : "Added to personal agenda",
       description: composedStart ? format(new Date(composedStart), "PPP p") : "Time missing",
