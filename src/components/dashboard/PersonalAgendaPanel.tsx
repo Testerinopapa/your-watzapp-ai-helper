@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { format, isSameDay, isAfter, startOfDay } from "date-fns";
 import {
   CalendarDays,
@@ -317,6 +317,28 @@ export default function PersonalAgendaPanel({
   const { entries: localEntries, remove: removeLocal } = usePersonalAgenda();
   const { entries: dbEntries, remove: removeDb, refresh: refreshDb } = useAgendaEvents();
   const { toast } = useToast();
+  const [syncing, setSyncing] = useState(false);
+
+  // Sync Google Calendar → DB when this panel opens, so external
+  // changes (deletions, new events) show up immediately.
+  useEffect(() => {
+    let cancelled = false;
+    async function doSync() {
+      setSyncing(true);
+      try {
+        const { error } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
+        if (!cancelled && !error) await refreshDb();
+      } catch {
+        // Silently continue — panel still shows whatever is in the DB.
+      } finally {
+        if (!cancelled) setSyncing(false);
+      }
+    }
+    doSync();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const entries = useMemo(() => {
     const seen = new Set<string>();
     const all: AgendaEntry[] = [];
