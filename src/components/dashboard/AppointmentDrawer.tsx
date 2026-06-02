@@ -213,7 +213,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
 
             const lo = new Date(target - 12 * 60 * 60 * 1000).toISOString();
             const hi = new Date(target + 12 * 60 * 60 * 1000).toISOString();
-            const { data: byTime } = await supabase
+            const { data: byTime, error: timeErr } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status, title, start_time")
               .eq("user_id", userData.user.id)
@@ -221,6 +221,13 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .gte("start_time", lo)
               .lte("start_time", hi)
               .limit(50);
+            logAppointmentSync("time-window lookup completed", {
+              window_lo: lo,
+              window_hi: hi,
+              count: byTime?.length ?? 0,
+              rows: byTime ?? null,
+              error: timeErr?.message ?? null,
+            });
             if (byTime && byTime.length > 0) {
               const sorted = [...byTime].sort(
                 (a, b) =>
@@ -232,7 +239,10 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                 row_id: dbRow.id,
               });
             }
+          } else if (!dbRow) {
+            logAppointmentSync("time-window lookup skipped: no composedStart");
           }
+
 
           // 3) Last-resort: contact-name fallback over next 180 days.
           if (!dbRow && item.sender) {
