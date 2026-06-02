@@ -1293,6 +1293,7 @@ export default function FlaggedReviewSection() {
                 description:
                   "This appointment was already cancelled in a previous action.",
               });
+              return;
             } else if (toCancel.length === 0) {
               const cancellationTime = extractDateTime(incomingMessage, userInstruction, item.subject);
               const contact = senderLabelForItem(item);
@@ -1466,6 +1467,12 @@ export default function FlaggedReviewSection() {
 
       // Reschedule: cancel old + create new at a different time
       else if (isScheduling && rescheduleSignal) {
+        console.log("[flagged][reschedule] entering reschedule branch", {
+          thread_id: item.thread_id,
+          sender: item.sender,
+          draft: draftText.slice(0, 200),
+          reason: reasonText.slice(0, 160),
+        });
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1477,22 +1484,41 @@ export default function FlaggedReviewSection() {
               .eq("user_id", userData.user.id)
               .neq("status", "cancelled");
 
+            console.log("[flagged][reschedule] existing events to cancel", {
+              count: existingRows?.length ?? 0,
+              rows: existingRows,
+            });
+
             for (const existing of (existingRows ?? [])) {
               if (existing.source_event_id) {
                 // Delete from Google Calendar FIRST, while source_event_id
                 // is still intact on the row.
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: {
-                    agenda_event_id: existing.id,
-                    source_event_id: existing.source_event_id,
-                    action: "delete",
-                  },
+                console.log("[flagged][reschedule] calling google-calendar-push delete", {
+                  agenda_event_id: existing.id,
+                  source_event_id: existing.source_event_id,
+                });
+                const { data: delData, error: delErr } =
+                  await supabase.functions.invoke("google-calendar-push", {
+                    body: {
+                      agenda_event_id: existing.id,
+                      source_event_id: existing.source_event_id,
+                      action: "delete",
+                    },
+                  });
+                console.log("[flagged][reschedule] google-calendar-push delete response", {
+                  id: existing.id,
+                  delData,
+                  delErr,
                 });
               }
-              await supabase
+              const { error: updErr } = await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
+              console.log("[flagged][reschedule] row updated to cancelled", {
+                id: existing.id,
+                updErr,
+              });
             }
 
             // 2. Create fresh event only when a clear time was agreed upon
@@ -1502,6 +1528,11 @@ export default function FlaggedReviewSection() {
               userInstruction,
               item.subject,
             );
+            console.log("[flagged][reschedule] extracted new time", {
+              extracted: extracted
+                ? { iso: extracted.date.toISOString(), source: extracted.source }
+                : null,
+            });
             const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
             const title =
               item.subject?.trim() ||
@@ -1532,21 +1563,35 @@ export default function FlaggedReviewSection() {
               imported_at: new Date().toISOString(),
             };
 
+            console.log("[flagged][reschedule] inserting new event", newEvent);
             const { data: inserted, error: insErr } = await supabase
               .from("agenda_events")
               .insert(newEvent)
               .select("id")
               .single();
 
+            console.log("[flagged][reschedule] insert result", {
+              inserted,
+              insErr,
+            });
+
             if (insErr) throw insErr;
 
             if (inserted?.id) {
+              console.log("[flagged][reschedule] calling google-calendar-push upsert", {
+                agenda_event_id: inserted.id,
+              });
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: { agenda_event_id: inserted.id, action: "upsert" },
                 });
               const errCode =
                 (pushData as { error?: string } | null)?.error;
+              console.log("[flagged][reschedule] google-calendar-push upsert response", {
+                pushData,
+                pushErr,
+                errCode,
+              });
               if (pushErr || errCode) {
                 toast({
                   title: "Rescheduled (Google sync skipped)",
