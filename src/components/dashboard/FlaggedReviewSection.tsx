@@ -1043,15 +1043,18 @@ export default function FlaggedReviewSection() {
 
         const nowIso = new Date().toISOString();
         const horizonIso = new Date(
-          Date.now() + 30 * 24 * 60 * 60 * 1000,
+          Date.now() + 180 * 24 * 60 * 60 * 1000,
         ).toISOString();
         const { data: events } = await supabase
           .from("agenda_events")
-          .select("title, start_time, end_time, timezone, location")
+          .select(
+            "id, source_type, source_event_id, thread_id, contact_name, contact_channel, title, description, location, start_time, end_time, timezone, status, notes",
+          )
           .gte("end_time", nowIso)
           .lte("start_time", horizonIso)
+          .neq("status", "cancelled")
           .order("start_time", { ascending: true })
-          .limit(250);
+          .limit(500);
 
         if (events === null) {
           throw new Error("Calendar events could not be loaded");
@@ -1084,7 +1087,16 @@ export default function FlaggedReviewSection() {
             const end = fmtTime.format(endDate);
             const loc = e.location ? ` @ ${e.location}` : "";
             const title = e.title?.trim() || "(busy)";
-            return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}`;
+            const contact = e.contact_name?.trim()
+              ? ` [contact: ${e.contact_name.trim()}${e.contact_channel ? ` via ${e.contact_channel}` : ""}]`
+              : "";
+            const desc = e.description?.trim()
+              ? ` — ${e.description.trim().slice(0, 140)}`
+              : "";
+            const note = e.notes?.trim()
+              ? ` (notes: ${e.notes.trim().slice(0, 140)})`
+              : "";
+            return `- ${start}–${end} (${startDate.toISOString()} to ${endDate.toISOString()}) — ${title}${loc}${contact}${desc}${note}`;
           });
 
         const calendarBlock =
