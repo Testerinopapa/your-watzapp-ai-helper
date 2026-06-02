@@ -250,9 +250,9 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             const horizon = new Date(
               Date.now() + 180 * 24 * 60 * 60 * 1000,
             ).toISOString();
-            const { data: byContact } = await supabase
+            const { data: byContact, error: contactErr } = await supabase
               .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time")
+              .select("id, source_event_id, status, title, start_time, contact_name")
               .eq("user_id", userData.user.id)
               .neq("status", "cancelled")
               .eq("contact_name", item.sender)
@@ -260,6 +260,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .lte("start_time", horizon)
               .order("start_time", { ascending: true })
               .limit(500);
+            logAppointmentSync("contact-name lookup completed", {
+              contact_name: item.sender,
+              count: byContact?.length ?? 0,
+              rows: byContact ?? null,
+              error: contactErr?.message ?? null,
+            });
             if (byContact && byContact.length > 0) {
               const target = composedStart
                 ? new Date(composedStart).getTime()
@@ -274,7 +280,10 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                 row_id: dbRow.id,
               });
             }
+          } else if (!dbRow) {
+            logAppointmentSync("contact-name lookup skipped: no sender on item");
           }
+
 
           logAppointmentSync("agenda_events lookup completed", {
             found: Boolean(dbRow),
