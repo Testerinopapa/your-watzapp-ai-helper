@@ -181,7 +181,7 @@ function extractDayNameTime(
   now: Date,
 ): ExtractedDateTime | null {
   const re =
-    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+    /\b(?:(next|this|on)\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)(?!\d*\s*(?:st|nd|rd|th)\b)/i;
 
   const match = re.exec(text);
   if (!match) return null;
@@ -349,7 +349,7 @@ function guessYear(monthIndex: number, now: Date): number {
  */
 export function looksLikeConfirmation(text: string): boolean {
   const lower = text.toLowerCase();
-  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar|sounds good|works for me|perfect|great|awesome|confermo|confermato|conferma|confermando|prenotato|prenotazione|prenoto|fissato|fissiamo|appuntamento confermato|perfetto|va bene|va benissimo|benissimo|ottimo|a presto|ci vediamo|a (?:domani|luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica)|confirmado|confirmo|confirmamos|reservado|reservación|reservo|agendado|agendamiento|cita confirmada|perfecto|estupendo|excelente|de acuerdo|nos vemos|hasta (?:luego|pronto|mañana))\b/i.test(lower);
+  return /\b(confirm(?:ing|ed)?|book(?:ing|ed)?|schedul(?:ing|ed)?|reserv(?:ing|ed)?|set for|all set|see you\s+(?:there|then|soon|tomorrow|next|at|on|in|around)|looking forward|c(u|ya)\s+(there|then)|appointment confirmed|slot is yours|on the calendar|in the calendar|on your calendar|in your calendar|added to calendar|sounds good|works for me|perfect|great|awesome|confermo|confermato|conferma|confermando|prenotato|prenotazione|prenoto|fissato|fissiamo|appuntamento confermato|perfetto|va bene|va benissimo|benissimo|ottimo|a presto|ci vediamo|a (?:domani|luned[ìi]|marted[ìi]|mercoled[ìi]|gioved[ìi]|venerd[ìi]|sabato|domenica)|confirmado|confirmo|confirmamos|reservado|reservación|reservo|agendado|agendamiento|cita confirmada|perfecto|estupendo|excelente|de acuerdo|nos vemos|hasta (?:luego|pronto|mañana))\b/i.test(lower);
 }
 
 /**
@@ -359,10 +359,10 @@ export function looksLikeConfirmation(text: string): boolean {
  */
 export function looksLikeCancellation(text: string): boolean {
   const lower = text.toLowerCase();
-  // English: conjugated forms only (cancelled/cancelling), not bare "cancel"
+  // English: verb forms (cancel/cancelled/cancelling/canceling)
   // Italian: annullare/annullato/disdire/disdetto/rinunciare
   // Spanish: cancelar/cancelado/anular/anulado
-  return /\b(cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annullata|annulla|annulliamo|annullamento|cancellare|cancellato|cancellata|cancellazione|disdire|disdett[ao]|disdetta|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd|cancell)|mi dispiace.*(?:annull|disd|cancell)|purtroppo.*(?:annull|disd|cancell)|ho (?:annullato|cancellato|rimosso|tolto)|cancelar|cancelado|cancelada|cancelaci[óo]n|cancelo|cancelamos|anular|anulado|anulaci[óo]n|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
+  return /\b(cancel\b|cancelled|canceled|cancelling|canceling|cannot make\b|can't make\b|cant make\b|not going to make|won't be able|no longer|call off|called off|have to cancel|(?:\bi\b|\bwe\b)\s+need to cancel|sorry.*(?:cancel|cannot)|unfortunately.*(?:cancel|cannot)|not available anymore|raincheck|rain check|annullare|annullato|annullata|annulla|annulliamo|annullamento|cancellare|cancellato|cancellata|cancellazione|disdire|disdett[ao]|disdetta|rinunciare|rinuncio|rinunciamo|non (?:posso|possiamo|riesco|riusciamo)|non (?:ce la faccio|ce la facciamo)|spiacente.*(?:annull|disd|cancell)|mi dispiace.*(?:annull|disd|cancell)|purtroppo.*(?:annull|disd|cancell)|ho (?:annullato|cancellato|rimosso|tolto)|cancelar|cancelado|cancelada|cancelaci[óo]n|cancelo|cancelamos|anular|anulado|anulaci[óo]n|anulo|anulamos|no (?:puedo|podemos|puede))\b/i.test(lower);
 }
 
 /**
