@@ -158,7 +158,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
 
     // If cancelling, also sync to the agenda_events DB row and Google Calendar
     if (finalStatus === "cancelled") {
-      logAppointmentSync("cancel sync started");
+      logAppointmentSync("cancel sync started", {
+        thread_id: item.thread_id ?? null,
+        sender: item.sender ?? null,
+        composed_start: composedStart,
+      });
+
       try {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         logAppointmentSync("auth user lookup completed", {
@@ -192,18 +197,23 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .order("start_time", { ascending: true })
               .limit(1);
             logAppointmentSync("thread_id lookup completed", {
-              found: Boolean(byThread?.length),
+              thread_id: item.thread_id,
+              count: byThread?.length ?? 0,
+              rows: byThread ?? null,
               error: threadErr?.message ?? null,
             });
             if (byThread && byThread.length > 0) dbRow = byThread[0];
+          } else {
+            logAppointmentSync("thread_id lookup skipped: no thread_id on item");
           }
 
           // 2) Fallback: time-window match around composedStart (±12h).
           if (!dbRow && composedStart) {
             const target = new Date(composedStart).getTime();
+
             const lo = new Date(target - 12 * 60 * 60 * 1000).toISOString();
             const hi = new Date(target + 12 * 60 * 60 * 1000).toISOString();
-            const { data: byTime } = await supabase
+            const { data: byTime, error: timeErr } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status, title, start_time")
               .eq("user_id", userData.user.id)
@@ -211,6 +221,13 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .gte("start_time", lo)
               .lte("start_time", hi)
               .limit(50);
+            logAppointmentSync("time-window lookup completed", {
+              window_lo: lo,
+              window_hi: hi,
+              count: byTime?.length ?? 0,
+              rows: byTime ?? null,
+              error: timeErr?.message ?? null,
+            });
             if (byTime && byTime.length > 0) {
               const sorted = [...byTime].sort(
                 (a, b) =>
@@ -222,7 +239,10 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                 row_id: dbRow.id,
               });
             }
+          } else if (!dbRow) {
+            logAppointmentSync("time-window lookup skipped: no composedStart");
           }
+
 
           // 3) Last-resort: contact-name fallback over next 180 days.
           if (!dbRow && item.sender) {
@@ -230,9 +250,9 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             const horizon = new Date(
               Date.now() + 180 * 24 * 60 * 60 * 1000,
             ).toISOString();
-            const { data: byContact } = await supabase
+            const { data: byContact, error: contactErr } = await supabase
               .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time")
+              .select("id, source_event_id, status, title, start_time, contact_name")
               .eq("user_id", userData.user.id)
               .neq("status", "cancelled")
               .eq("contact_name", item.sender)
@@ -240,6 +260,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               .lte("start_time", horizon)
               .order("start_time", { ascending: true })
               .limit(500);
+            logAppointmentSync("contact-name lookup completed", {
+              contact_name: item.sender,
+              count: byContact?.length ?? 0,
+              rows: byContact ?? null,
+              error: contactErr?.message ?? null,
+            });
             if (byContact && byContact.length > 0) {
               const target = composedStart
                 ? new Date(composedStart).getTime()
@@ -254,7 +280,10 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                 row_id: dbRow.id,
               });
             }
+          } else if (!dbRow) {
+            logAppointmentSync("contact-name lookup skipped: no sender on item");
           }
+
 
           logAppointmentSync("agenda_events lookup completed", {
             found: Boolean(dbRow),
