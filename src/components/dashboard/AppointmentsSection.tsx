@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
-import { usePersonalAgenda } from "@/hooks/usePersonalAgenda";
+import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -53,18 +53,30 @@ function AppointmentCard({
   onClick,
   inAgenda = false,
   onDismiss,
+  agendaEvent,
 }: {
   item: FlaggedMessage;
   featured?: boolean;
   onClick?: () => void;
   inAgenda?: boolean;
   onDismiss?: () => void;
+  agendaEvent?: AgendaEntry;
 }) {
-  const when = recencyDate(item);
+  // When an agenda_events row exists, show the real appointment date/time.
+  // Otherwise fall back to the flagged-message metadata.
+  const when = agendaEvent?.start_time
+    ? new Date(agendaEvent.start_time)
+    : recencyDate(item);
   const age = formatDistanceToNow(when, { addSuffix: true });
   const dayLabel = format(when, "EEE");
   const dayNum = format(when, "d");
   const monthLabel = format(when, "MMM").toUpperCase();
+  const timeStr = agendaEvent?.start_time
+    ? format(when, "h:mm a")
+    : null;
+  const displayTitle = agendaEvent?.title?.trim() || item.subject || null;
+  const realStatus = agendaEvent?.status;
+  const realContact = agendaEvent?.contact_name?.trim() || item.sender;
 
   return (
     <div
@@ -141,7 +153,7 @@ function AppointmentCard({
                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/20 bg-white/5 text-xs font-semibold text-[#73ffb8]"
                 style={fontHeading}
               >
-                {initialsOf(item.sender)}
+                {initialsOf(realContact)}
               </div>
               <div className="min-w-0">
                 <p
@@ -151,10 +163,10 @@ function AppointmentCard({
                   )}
                   style={{ ...fontHeading, fontWeight: 600 }}
                 >
-                  {item.sender ?? "Unknown"}
+                  {realContact ?? "Unknown"}
                 </p>
                 <p className="truncate text-[11px] text-white/50">
-                  {item.provider}
+                  {timeStr ? `${item.provider} · ${timeStr}` : item.provider}
                 </p>
               </div>
             </div>
@@ -165,7 +177,19 @@ function AppointmentCard({
               <Clock size={10} />
               {age}
             </span>
-            {inAgenda && (
+            {realStatus === "confirmed" && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                <CheckCircle2 size={10} />
+                Confirmed
+              </span>
+            )}
+            {realStatus === "booked" && inAgenda && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
+                <CheckCircle2 size={10} />
+                In agenda
+              </span>
+            )}
+            {!realStatus && inAgenda && (
               <span className="inline-flex items-center gap-1 rounded-full border border-[#73ffb8]/40 bg-[#73ffb8]/10 px-2 py-0.5 text-[10px] font-medium text-[#73ffb8]">
                 <CheckCircle2 size={10} />
                 In agenda
@@ -174,7 +198,7 @@ function AppointmentCard({
           </div>
         </div>
 
-        {item.subject && (
+        {displayTitle && (
           <p
             className={cn(
               "text-white/90",
@@ -182,7 +206,7 @@ function AppointmentCard({
             )}
             style={{ ...fontHeading, fontWeight: 500 }}
           >
-            {item.subject}
+            {displayTitle}
           </p>
         )}
 
@@ -310,6 +334,14 @@ export default function AppointmentsSection() {
   const fresh = deduped
     .filter((m) => !isStale(m))
     .filter((m) => !dismissed.has(m.thread_id));
+
+  // Look up the real agenda_events row for a flagged thread.
+  const agendaEventFor = (m: FlaggedMessage): AgendaEntry | undefined => {
+    const byThread = agendaByThread.get(m.thread_id);
+    if (byThread) return byThread;
+    if (m.sender) return agendaByContact.get(m.sender.toLowerCase().trim());
+    return undefined;
+  };
 
   const [featured, ...rest] = fresh;
 
@@ -469,6 +501,7 @@ export default function AppointmentsSection() {
                     item={featured}
                     featured
                     inAgenda={!!findByThreadId(featured.thread_id)}
+                    agendaEvent={agendaEventFor(featured)}
                     onClick={() => openCard(featured)}
                     onDismiss={() => dismiss(featured.thread_id)}
                   />
@@ -485,6 +518,7 @@ export default function AppointmentsSection() {
                   <AppointmentCard
                     item={item}
                     inAgenda={!!findByThreadId(item.thread_id)}
+                    agendaEvent={agendaEventFor(item)}
                     onClick={() => openCard(item)}
                     onDismiss={() => dismiss(item.thread_id)}
                   />
