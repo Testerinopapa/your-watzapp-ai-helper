@@ -1502,18 +1502,24 @@ export default function FlaggedReviewSection() {
           const { data: userData } = await supabase.auth.getUser();
           if (!userData.user) return;
 
-          // 1. Extract the new time BEFORE touching existing events.
-          const extracted = extractDateTime(
-            incomingMessage,
-            draftText,
-            userInstruction,
-            item.subject,
-          );
-          console.log("[flagged][reschedule] extracted new time", {
+          // 1. Extract the new time — two-pass to avoid AI draft pollution.
+          //    The draft may mention old and new times; the contact's message
+          //    and user instruction are the cleanest signal.
+          let extracted = extractDateTime(incomingMessage, userInstruction);
+          console.log("[flagged][reschedule] pass 1 (contact+instruction)", {
             extracted: extracted
               ? { iso: extracted.date.toISOString(), source: extracted.source }
               : null,
           });
+          if (!extracted) {
+            // Fall back to draft + subject only if no time found in the clean signal.
+            extracted = extractDateTime(draftText, item.subject);
+            console.log("[flagged][reschedule] pass 2 (draft+subject)", {
+              extracted: extracted
+                ? { iso: extracted.date.toISOString(), source: extracted.source }
+                : null,
+            });
+          }
           if (!extracted) {
             console.log("[flagged][reschedule] no time parsed, skipping new event");
             toast({
@@ -1552,6 +1558,26 @@ export default function FlaggedReviewSection() {
               old_start: existingWithGoogle.start_time,
               new_start: extracted.date.toISOString(),
             });
+
+            // Guard: if the extracted time matches an existing event's
+            // start_time, the parser likely grabbed the OLD appointment time
+            // from the AI draft ("I'll move from Wed 10 11am to Fri 12 3pm"
+            // → first match is the old time). Re-extract from draft only.
+            const extMs = extracted.date.getTime();
+            const sameAsExisting = (existingRows ?? []).some(
+              (r) => r.start_time && Math.abs(new Date(r.start_time).getTime() - extMs) < 60_000,
+            );
+            if (sameAsExisting) {
+              console.log("[flagged][reschedule] extracted time matches existing — re-extracting from draft only");
+              const reExtracted = extractDateTime(draftText);
+              if (reExtracted) {
+                extracted = reExtracted;
+                console.log("[flagged][reschedule] re-extracted new time", {
+                  iso: extracted.date.toISOString(),
+                  source: extracted.source,
+                });
+              }
+            }
 
             // Clean up any duplicate non-Google events for this thread.
             for (const other of others) {
@@ -1728,12 +1754,14 @@ export default function FlaggedReviewSection() {
 
       // Confirmation: book a new appointment (most generic, check last)
       else if (isScheduling && looksLikeConfirmation(draftText)) {
-        const extracted = extractDateTime(
-          incomingMessage,
-          draftText,
-          userInstruction,
-          item.subject,
-        );
+        // Two-pass: contact message + instruction first (clean signal),
+        // fall back to draft text only if nothing found.
+        let extracted = extractDateTime(incomingMessage, userInstruction);
+        console.log("[flagged] confirmation pass 1 (contact+instruction)", extracted);
+        if (!extracted) {
+          extracted = extractDateTime(draftText, item.subject);
+          console.log("[flagged] confirmation pass 2 (draft+subject)", extracted);
+        }
         console.log("[flagged] confirmation block entered, extracted:", extracted);
         const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
         const title =
