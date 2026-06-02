@@ -1179,14 +1179,23 @@ export default function FlaggedReviewSection() {
       // ── Calendar update based on draft intent (mutually exclusive) ──
       const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
       const draftText = String(draft);
+      const intentTextForSignal = `${incomingMessage}\n${userInstruction}`;
+      // Trust the contact's intent as well as the AI draft: the AI is
+      // instructed to acknowledge a cancellation empathetically and may
+      // not echo a literal "cancel" verb (e.g. "Mi dispiace, nessun problema").
+      const cancelSignal =
+        looksLikeCancellation(draftText) || looksLikeCancellation(intentTextForSignal);
+      const rescheduleSignal =
+        !cancelSignal &&
+        (looksLikeReschedule(draftText) || looksLikeReschedule(intentTextForSignal));
       console.log("[flagged] draft sent, isScheduling:", isScheduling,
         "| confirm:", looksLikeConfirmation(draftText),
-        "| cancel:", looksLikeCancellation(draftText),
-        "| reschedule:", looksLikeReschedule(draftText),
+        "| cancel:", cancelSignal,
+        "| reschedule:", rescheduleSignal,
         "| draft:", draftText.slice(0, 200));
 
       // Cancellation first: most specific, rarely overlaps with other categories
-      if (isScheduling && looksLikeCancellation(draftText)) {
+      if (isScheduling && cancelSignal) {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
@@ -1258,7 +1267,7 @@ export default function FlaggedReviewSection() {
       }
 
       // Reschedule: cancel old + create new at a different time
-      else if (isScheduling && looksLikeReschedule(draftText)) {
+      else if (isScheduling && rescheduleSignal) {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
