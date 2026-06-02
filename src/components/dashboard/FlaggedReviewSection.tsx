@@ -1263,9 +1263,51 @@ export default function FlaggedReviewSection() {
               rowErr,
             });
 
-            const toCancel = (existingRows ?? []).filter(
+            let toCancel = (existingRows ?? []).filter(
               (r) => r.status !== "cancelled",
             );
+
+            if (toCancel.length === 0) {
+              const cancellationTime = extractDateTime(incomingMessage, userInstruction, item.subject);
+              const contact = senderLabelForItem(item);
+              console.log("[flagged][cancel] thread lookup empty; trying date/contact fallback", {
+                extracted: cancellationTime
+                  ? {
+                      iso: cancellationTime.date.toISOString(),
+                      source: cancellationTime.source,
+                      confidence: cancellationTime.confidence,
+                    }
+                  : null,
+                contact,
+              });
+
+              if (cancellationTime) {
+                const windowStart = new Date(cancellationTime.date.getTime() - 2 * 60 * 60 * 1000).toISOString();
+                const windowEnd = new Date(cancellationTime.date.getTime() + 2 * 60 * 60 * 1000).toISOString();
+                const { data: fallbackRows, error: fallbackErr } = await supabase
+                  .from("agenda_events")
+                  .select("id, source_event_id, status, title, contact_name, description, start_time, end_time")
+                  .eq("user_id", userData.user.id)
+                  .neq("status", "cancelled")
+                  .gte("start_time", windowStart)
+                  .lte("start_time", windowEnd)
+                  .order("start_time", { ascending: true })
+                  .limit(20);
+
+                const matchedFallbackRows = (fallbackRows ?? []).filter((r) =>
+                  eventMatchesContact(r, contact),
+                );
+                console.log("[flagged][cancel] date/contact fallback lookup", {
+                  windowStart,
+                  windowEnd,
+                  fallbackCount: fallbackRows?.length ?? 0,
+                  matchedCount: matchedFallbackRows.length,
+                  fallbackRows,
+                  fallbackErr,
+                });
+                toCancel = matchedFallbackRows;
+              }
+            }
 
             if (toCancel.length === 0) {
               console.log("[flagged][cancel] nothing to cancel for thread");
