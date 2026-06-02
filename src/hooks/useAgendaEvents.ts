@@ -22,6 +22,7 @@ export function useAgendaEvents() {
       .from("agenda_events")
       .select("id, source_type, source_event_id, thread_id, title, description, start_time, end_time, timezone, status, notes, imported_at, last_synced_at")
       .eq("user_id", userData.user.id)
+      .neq("status", "cancelled")
       .order("start_time", { ascending: true });
     if (error) {
       console.error("agenda_events load failed", error);

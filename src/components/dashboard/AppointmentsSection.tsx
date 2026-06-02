@@ -15,6 +15,7 @@ import {
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { usePersonalAgenda } from "@/hooks/usePersonalAgenda";
+import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import AppointmentDrawer from "./AppointmentDrawer";
@@ -213,7 +214,8 @@ function AppointmentCard({
 
 export default function AppointmentsSection() {
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(50);
-  const { findByThreadId } = usePersonalAgenda();
+  const { findByThreadId, entries: localEntries } = usePersonalAgenda();
+  const { entries: agendaEntries } = useAgendaEvents();
   const [selected, setSelected] = useState<FlaggedMessage | null>(null);
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
@@ -229,15 +231,37 @@ export default function AppointmentsSection() {
     .filter(isAppointment)
     .sort((a, b) => recencyDate(b).getTime() - recencyDate(a).getTime());
   const seen = new Set<string>();
-  const items: FlaggedMessage[] = [];
+  const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
     const key = m.sender ?? m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
-    items.push(m);
+    deduped.push(m);
   }
 
-  const [featured, ...rest] = items;
+  // Hide threads whose agenda event was already processed (cancelled, or
+  // the event was deleted from Google Calendar). These are stale flagged
+  // messages, not active appointments.
+  const agendaByThread = new Map<string, (typeof agendaEntries)[number]>();
+  const agendaByContact = new Map<string, (typeof agendaEntries)[number]>();
+  for (const e of agendaEntries) {
+    if (e.thread_id) agendaByThread.set(e.thread_id, e);
+    if (e.contact_name) agendaByContact.set(e.contact_name.toLowerCase().trim(), e);
+  }
+  const localByThread = new Map(localEntries.map((e) => [e.thread_id, e]));
+  const isStale = (m: FlaggedMessage): boolean => {
+    // Check DB agenda events
+    const db = agendaByThread.get(m.thread_id)
+      ?? (m.sender ? agendaByContact.get(m.sender.toLowerCase().trim()) : undefined);
+    if (db?.status === "cancelled") return true;
+    // Check local agenda
+    const local = localByThread.get(m.thread_id);
+    if (local?.status === "cancelled") return true;
+    return false;
+  };
+  const fresh = deduped.filter((m) => !isStale(m));
+
+  const [featured, ...rest] = fresh;
 
   return (
     <section
@@ -293,7 +317,7 @@ export default function AppointmentsSection() {
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ background: MINT_BRIGHT, boxShadow: `0 0 8px ${MINT_BRIGHT}` }}
               />
-              {items.length} booked
+              {fresh.length} booked
             </span>
           )}
           <Button
@@ -363,7 +387,7 @@ export default function AppointmentsSection() {
             </div>
           )}
 
-          {!isLoading && !error && items.length === 0 && (
+          {!isLoading && !error && fresh.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-[#2dd4a8]/30 bg-[#0a1620]/40 px-6 py-12 text-center">
               <div
                 className="flex h-12 w-12 items-center justify-center rounded-full"
@@ -383,7 +407,7 @@ export default function AppointmentsSection() {
             </div>
           )}
 
-          {!isLoading && !error && items.length > 0 && (
+          {!isLoading && !error && fresh.length > 0 && (
             <div className="grid auto-rows-[minmax(0,1fr)] grid-cols-2 gap-4 md:grid-cols-4">
               {featured && (
                 <div className="col-span-2 row-span-2 md:col-span-2">
