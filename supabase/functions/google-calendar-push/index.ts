@@ -151,20 +151,61 @@ Deno.serve(async (req) => {
 
     // Upsert
     if (!row.start_time) return json({ error: "start_time_required" }, 400);
-    const startISO = row.start_time as string;
-    const endISO = (row.end_time as string | null) ??
-      new Date(new Date(startISO).getTime() + 30 * 60 * 1000).toISOString();
+
+    // Normalize whatever Postgres returned (could be "2026-06-09T17:00:00Z",
+    // "2026-06-09 17:00:00+00", or a naive string) into a real UTC Date, then
+    // emit a wall-clock string in the target IANA timezone. Google Calendar
+    // requires either an offset in dateTime OR a separate timeZone field;
+    // sending a "Z" string together with timeZone makes some clients/calendars
+    // misinterpret the moment. The floating wall-clock + timeZone form is the
+    // most reliable.
+    const startDate = new Date(row.start_time as string);
+    const endDate = row.end_time
+      ? new Date(row.end_time as string)
+      : new Date(startDate.getTime() + 30 * 60 * 1000);
+
+    const tz: string | null = row.timezone ?? null;
+
+    // Format a Date as "YYYY-MM-DDTHH:mm:ss" wall-time in the given IANA tz.
+    const formatWall = (d: Date, timeZone: string) => {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).formatToParts(d).reduce<Record<string, string>>((acc, p) => {
+        if (p.type !== "literal") acc[p.type] = p.value;
+        return acc;
+      }, {});
+      const hour = parts.hour === "24" ? "00" : parts.hour;
+      return `${parts.year}-${parts.month}-${parts.day}T${hour}:${parts.minute}:${parts.second}`;
+    };
+
+    const startField = tz
+      ? { dateTime: formatWall(startDate, tz), timeZone: tz }
+      : { dateTime: startDate.toISOString() };
+    const endField = tz
+      ? { dateTime: formatWall(endDate, tz), timeZone: tz }
+      : { dateTime: endDate.toISOString() };
+
+    console.log("google-calendar-push payload times", {
+      raw_start: row.start_time,
+      raw_end: row.end_time,
+      tz,
+      start: startField,
+      end: endField,
+    });
 
     const payload: Record<string, unknown> = {
       summary: row.title ?? row.contact_name ?? "Appointment",
       description: row.description ?? row.notes ?? undefined,
       location: row.location ?? undefined,
-      start: row.timezone
-        ? { dateTime: startISO, timeZone: row.timezone }
-        : { dateTime: startISO },
-      end: row.timezone
-        ? { dateTime: endISO, timeZone: row.timezone }
-        : { dateTime: endISO },
+      start: startField,
+      end: endField,
     };
 
     const url = existingEventId
