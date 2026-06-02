@@ -157,7 +157,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
     if (nextStatus) setStatus(nextStatus);
 
     // If cancelling, also sync to the agenda_events DB row and Google Calendar
-    if (finalStatus === "cancelled" && item.thread_id) {
+    if (finalStatus === "cancelled") {
       logAppointmentSync("cancel sync started");
       try {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -167,12 +167,94 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
           error: userErr?.message ?? null,
         });
         if (userData.user) {
-          const { data: dbRow, error: rowErr } = await supabase
-            .from("agenda_events")
-            .select("id, source_event_id, status, title")
-            .eq("thread_id", item.thread_id)
-            .eq("user_id", userData.user.id)
-            .maybeSingle();
+          // Pre-sync Google Calendar so source_event_id is fresh.
+          try {
+            await supabase.functions.invoke("google-calendar-sync", { body: {} });
+            logAppointmentSync("google-calendar-sync invoked");
+          } catch (syncErr) {
+            logAppointmentSync("google-calendar-sync skipped", {
+              error: (syncErr as Error)?.message ?? null,
+            });
+          }
+
+          // 1) Try thread_id match first.
+          let dbRow:
+            | { id: string; source_event_id: string | null; status: string | null; title: string | null }
+            | null = null;
+
+          if (item.thread_id) {
+            const { data: byThread, error: threadErr } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title, start_time")
+              .eq("user_id", userData.user.id)
+              .eq("thread_id", item.thread_id)
+              .neq("status", "cancelled")
+              .order("start_time", { ascending: true })
+              .limit(1);
+            logAppointmentSync("thread_id lookup completed", {
+              found: Boolean(byThread?.length),
+              error: threadErr?.message ?? null,
+            });
+            if (byThread && byThread.length > 0) dbRow = byThread[0];
+          }
+
+          // 2) Fallback: time-window match around composedStart (±12h).
+          if (!dbRow && composedStart) {
+            const target = new Date(composedStart).getTime();
+            const lo = new Date(target - 12 * 60 * 60 * 1000).toISOString();
+            const hi = new Date(target + 12 * 60 * 60 * 1000).toISOString();
+            const { data: byTime } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title, start_time")
+              .eq("user_id", userData.user.id)
+              .neq("status", "cancelled")
+              .gte("start_time", lo)
+              .lte("start_time", hi)
+              .limit(50);
+            if (byTime && byTime.length > 0) {
+              const sorted = [...byTime].sort(
+                (a, b) =>
+                  Math.abs(new Date(a.start_time!).getTime() - target) -
+                  Math.abs(new Date(b.start_time!).getTime() - target),
+              );
+              dbRow = sorted[0];
+              logAppointmentSync("time-window fallback matched", {
+                row_id: dbRow.id,
+              });
+            }
+          }
+
+          // 3) Last-resort: contact-name fallback over next 180 days.
+          if (!dbRow && item.sender) {
+            const now = new Date().toISOString();
+            const horizon = new Date(
+              Date.now() + 180 * 24 * 60 * 60 * 1000,
+            ).toISOString();
+            const { data: byContact } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title, start_time")
+              .eq("user_id", userData.user.id)
+              .neq("status", "cancelled")
+              .eq("contact_name", item.sender)
+              .gte("start_time", now)
+              .lte("start_time", horizon)
+              .order("start_time", { ascending: true })
+              .limit(500);
+            if (byContact && byContact.length > 0) {
+              const target = composedStart
+                ? new Date(composedStart).getTime()
+                : Date.now();
+              const sorted = [...byContact].sort(
+                (a, b) =>
+                  Math.abs(new Date(a.start_time!).getTime() - target) -
+                  Math.abs(new Date(b.start_time!).getTime() - target),
+              );
+              dbRow = sorted[0];
+              logAppointmentSync("contact-name fallback matched", {
+                row_id: dbRow.id,
+              });
+            }
+          }
 
           logAppointmentSync("agenda_events lookup completed", {
             found: Boolean(dbRow),
@@ -180,13 +262,9 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             row_status: dbRow?.status ?? null,
             has_source_event_id: Boolean(dbRow?.source_event_id),
             source_event_id: dbRow?.source_event_id ?? null,
-            error: rowErr?.message ?? null,
           });
 
           if (dbRow && dbRow.status !== "cancelled") {
-            logAppointmentSync("agenda_events cancellation update started", {
-              row_id: dbRow.id,
-            });
             const { error: updateErr } = await supabase
               .from("agenda_events")
               .update({ status: "cancelled", source_event_id: null })
@@ -198,10 +276,6 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             });
 
             if (dbRow.source_event_id) {
-              logAppointmentSync("google calendar delete invoke started", {
-                row_id: dbRow.id,
-                source_event_id: dbRow.source_event_id,
-              });
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: {
@@ -219,10 +293,6 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
                 function_error_code: errCode ?? null,
               });
               if (pushErr || errCode) {
-                console.warn(
-                  "[appointment-drawer] calendar delete failed",
-                  pushErr ?? errCode,
-                );
                 toast({
                   title: "Marked cancelled locally",
                   description:
@@ -238,19 +308,14 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               });
               return;
             }
-            logAppointmentSync("cancel sync skipped calendar delete: row had no source_event_id", {
-              row_id: dbRow.id,
+            logAppointmentSync("no source_event_id on matched row");
+            toast({
+              title: "Marked cancelled locally",
+              description: "No Google Calendar event id on this row.",
             });
-          } else if (dbRow?.status === "cancelled") {
-            logAppointmentSync("cancel sync skipped: agenda_events row already cancelled", {
-              row_id: dbRow.id,
-              has_source_event_id: Boolean(dbRow.source_event_id),
-            });
-          } else {
-            logAppointmentSync("cancel sync skipped: no matching agenda_events row");
+            return;
           }
-        } else {
-          logAppointmentSync("cancel sync skipped: no authenticated user");
+          logAppointmentSync("cancel sync skipped: no matching agenda_events row");
         }
       } catch (e) {
         console.warn("[appointment-drawer] failed to cancel event", e);
