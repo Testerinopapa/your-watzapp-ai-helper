@@ -158,7 +158,12 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
 
     // If cancelling, also sync to the agenda_events DB row and Google Calendar
     if (finalStatus === "cancelled") {
-      logAppointmentSync("cancel sync started");
+      logAppointmentSync("cancel sync started", {
+        thread_id: item.thread_id ?? null,
+        sender: item.sender ?? null,
+        composed_start: composedStart,
+      });
+
       try {
         const { data: userData, error: userErr } = await supabase.auth.getUser();
         logAppointmentSync("auth user lookup completed", {
