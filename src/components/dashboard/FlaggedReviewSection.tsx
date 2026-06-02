@@ -2214,12 +2214,27 @@ export default function FlaggedReviewSection() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {ungrouped.map((item) => {
                   const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  const isAppt = APPOINTMENT_CATEGORIES.has(
+                    (item.intent_category ?? "").toLowerCase().trim(),
+                  );
                   return (
                     <DraggableFlaggedCard
                       key={item.thread_id}
                       item={item}
                       folders={folders}
                       onMoveTo={moveToFolder}
+                      expanded={draftState.open}
+                      onActivate={() => {
+                        if (draftState.open) return;
+                        updateDraft(item.thread_id, {
+                          open: true,
+                          instruction:
+                            draftState.instruction ||
+                            (isAppt
+                              ? "Check calendar, reply and update google calendar"
+                              : ""),
+                        });
+                      }}
                       footer={
                         <DraftReplyFooter
                           item={item}
@@ -2231,9 +2246,7 @@ export default function FlaggedReviewSection() {
                           }
                           onGenerate={() => generateDraft(item)}
                           onRetry={() => retryDraft(item)}
-                          isAppointment={APPOINTMENT_CATEGORIES.has(
-                            (item.intent_category ?? "").toLowerCase().trim(),
-                          )}
+                          isAppointment={isAppt}
                         />
                       }
                     />
