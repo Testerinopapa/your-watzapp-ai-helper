@@ -157,18 +157,23 @@ Deno.serve(async (req) => {
     // Upsert
     if (!row.start_time) return json({ error: "start_time_required" }, 400);
 
-    // Normalize whatever Postgres returned (could be "2026-06-09T17:00:00Z",
-    // "2026-06-09 17:00:00+00", or a naive string) into a real UTC Date, then
-    // emit a wall-clock string in the target IANA timezone. Google Calendar
-    // requires either an offset in dateTime OR a separate timeZone field;
-    // sending a "Z" string together with timeZone makes some clients/calendars
-    // misinterpret the moment. The floating wall-clock + timeZone form is the
-    // most reliable.
     const startTime = body.start_time || row.start_time;
     const startDate = new Date(startTime as string);
-    const endDate = row.end_time
-      ? new Date(row.end_time as string)
-      : new Date(startDate.getTime() + 30 * 60 * 1000);
+    if (isNaN(startDate.getTime())) {
+      return json({ error: "invalid_start_time", detail: String(startTime) }, 400);
+    }
+
+    let endDate: Date;
+    if (row.end_time) {
+      endDate = new Date(row.end_time as string);
+      if (isNaN(endDate.getTime())) endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+    } else {
+      endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+    }
+    // Guarantee end is after start — Google rejects equal or reversed times.
+    if (endDate.getTime() <= startDate.getTime()) {
+      endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
+    }
 
     const tz: string | null = (body.timezone as string) || (row.timezone as string) || null;
 
@@ -183,8 +188,10 @@ Deno.serve(async (req) => {
       raw_start: row.start_time,
       raw_end: row.end_time,
       tz,
-      start: startField,
-      end: endField,
+      computed_start: startDate.toISOString(),
+      computed_end: endDate.toISOString(),
+      startField,
+      endField,
     });
 
     const payload: Record<string, unknown> = {
