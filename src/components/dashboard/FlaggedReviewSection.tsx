@@ -1467,28 +1467,33 @@ export default function FlaggedReviewSection() {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
-            // 1. Cancel existing event for this thread
-            const { data: existing } = await supabase
+            // 1. Cancel existing events for this thread
+            const { data: existingRows } = await supabase
               .from("agenda_events")
-              .select("id, source_event_id, status")
+              .select("id, source_event_id, status, title")
               .eq("thread_id", item.thread_id)
               .eq("user_id", userData.user.id)
-              .maybeSingle();
+              .neq("status", "cancelled");
 
-            if (existing && existing.status !== "cancelled") {
+            for (const existing of (existingRows ?? [])) {
+              if (existing.source_event_id) {
+                // Delete from Google Calendar FIRST, while source_event_id
+                // is still intact on the row.
+                await supabase.functions.invoke("google-calendar-push", {
+                  body: {
+                    agenda_event_id: existing.id,
+                    source_event_id: existing.source_event_id,
+                    action: "delete",
+                  },
+                });
+              }
               await supabase
                 .from("agenda_events")
                 .update({ status: "cancelled", source_event_id: null })
                 .eq("id", existing.id);
-
-              if (existing.source_event_id) {
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: existing.id, action: "delete" },
-                });
-              }
             }
 
-            // 2. Create fresh event at new time
+            // 2. Create fresh event only when a clear time was agreed upon
             const extracted = extractDateTime(
               incomingMessage,
               draftText,
@@ -1500,6 +1505,16 @@ export default function FlaggedReviewSection() {
               item.subject?.trim() ||
               (item.sender ? `Appointment with ${item.sender}` : "Appointment");
 
+            if (!extracted) {
+              console.log("[flagged][reschedule] no time parsed, skipping new event");
+              toast({
+                title: "Reply sent, time unclear",
+                description:
+                  "Could not determine the new appointment time. Set it manually in the Agenda panel.",
+              });
+              return;
+            }
+
             const newEvent = {
               user_id: userData.user.id,
               source_type: "whatsapp",
@@ -1509,9 +1524,9 @@ export default function FlaggedReviewSection() {
               contact_channel: item.provider ?? null,
               title,
               description: (item.preview ?? item.latest_message ?? null) as string | null,
-              start_time: extracted?.date.toISOString() ?? null,
-              timezone: extracted ? tz : null,
-              status: extracted ? "confirmed" : "needs_confirmation",
+              start_time: extracted.date.toISOString(),
+              timezone: tz,
+              status: "confirmed",
               imported_at: new Date().toISOString(),
             };
 
@@ -1523,7 +1538,7 @@ export default function FlaggedReviewSection() {
 
             if (insErr) throw insErr;
 
-            if (inserted?.id && extracted) {
+            if (inserted?.id) {
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: { agenda_event_id: inserted.id, action: "upsert" },
@@ -1544,11 +1559,6 @@ export default function FlaggedReviewSection() {
                   description: `${title} moved to a new time.`,
                 });
               }
-            } else if (inserted?.id) {
-              toast({
-                title: "Rescheduled (needs time)",
-                description: `${title} — set a time in the Agenda panel to sync.`,
-              });
             }
           }
         } catch (e) {
