@@ -624,17 +624,44 @@ function DraggableFlaggedCard({
   const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
     useDraggable({ id: item.thread_id, data: { item } });
 
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+
+  const setRefs = (node: HTMLDivElement | null) => {
+    wrapperRef.current = node;
+    setNodeRef(node);
+  };
+
+  const handleFocusClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Ignore clicks on interactive children (buttons, links, inputs, the drag handle).
+    const target = e.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, [role='menuitem']")) return;
+    setIsFocused(true);
+    wrapperRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => setIsFocused(false), 900);
+  };
+
+  // Mimic the drag-utility visual on hover (slight rotate + lift + glow ring).
+  const liftActive = (isHovered || isFocused) && !isDragging;
+
   return (
     <div
-      ref={setNodeRef}
+      ref={setRefs}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      onClick={handleFocusClick}
       className={cn(
-        "group/card relative transition-all",
+        "group/card relative cursor-pointer transition-all duration-300 ease-out will-change-transform",
         isDragging && "opacity-40",
+        liftActive && "-rotate-[1.5deg] scale-[1.02] z-10",
+        isFocused && "animate-scale-in",
       )}
     >
       <FlaggedCardInner
         item={item}
         footer={footer}
+        elevated={liftActive}
         leading={
           <TooltipProvider delayDuration={250}>
             <Tooltip>
@@ -643,6 +670,7 @@ function DraggableFlaggedCard({
                   ref={setActivatorNodeRef}
                   type="button"
                   aria-label="Drag to folder"
+                  onClick={(e) => e.stopPropagation()}
                   className={cn(
                     "touch-none mt-0.5 -ml-1 rounded p-0.5 text-muted-foreground/60",
                     "cursor-grab active:cursor-grabbing",
@@ -668,6 +696,7 @@ function DraggableFlaggedCard({
                 size="icon"
                 className="h-6 w-6 text-muted-foreground hover:text-[#73ffb8]"
                 aria-label="More actions"
+                onClick={(e) => e.stopPropagation()}
               >
                 <MoreVertical size={12} />
               </Button>
