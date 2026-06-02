@@ -1568,13 +1568,41 @@ export default function FlaggedReviewSection() {
 
           // 2. Find the event to reschedule — prefer one with a Google Calendar
           //    event ID so we can PATCH it in-place instead of delete+create.
-          const { data: existingRows } = await supabase
+          let { data: existingRows } = await supabase
             .from("agenda_events")
             .select("id, source_event_id, status, title, contact_name, description, start_time")
             .eq("thread_id", item.thread_id)
             .eq("user_id", userData.user.id)
             .neq("status", "cancelled")
             .order("start_time", { ascending: true });
+
+          // Fallback: when thread_id finds nothing (e.g. mock test changed),
+          // search by contact name + extracted old time window.
+          const contact = senderLabelForItem(item);
+          if ((existingRows ?? []).length === 0 && contact && extracted) {
+            const windowStart = new Date(extracted.date.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+            const windowEnd = new Date(extracted.date.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
+            const { data: fallbackRows } = await supabase
+              .from("agenda_events")
+              .select("id, source_event_id, status, title, contact_name, description, start_time")
+              .eq("user_id", userData.user.id)
+              .neq("status", "cancelled")
+              .gte("start_time", windowStart)
+              .lte("start_time", windowEnd)
+              .order("start_time", { ascending: true })
+              .limit(500);
+            const matched = (fallbackRows ?? []).filter((r) =>
+              eventMatchesContact(r, contact),
+            );
+            console.log("[flagged][reschedule] thread_id found nothing; contact fallback", {
+              contact,
+              windowStart,
+              windowEnd,
+              fallbackCount: fallbackRows?.length ?? 0,
+              matchedCount: matched.length,
+            });
+            existingRows = matched;
+          }
 
           console.log("[flagged][reschedule] existing events", {
             count: existingRows?.length ?? 0,
