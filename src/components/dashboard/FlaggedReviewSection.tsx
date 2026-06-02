@@ -1183,15 +1183,20 @@ export default function FlaggedReviewSection() {
       // Trust the contact's intent as well as the AI draft: the AI is
       // instructed to acknowledge a cancellation empathetically and may
       // not echo a literal "cancel" verb (e.g. "Mi dispiace, nessun problema").
-      const cancelSignal =
-        looksLikeCancellation(draftText) || looksLikeCancellation(intentTextForSignal);
-      const rescheduleSignal =
-        !cancelSignal &&
-        (looksLikeReschedule(draftText) || looksLikeReschedule(intentTextForSignal));
+      // Reschedule wins when the DRAFT itself proposes a new time, even if
+      // the incoming message used "cancel" wording (cancel-to-reschedule).
+      const draftReschedule = looksLikeReschedule(draftText);
+      const draftCancel = looksLikeCancellation(draftText);
+      const intentReschedule = looksLikeReschedule(intentTextForSignal);
+      const intentCancel = looksLikeCancellation(intentTextForSignal);
+      const rescheduleSignal = draftReschedule || (intentReschedule && !draftCancel);
+      const cancelSignal = !rescheduleSignal && (draftCancel || intentCancel);
       console.log("[flagged] draft sent, isScheduling:", isScheduling,
         "| confirm:", looksLikeConfirmation(draftText),
         "| cancel:", cancelSignal,
         "| reschedule:", rescheduleSignal,
+        "| draftR/C:", draftReschedule, draftCancel,
+        "| intentR/C:", intentReschedule, intentCancel,
         "| draft:", draftText.slice(0, 200));
 
       // Cancellation first: most specific, rarely overlaps with other categories
