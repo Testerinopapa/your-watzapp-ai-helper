@@ -1267,7 +1267,7 @@ export default function FlaggedReviewSection() {
       }
 
       // Reschedule: cancel old + create new at a different time
-      else if (isScheduling && looksLikeReschedule(draftText)) {
+      else if (isScheduling && rescheduleSignal) {
         try {
           const { data: userData } = await supabase.auth.getUser();
           if (userData.user) {
