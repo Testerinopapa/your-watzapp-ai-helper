@@ -194,7 +194,12 @@ const eventMatchesContact = (
   const normalizedContact = normalizeEventText(contact);
   if (!normalizedContact) return false;
   const haystack = normalizeEventText(`${row.title ?? ""} ${row.contact_name ?? ""} ${row.description ?? ""}`);
-  return haystack.includes(normalizedContact);
+  if (haystack.includes(normalizedContact)) return true;
+  const contactTokens = normalizedContact
+    .split(" ")
+    .filter((token) => token.length > 1)
+    .slice(0, 3);
+  return contactTokens.length > 0 && contactTokens.every((token) => haystack.includes(token));
 };
 
 function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
