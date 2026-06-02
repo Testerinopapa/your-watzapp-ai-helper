@@ -1236,76 +1236,96 @@ export default function FlaggedReviewSection() {
             userErr,
           });
           if (userData.user) {
-            const { data: existing, error: rowErr } = await supabase
+            const { data: existingRows, error: rowErr } = await supabase
               .from("agenda_events")
               .select("id, source_event_id, status, title")
               .eq("thread_id", item.thread_id)
-              .eq("user_id", userData.user.id)
-              .maybeSingle();
-            console.log("[flagged][cancel] db lookup", { existing, rowErr });
+              .eq("user_id", userData.user.id);
+            console.log("[flagged][cancel] db lookup", {
+              count: existingRows?.length ?? 0,
+              existingRows,
+              rowErr,
+            });
 
-            if (existing && existing.status !== "cancelled") {
-              const { error: updateErr } = await supabase
-                .from("agenda_events")
-                .update({ status: "cancelled", source_event_id: null })
-                .eq("id", existing.id);
-              console.log("[flagged][cancel] row updated to cancelled", { updateErr });
+            const toCancel = (existingRows ?? []).filter(
+              (r) => r.status !== "cancelled",
+            );
 
-              if (existing.source_event_id) {
-                console.log("[flagged][cancel] invoking google-calendar-push", {
-                  agenda_event_id: existing.id,
-                  source_event_id: existing.source_event_id,
-                  action: "delete",
-                });
-                const { data: pushData, error: pushErr } =
-                  await supabase.functions.invoke("google-calendar-push", {
-                    body: {
-                      agenda_event_id: existing.id,
-                      action: "delete",
-                    },
-                  });
-                const errCode =
-                  (pushData as { error?: string } | null)?.error;
-                console.log("[flagged][cancel] google-calendar-push response", {
-                  pushData,
-                  pushErr,
-                  errCode,
-                });
-                if (pushErr || errCode) {
-                  console.warn(
-                    "[flagged][cancel] calendar delete FAILED",
-                    pushErr ?? errCode,
-                  );
-                  toast({
-                    title: "Marked cancelled locally",
-                    description:
-                      errCode === "not_connected"
-                        ? "Connect Google Calendar to remove it there too."
-                        : "Google Calendar removal skipped.",
-                  });
-                } else {
-                  console.log("[flagged][cancel] calendar delete SUCCESS");
-                  toast({
-                    title: "Cancelled & removed from Google Calendar",
-                    description: `${existing.title || "Appointment"} has been cancelled.`,
-                  });
-                }
-              } else {
-                console.log("[flagged][cancel] no source_event_id, skipping calendar push");
-                toast({
-                  title: "Appointment cancelled",
-                  description: `${existing.title || "Appointment"} removed from your agenda.`,
-                });
-              }
-            } else if (!existing) {
-              console.log("[flagged][cancel] no agenda row found for thread");
+            if (toCancel.length === 0) {
+              console.log("[flagged][cancel] nothing to cancel for thread");
               toast({
                 title: "Reply sent (no event found)",
                 description:
                   "No existing appointment was found for this thread to cancel.",
               });
             } else {
-              console.log("[flagged][cancel] row already cancelled, skipping");
+              let calendarFailures = 0;
+              let calendarSuccesses = 0;
+              let titleForToast = "Appointment";
+
+              for (const existing of toCancel) {
+                titleForToast = existing.title || titleForToast;
+                const sourceEventId = existing.source_event_id;
+
+                if (sourceEventId) {
+                  console.log("[flagged][cancel] invoking google-calendar-push", {
+                    agenda_event_id: existing.id,
+                    source_event_id: sourceEventId,
+                    action: "delete",
+                  });
+                  const { data: pushData, error: pushErr } =
+                    await supabase.functions.invoke("google-calendar-push", {
+                      body: {
+                        agenda_event_id: existing.id,
+                        source_event_id: sourceEventId,
+                        action: "delete",
+                      },
+                    });
+                  const errCode =
+                    (pushData as { error?: string } | null)?.error;
+                  console.log("[flagged][cancel] google-calendar-push response", {
+                    id: existing.id,
+                    pushData,
+                    pushErr,
+                    errCode,
+                  });
+                  if (pushErr || errCode) {
+                    calendarFailures += 1;
+                    console.warn(
+                      "[flagged][cancel] calendar delete FAILED",
+                      pushErr ?? errCode,
+                    );
+                  } else {
+                    calendarSuccesses += 1;
+                  }
+                }
+
+                const { error: updateErr } = await supabase
+                  .from("agenda_events")
+                  .update({ status: "cancelled", source_event_id: null })
+                  .eq("id", existing.id);
+                console.log("[flagged][cancel] row updated to cancelled", {
+                  id: existing.id,
+                  updateErr,
+                });
+              }
+
+              if (calendarFailures > 0 && calendarSuccesses === 0) {
+                toast({
+                  title: "Marked cancelled locally",
+                  description: "Google Calendar removal skipped.",
+                });
+              } else {
+                toast({
+                  title:
+                    calendarSuccesses > 0
+                      ? "Cancelled & removed from Google Calendar"
+                      : "Appointment cancelled",
+                  description: `${titleForToast} has been cancelled${
+                    toCancel.length > 1 ? ` (${toCancel.length} entries)` : ""
+                  }.`,
+                });
+              }
             }
           }
         } catch (e) {
