@@ -281,8 +281,8 @@ function writeDismissed(ids: Set<string>) {
 
 export default function AppointmentsSection() {
   const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(50);
-  const { findByThreadId, entries: localEntries } = usePersonalAgenda();
-  const { entries: agendaEntries } = useAgendaEvents();
+  const { findByThreadId, entries: localEntries, remove: removeLocalAgenda } = usePersonalAgenda();
+  const { entries: agendaEntries, remove: removeDbAgenda } = useAgendaEvents();
   const [selected, setSelected] = useState<FlaggedMessage | null>(null);
   const [open, setOpen] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
