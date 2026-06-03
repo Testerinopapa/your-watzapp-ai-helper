@@ -407,6 +407,77 @@ export type Database = {
         }
         Relationships: []
       }
+      support_doc_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          doc_id: string
+          id: string
+          search_vector: unknown
+          user_id: string
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string
+          doc_id: string
+          id?: string
+          search_vector?: unknown
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          doc_id?: string
+          id?: string
+          search_vector?: unknown
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_doc_chunks_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "support_docs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_docs: {
+        Row: {
+          chunk_count: number
+          content: string
+          created_at: string
+          filename: string | null
+          id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chunk_count?: number
+          content: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chunk_count?: number
+          content?: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       usage_counters: {
         Row: {
           created_at: string
