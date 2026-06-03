@@ -353,6 +353,89 @@ async function cancelAppointment(
   }
 }
 
+/**
+ * Attempt to find the NEW proposed date in a reschedule draft.
+ *
+ * Reschedule drafts almost always mention the OLD date first ("cancel
+ * Thursday 4 June") and the NEW date second ("Both Thursday 11 and
+ * Friday 12 June at 10am"). Standard extractDateTime returns the first
+ * date it finds, which gives us the cancellation date — exactly wrong.
+ *
+ * Strategy:
+ *  1. Strip everything up through the first sentence that contains
+ *     cancellation language, then extract from the remainder.
+ *  2. If that yields nothing, process sentences from the END backwards.
+ *  3. Fall back to extracting from the full draft + other inputs.
+ */
+function extractNewDateForReschedule(
+  draftText: string,
+  incomingMessage: string,
+  userInstruction: string,
+  subject: string | null | undefined,
+): ReturnType<typeof extractDateTime> {
+  // Step 1: try the portion of the draft after cancellation language.
+  const cancelEnd = findCancelClauseEnd(draftText);
+  if (cancelEnd > 0) {
+    const afterCancel = draftText.slice(cancelEnd).trim();
+    if (afterCancel.length > 10) {
+      const extracted = extractDateTime(afterCancel);
+      if (extracted) {
+        console.log(
+          "[flagged][reschedule] extracted from post-cancel portion",
+          { iso: extracted.date.toISOString(), source: extracted.source },
+        );
+        return extracted;
+      }
+    }
+  }
+
+  // Step 2: walk sentences from the end backwards.
+  const sentences = draftText.split(/[.!?]\s+/);
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    const extracted = extractDateTime(sentences[i]);
+    if (extracted) {
+      console.log(
+        "[flagged][reschedule] extracted from sentence",
+        { i, sentence: sentences[i].slice(0, 80), iso: extracted.date.toISOString(), source: extracted.source },
+      );
+      return extracted;
+    }
+  }
+
+  // Step 3: standard extraction on the full draft.
+  const extracted = extractDateTime(draftText, incomingMessage, userInstruction, subject);
+  if (extracted) {
+    console.log(
+      "[flagged][reschedule] extracted from full text (fallback)",
+      { iso: extracted.date.toISOString(), source: extracted.source },
+    );
+  }
+  return extracted;
+}
+
+/** Find where the cancellation clause ends in a reschedule draft.
+ *  Returns the index after the sentence containing cancel language,
+ *  or -1 if no clear cancellation clause is found. */
+function findCancelClauseEnd(text: string): number {
+  const cancelPatterns = [
+    /\b(?:I(?:'ve|\s+have)\s+noted\s+that\s+you\s+need\s+to\s+cancel)[^.]*\.[\s\n]*/i,
+    /\b(?:need\s+to\s+cancel)[^.]*\.[\s\n]*/i,
+    /\b(?:cancel\s+(?:your|the|our|my)\s+(?:appointment|booking|reservation|meeting))[^.]*\.[\s\n]*/i,
+    /\b(?:can(?:'t|not)\s+make\s+it)[^.]*\.[\s\n]*/i,
+    /\b(?:won(?:'t|\s+not)\s+be\s+able)[^.]*\.[\s\n]*/i,
+    /\b(?:have\s+to\s+cancel)[^.]*\.[\s\n]*/i,
+    /\b(?:noted\s+that\s+you)[^.]*\.[\s\n]*/i,
+    /\b(?:sorry.*(?:cancel|cannot|can't))[^.]*\.[\s\n]*/i,
+    /\b(?:unfortunately.*(?:cancel|cannot|can't))[^.]*\.[\s\n]*/i,
+  ];
+
+  for (const pat of cancelPatterns) {
+    const m = pat.exec(text);
+    if (m) return m.index + m[0].length;
+  }
+  return -1;
+}
+
 async function rescheduleAppointment(
   item: FlaggedMessage,
   incomingMessage: string,
@@ -375,9 +458,17 @@ async function rescheduleAppointment(
     const { data: userData } = await supabase.auth.getUser();
     if (!userData.user) return;
 
-    // 1. Extract the NEW time.
-    let extracted = extractDateTime(draftText);
-    console.log("[flagged][reschedule] pass 1 (draft)", {
+    // 1. Extract the NEW time (not the cancellation date).
+    //    Reschedule drafts mention the OLD date first and the NEW date
+    //    second. extractNewDateForReschedule handles this by looking past
+    //    cancellation language and searching sentences from the end.
+    let extracted = extractNewDateForReschedule(
+      draftText,
+      incomingMessage,
+      userInstruction,
+      item.subject,
+    );
+    console.log("[flagged][reschedule] pass 1 (draft, reschedule-aware)", {
       extracted: extracted
         ? {
             iso: extracted.date.toISOString(),
@@ -506,7 +597,12 @@ async function rescheduleAppointment(
         console.log(
           "[flagged][reschedule] extracted time matches existing — re-extracting from draft only",
         );
-        const reExtracted = extractDateTime(draftText);
+        const reExtracted = extractNewDateForReschedule(
+          draftText,
+          incomingMessage,
+          userInstruction,
+          item.subject,
+        );
         if (reExtracted) {
           extracted = reExtracted;
           console.log(
