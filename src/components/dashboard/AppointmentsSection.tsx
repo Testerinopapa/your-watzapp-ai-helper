@@ -475,6 +475,18 @@ export default function AppointmentsSection() {
               {fresh.length} booked
             </span>
           )}
+          {tab === "booked" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAll}
+              disabled={fresh.length === 0 || isFetching}
+              className="gap-1.5 text-white/70 hover:bg-white/5 hover:text-white"
+            >
+              <Archive size={14} />
+              <span className="hidden sm:inline">Clear all</span>
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
