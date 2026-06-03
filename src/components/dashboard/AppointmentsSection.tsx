@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   Plug,
   Trash2,
+  Archive,
 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
