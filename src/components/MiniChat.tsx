@@ -1,8 +1,41 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, X, Loader2, Send, Sparkles } from "lucide-react";
+import {
+  Bot,
+  X,
+  Loader2,
+  Send,
+  Sparkles,
+  AlertTriangle,
+  MessageSquareWarning,
+  CalendarClock,
+  LifeBuoy,
+  ListChecks,
+  FileText,
+  Activity,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type QuickAction = {
+  label: string;
+  prompt: string;
+  icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>;
+};
+
+
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: "Analyze dashboard", icon: Sparkles, prompt: "Analyze this dashboard and give me a clear summary." },
+  { label: "Urgent items", icon: AlertTriangle, prompt: "Review this dashboard and tell me what needs urgent attention." },
+  { label: "Complaints", icon: MessageSquareWarning, prompt: "Review the complaint cards and tell me which ones need careful handling or escalation." },
+  { label: "Appointments", icon: CalendarClock, prompt: "Review the appointment cards and summarize what needs to be scheduled, rescheduled, or reviewed." },
+  { label: "Support issues", icon: LifeBuoy, prompt: "Review the support cards and tell me which ones need a selected reference document or human review." },
+  { label: "What to handle first?", icon: ListChecks, prompt: "Prioritize the visible dashboard items and tell me what I should handle first." },
+  { label: "Today's report", icon: FileText, prompt: "Create a short daily report based on the visible dashboard." },
+  { label: "Usage summary", icon: Activity, prompt: "Summarize the visible usage, replies, tokens, and activity information." },
+];
+
 
 const ENDPOINT =
   "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/dashboard-chat";
@@ -148,24 +181,37 @@ export default function MiniChat() {
             style={{ scrollbarWidth: "thin" }}
           >
             {messages.length === 0 && !loading && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <Bot size={24} className="text-primary" />
+              <div className="flex flex-col items-center gap-3 pt-2 pb-1 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                  <Bot size={22} className="text-primary" />
                 </div>
-                <p className="text-sm text-muted-foreground max-w-[260px]">
-                  I can analyze your dashboard — flagged messages, appointments,
-                  complaints, and more.
+                <p className="text-xs text-muted-foreground max-w-[260px]">
+                  Pick a report or ask anything about your dashboard.
                 </p>
-                <Button
-                  size="sm"
-                  onClick={() => handleSend("Analyze this dashboard for me.")}
-                  className="gap-1.5"
-                >
-                  <Sparkles size={13} />
-                  Analyze this dashboard
-                </Button>
+                <div className="grid grid-cols-2 gap-1.5 w-full pt-1">
+                  {QUICK_ACTIONS.map((a) => {
+                    const Icon = a.icon;
+                    return (
+                      <button
+                        key={a.label}
+                        type="button"
+                        onClick={() => handleSend(a.prompt)}
+                        disabled={loading}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted hover:border-primary/40",
+                          "px-2.5 py-1.5 text-[11px] font-medium text-foreground/90 transition-colors text-left",
+                          "disabled:opacity-50 disabled:cursor-not-allowed",
+                        )}
+                      >
+                        <Icon size={12} className="text-primary shrink-0" />
+                        <span className="truncate">{a.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
+
 
             {messages.map((m, i) => (
               <div
@@ -197,6 +243,34 @@ export default function MiniChat() {
             )}
           </div>
 
+          {/* Compact quick-action row (visible once chat starts) */}
+          {messages.length > 0 && (
+            <div className="border-t border-border shrink-0 px-2 py-1.5 overflow-x-auto">
+              <div className="flex items-center gap-1.5 w-max">
+                {QUICK_ACTIONS.map((a) => {
+                  const Icon = a.icon;
+                  return (
+                    <button
+                      key={a.label}
+                      type="button"
+                      onClick={() => handleSend(a.prompt)}
+                      disabled={loading}
+                      title={a.prompt}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full border border-border bg-muted/40 hover:bg-muted hover:border-primary/40",
+                        "px-2 py-1 text-[10.5px] font-medium text-foreground/90 transition-colors whitespace-nowrap",
+                        "disabled:opacity-50 disabled:cursor-not-allowed",
+                      )}
+                    >
+                      <Icon size={11} className="text-primary shrink-0" />
+                      {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Input */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border shrink-0">
             <Input
@@ -217,6 +291,7 @@ export default function MiniChat() {
               <Send size={14} />
             </Button>
           </div>
+
         </div>
       )}
     </>
