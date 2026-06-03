@@ -302,12 +302,7 @@ export default function FlaggedReviewSection() {
 
   // ── Dismissal ──
 
-  const dismissKeysFor = (m: FlaggedMessage): string[] => {
-    const keys = [m.thread_id];
-    const sk = normalizeLookup(m.sender ?? "");
-    if (sk) keys.push(`sender:${sk}`);
-    return keys;
-  };
+  const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
   const isDismissed = (m: FlaggedMessage) =>
     dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
@@ -329,19 +324,21 @@ export default function FlaggedReviewSection() {
     .filter(isFlaggedActivity)
     .entries()) {
     const text = textForActivity(r);
-    const realThreadId = activityThreadId(r);
+    const explicitThreadId = (r.thread_id ?? r.threadId ?? "").trim();
+    const activityId = activityThreadId(r);
     const sender =
       senderLabelForActivity(r) ||
-      senderFromThreadId(realThreadId);
-    if (!sender) continue;
+      senderFromThreadId(explicitThreadId || activityId);
     const fallbackId =
-      realThreadId || `activity:${r.createdAt}:${index}`;
-    // Key by thread first so two different people with the same display
-    // name (e.g. two "David Park"s on different threads) stay separate.
-    const groupKey =
-      realThreadId ||
-      normalizeLookup(sender || fallbackId) ||
-      fallbackId;
+      explicitThreadId || `activity:${r.createdAt}:${index}`;
+    const displaySender =
+      sender ||
+      senderFromThreadId(activityId) ||
+      cleanSenderLabel(r.subject) ||
+      "Unknown sender";
+    // Key by an actual backend thread id only. If a mock/activity row does
+    // not provide one, keep it as its own card so same-name rows can stack.
+    const groupKey = explicitThreadId || fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText =
       existing?.latest_message ?? existing?.preview ?? "";
@@ -362,7 +359,7 @@ export default function FlaggedReviewSection() {
       activityGroups.set(groupKey, {
         thread_id: existing?.thread_id ?? fallbackId,
         provider: "whatsapp",
-        sender,
+        sender: displaySender,
         subject:
           cleanSenderLabel(r.subject) || existing?.subject || null,
         preview:
