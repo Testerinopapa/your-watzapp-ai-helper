@@ -345,8 +345,39 @@ export default function AppointmentsSection() {
 
   const [featured, ...rest] = fresh;
 
-  const dismiss = (threadId: string) => {
+  const dismiss = async (threadId: string) => {
+    // 1. Hide the flagged-message card locally (flagged_messages lives on an
+    //    external project and has no delete endpoint — local dismissal is the
+    //    deepest action available for that layer).
     setDismissed((prev) => new Set([...prev, threadId]));
+
+    // 2. If this thread has a synced agenda_event row, delete it + push a
+    //    delete to Google Calendar so the appointment is removed everywhere.
+    const dbEvent = agendaByThread.get(threadId);
+    const localEvent = localByThread.get(threadId);
+
+    if (dbEvent) {
+      const sourceEventId = dbEvent.source_event_id;
+      const sourceType = dbEvent.source_type;
+      await removeDbAgenda(dbEvent.id);
+      if (sourceType === "google_calendar" && sourceEventId) {
+        supabase.functions
+          .invoke("google-calendar-push", {
+            body: {
+              agenda_event_id: dbEvent.id,
+              action: "delete",
+              source_event_id: sourceEventId,
+            },
+          })
+          .catch((e) => {
+            console.warn("google-calendar-push delete failed (continuing)", e);
+          });
+      }
+    }
+
+    if (localEvent) {
+      removeLocalAgenda(localEvent.id);
+    }
   };
 
   return (
