@@ -13,6 +13,17 @@ export function needsSupportContext(item: FlaggedMessage): boolean {
   );
 }
 
+// Shared header prepended to every support instruction. Explicitly scopes the
+// AI to the support domain so it does not wander into calendar / scheduling.
+const SUPPORT_HEADER = [
+  "=== SUPPORT WORKFLOW ===",
+  "You are handling a SUPPORT inquiry. This is NOT an appointment or scheduling request.",
+  "Do NOT check, reference, or mention the user's calendar, agenda, appointments, or bookings.",
+  "Do NOT suggest rescheduling, cancelling, or modifying any appointment.",
+  "Focus ONLY on the customer's support issue using the knowledge below.",
+  "",
+].join("\n");
+
 /**
  * Builds a draft instruction enriched with relevant support knowledge.
  *
@@ -22,7 +33,7 @@ export function needsSupportContext(item: FlaggedMessage): boolean {
  * 3. Formats them as a "RELEVANT SUPPORT KNOWLEDGE" block prepended
  *    to the user's instruction.
  * 4. Includes an anti-hallucination guard telling the AI to only use
- *    the provided information.
+ *    the provided information and to never reference the calendar.
  *
  * Returns null when a DB error occurs (caller should abort the draft).
  */
@@ -46,8 +57,14 @@ export async function buildSupportInstruction({
   let instruction = userInstruction;
 
   try {
-    // Build a search query from the incoming message and user instruction.
-    // Strip common stop words and punctuation to get meaningful terms.
+    // 0. Check how many docs exist so we can log whether the KB is empty.
+    const { count: totalDocs, error: countErr } = await (supabase
+      .from("support_docs") as any)
+      .select("*", { count: "exact", head: true });
+
+    const docCount = countErr ? 0 : (totalDocs ?? 0);
+
+    // 1. Build a search query from the incoming message and user instruction.
     const rawQuery =
       `${incomingMessage} ${userInstruction}`
         .replace(/[^\w\s]/g, " ")
@@ -61,7 +78,15 @@ export async function buildSupportInstruction({
 
     const query = rawQuery || incomingMessage.trim().slice(0, 200);
 
-    // Search chunks via full-text search.
+    console.log("[flagged][support] searching knowledge base", {
+      thread_id: item.thread_id,
+      sender: item.sender,
+      intent_category: item.intent_category,
+      total_docs: docCount,
+      query: query.slice(0, 200),
+    });
+
+    // 2. Search chunks via full-text search.
     const { data: chunks, error: searchErr } = await (supabase
       .from("support_doc_chunks") as any)
       .select("id,doc_id,chunk_index,content")
@@ -69,7 +94,7 @@ export async function buildSupportInstruction({
       .limit(8);
 
     if (searchErr) {
-      console.error("support doc search failed", searchErr);
+      console.error("[flagged][support] search failed", searchErr);
       throw searchErr;
     }
 
@@ -80,8 +105,14 @@ export async function buildSupportInstruction({
       content: string;
     }[];
 
+    console.log("[flagged][support] search results", {
+      thread_id: item.thread_id,
+      chunk_count: matchedChunks.length,
+      doc_ids: [...new Set(matchedChunks.map((c) => c.doc_id))],
+    });
+
     if (matchedChunks.length > 0) {
-      // Fetch the document titles for grouping.
+      // 3a. Fetch document titles for grouping.
       const docIds = [...new Set(matchedChunks.map((c) => c.doc_id))];
       const { data: matchedDocs, error: docsErr } = await supabase
         .from("support_docs")
@@ -89,8 +120,7 @@ export async function buildSupportInstruction({
         .in("id", docIds);
 
       if (docsErr) {
-        console.error("support doc title fetch failed", docsErr);
-        // Continue without titles — chunks are still useful.
+        console.error("[flagged][support] doc title fetch failed", docsErr);
       }
 
       const titleMap = new Map<string, string>();
@@ -100,10 +130,7 @@ export async function buildSupportInstruction({
 
       // Group chunks by document, preserving rank order.
       const seen = new Set<string>();
-      const docChunks: {
-        title: string;
-        excerpts: string[];
-      }[] = [];
+      const docChunks: { title: string; excerpts: string[] }[] = [];
       for (const c of matchedChunks) {
         const docId = c.doc_id;
         if (seen.has(docId)) continue;
@@ -116,9 +143,16 @@ export async function buildSupportInstruction({
         docChunks.push({ title, excerpts });
       }
 
+      console.log("[flagged][support] using knowledge blocks", {
+        thread_id: item.thread_id,
+        matched_docs: docChunks.map((d) => d.title),
+        excerpt_count: docChunks.reduce((s, d) => s + d.excerpts.length, 0),
+      });
+
       const knowledgeBlock = [
+        SUPPORT_HEADER,
         "RELEVANT SUPPORT KNOWLEDGE",
-        "(from uploaded documents — ONLY use information found below. If nothing below answers the question, say you don't have that information and should flag this for manual human review. Do NOT invent policies, prices, rules, refund policies, cancellation terms, or technical instructions that are not explicitly in the text below.)",
+        "(from uploaded business documents — ONLY use the information below to answer. If nothing below answers the question, say you don't have that specific information and suggest the customer contact the business directly. Do NOT invent policies, prices, rules, refund terms, cancellation terms, shipping details, or technical procedures.)",
         "",
         ...docChunks.flatMap((dc) => [
           `[Document: "${dc.title}"]`,
@@ -127,26 +161,43 @@ export async function buildSupportInstruction({
         ]),
       ].join("\n");
 
-      // Prepend the knowledge to the instruction, capping at 8000 chars.
       const combined = `${knowledgeBlock}\n---\nUser instruction: ${userInstruction}`;
       instruction =
         combined.length > 8000 ? combined.slice(0, 7997) + "..." : combined;
     } else {
-      // No chunks found — tell the AI not to guess.
+      // 3b. No chunks matched — or no documents uploaded at all.
+      console.log("[flagged][support] no matching chunks", {
+        thread_id: item.thread_id,
+        total_docs: docCount,
+      });
+
       const noContextBlock = [
-        "No relevant support knowledge was found in the uploaded documents for this query.",
-        "ONLY respond using the following rules:",
-        "- If you definitively know the answer from general knowledge (e.g., business hours, basic greetings), you may respond politely.",
-        "- If the question asks about policies, prices, returns, refunds, warranties, shipping, or technical procedures — say you don't have that information and flag this for manual human review.",
-        "- Do NOT invent or assume any business-specific rules.",
+        SUPPORT_HEADER,
+        docCount === 0
+          ? "No support documents have been uploaded yet. Treat this as a general customer service inquiry."
+          : "No relevant support knowledge was found in the uploaded documents for this specific query.",
+        "",
+        "HOW TO RESPOND:",
+        "- Answer ONLY from general customer service best practices.",
+        "- Be polite, empathetic, and acknowledge the customer's problem.",
+        "- If the question is about a specific policy, price, refund, warranty, shipping procedure, or technical instruction — say: \"I don't have that specific information on hand. Let me check with the team and get back to you.\"",
+        "- Do NOT invent business-specific rules, prices, timelines, or procedures.",
+        "- If appropriate, suggest the customer call or email the business directly for urgent matters.",
+        "- Keep the reply concise and friendly.",
         "",
       ].join("\n");
       const combined = `${noContextBlock}\n---\nUser instruction: ${userInstruction}`;
       instruction =
         combined.length > 8000 ? combined.slice(0, 7997) + "..." : combined;
     }
+
+    console.log("[flagged][support] instruction built", {
+      thread_id: item.thread_id,
+      instruction_len: instruction.length,
+      has_chunks: matchedChunks.length > 0,
+    });
   } catch (e) {
-    console.error("buildSupportInstruction failed", e);
+    console.error("[flagged][support] buildSupportInstruction failed", e);
     updateDraft(item.thread_id, {
       loading: false,
       error: "Could not query support knowledge base.",
