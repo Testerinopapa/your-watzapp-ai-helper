@@ -655,7 +655,7 @@ export default function FlaggedReviewSection() {
         ) : (
           <div className="relative">
             <div
-              className="flagged-scroll max-h-[640px] md:max-h-[560px] overflow-y-auto pr-2 pb-10"
+              className="flagged-scroll max-h-[640px] md:max-h-[560px] overflow-y-auto pr-2 pb-10 pt-6 -mt-6"
               style={{
                 scrollbarWidth: "thin",
                 scrollbarColor:
