@@ -36,6 +36,7 @@ export default function DraggableFlaggedCard({
   items,
   folders,
   onMoveTo,
+  onDelete,
   onActivate,
   isExpanded,
   renderFooter,
@@ -43,6 +44,7 @@ export default function DraggableFlaggedCard({
   items: FlaggedMessage[];
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
+  onDelete?: (item: FlaggedMessage) => void;
   onActivate?: (item: FlaggedMessage) => void;
   isExpanded?: (item: FlaggedMessage) => boolean;
   renderFooter?: (item: FlaggedMessage) => React.ReactNode;
