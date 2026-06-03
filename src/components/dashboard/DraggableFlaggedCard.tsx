@@ -203,6 +203,23 @@ export default function DraggableFlaggedCard({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-no-drag
+                  aria-label="Delete flagged message"
+                  title="Delete (removes linked calendar event too)"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(current);
+                  }}
+                >
+                  <Trash2 size={12} />
+                </Button>
+              )}
             </div>
           }
         />
