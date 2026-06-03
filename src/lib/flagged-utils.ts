@@ -17,6 +17,7 @@ export type DraftState = {
   draftId: string | null;
   phase: DraftPhase;
   sentAt: string | null;
+  supportDocId: string | null;
 };
 
 // ── Constants ──
@@ -51,6 +52,7 @@ export const defaultDraft: DraftState = {
   draftId: null,
   phase: "idle",
   sentAt: null,
+  supportDocId: null,
 };
 
 export const DEFAULT_FOLDERS: FolderDef[] = [

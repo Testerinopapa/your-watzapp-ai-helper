@@ -12,6 +12,7 @@ import {
   MessageCircle,
   Clock,
   LifeBuoy,
+  FileText,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ export type FlaggedCardInnerProps = {
   leading?: React.ReactNode;
   footer?: React.ReactNode;
   elevated?: boolean;
+  supportDocLabel?: string | null;
 };
 
 export default function FlaggedCardInner({
@@ -38,6 +40,7 @@ export default function FlaggedCardInner({
   leading,
   footer,
   elevated,
+  supportDocLabel,
 }: FlaggedCardInnerProps) {
   const isAppt = APPOINTMENT_CATEGORIES.has(
     (item.intent_category ?? "").toLowerCase().trim(),
@@ -127,6 +130,12 @@ export default function FlaggedCardInner({
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            {isSupport && supportDocLabel && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-400/5 px-1.5 py-0.5 text-[10px] text-blue-400 shrink-0 max-w-[120px]">
+                <FileText size={10} />
+                <span className="truncate">{supportDocLabel}</span>
+              </span>
+            )}
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",

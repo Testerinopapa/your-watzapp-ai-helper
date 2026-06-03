@@ -41,6 +41,7 @@ export default function DraggableFlaggedCard({
   onActivate,
   isExpanded,
   renderFooter,
+  supportDocLabel,
 }: {
   items: FlaggedMessage[];
   folders: FolderDef[];
@@ -49,6 +50,7 @@ export default function DraggableFlaggedCard({
   onActivate?: (item: FlaggedMessage) => void;
   isExpanded?: (item: FlaggedMessage) => boolean;
   renderFooter?: (item: FlaggedMessage) => React.ReactNode;
+  supportDocLabel?: string | null;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
   // If the stack shrinks (e.g. messages dismissed), keep index valid.
@@ -173,6 +175,7 @@ export default function DraggableFlaggedCard({
           item={current}
           footer={renderFooter?.(current)}
           elevated={liftActive || expanded}
+          supportDocLabel={supportDocLabel}
           trailing={
             <div className="flex items-center gap-1">
               {items.length > 1 && (
