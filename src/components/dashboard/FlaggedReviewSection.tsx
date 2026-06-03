@@ -4,7 +4,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -15,43 +14,16 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   Flag,
-  CalendarCheck,
-  MessageCircle,
-  Clock,
   RefreshCw,
   FolderOpen,
-  Folder,
   FolderPlus,
-  X,
   GripVertical,
   MoreVertical,
   Inbox,
-  Trash2,
-  ExternalLink,
-  Sparkles,
-  Copy,
-  Check,
-  Loader2,
-  CheckCircle2,
+  X,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
-import { extractDateTime, looksLikeConfirmation, looksLikeCancellation, looksLikeReschedule } from "@/lib/extractDateTime";
 import {
   useFlaggedMessages,
   FLAGGED_SUPABASE_URL,
@@ -59,966 +31,80 @@ import {
   type FlaggedMessage,
 } from "@/hooks/useFlaggedMessages";
 import { useSendSmartUsage } from "@/hooks/useSendSmartUsage";
-import { useAuth } from "@/contexts/AuthContext";
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import {
+  FOLDERS_KEY,
+  ASSIGNMENTS_KEY,
+  DISMISSED_KEY,
+  FOLDER_DROP_PREFIX,
+  TRASH_DROP_ID,
+  defaultDraft,
+  APPOINTMENT_CATEGORIES,
+  loadDismissed,
+  loadFolders,
+  loadAssignments,
+  senderLabelForItem,
+  normalizeLookup,
+  cleanSenderLabel,
+  senderFromThreadId,
+  isVoiceStub,
+  type FolderDef,
+  type DraftState,
+} from "@/lib/flagged-utils";
+import {
+  createEnricher,
+  senderLabelForActivity,
+  textForActivity,
+  activityThreadId,
+  isFlaggedActivity,
+} from "@/lib/enrichment";
+import {
+  needsCalendarContext,
+  buildCalendarInstruction,
+} from "@/lib/calendar-draft";
+import { handleCalendarAfterDraft } from "@/lib/calendar-response";
+import FlaggedCardInner from "./FlaggedCardInner";
+import DraftReplyFooter from "./DraftReplyFooter";
+import DraggableFlaggedCard from "./DraggableFlaggedCard";
+import FolderTile from "./FolderTile";
+import TrashDropZone from "./TrashDropZone";
 
-type Tone = "fresh" | "stale";
-
-const toneStyles: Record<Tone, { badge: string; border: string }> = {
-  fresh: {
-    badge: "bg-secondary text-secondary-foreground border-transparent",
-    border: "border-l-border",
-  },
-  stale: {
-    badge: "bg-destructive/10 text-destructive border-destructive/20",
-    border: "border-l-destructive",
-  },
-};
-
-const toneFor = (updatedAt: string): Tone => {
-  const age = Date.now() - new Date(updatedAt).getTime();
-  return age < 24 * 60 * 60 * 1000 ? "fresh" : "stale";
-};
-
-type FolderDef = { id: string; name: string };
-
-const FOLDERS_KEY = "flagged.folders.v2";
-const ASSIGNMENTS_KEY = "flagged.assignments.v2";
-const DISMISSED_KEY = "flagged.dismissed.v1";
-const FOLDER_DROP_PREFIX = "folder-drop:";
-const TRASH_DROP_ID = "flagged-trash-drop";
-
-function loadDismissed(): string[] {
-  try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((s): s is string => typeof s === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-const DEFAULT_FOLDERS: FolderDef[] = [
-  { id: "needs-review", name: "Needs review" },
-  { id: "follow-up", name: "Follow-up" },
-];
-
-const ISO_TIMESTAMP_LABEL_RE =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})(?::\d+)?$/i;
-
-const cleanSenderLabel = (value: string | null | undefined) => {
-  const cleaned = (value ?? "")
-    .replace(/[\u200e\u200f\u202a-\u202e]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (
-    !cleaned ||
-    /^unknown sender$/i.test(cleaned) ||
-    /^activity:/i.test(cleaned) ||
-    ISO_TIMESTAMP_LABEL_RE.test(cleaned)
-  ) return "";
-  return cleaned;
-};
-
-const senderFromThreadId = (threadId: string | null | undefined) => {
-  const raw = (threadId ?? "").split("|")[0]?.replace(/^\w+:/, "") ?? "";
-  return cleanSenderLabel(raw);
-};
-
-const senderLabelForItem = (item: Pick<FlaggedMessage, "sender" | "subject" | "thread_id">) =>
-  cleanSenderLabel(item.sender) || cleanSenderLabel(item.subject) || senderFromThreadId(item.thread_id);
-
-function loadFolders(): FolderDef[] {
-  try {
-    const raw = localStorage.getItem(FOLDERS_KEY);
-    if (!raw) return DEFAULT_FOLDERS;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed.filter(
-        (f): f is FolderDef =>
-          f && typeof f.id === "string" && typeof f.name === "string",
-      );
-    }
-    return DEFAULT_FOLDERS;
-  } catch {
-    return DEFAULT_FOLDERS;
-  }
-}
-
-function loadAssignments(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(ASSIGNMENTS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? (parsed as Record<string, string>) : {};
-  } catch {
-    return {};
-  }
-}
-
-// =====================================================================
-// Card UI
-// =====================================================================
-
-type FlaggedCardInnerProps = {
-  item: FlaggedMessage;
-  trailing?: React.ReactNode;
-  leading?: React.ReactNode;
-  footer?: React.ReactNode;
-  elevated?: boolean;
-};
-
-const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
-
-const normalizeEventText = (value: string | null | undefined) =>
-  (value ?? "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-
-const eventMatchesContact = (
-  row: { title?: string | null; contact_name?: string | null; description?: string | null },
-  contact: string,
-) => {
-  const normalizedContact = normalizeEventText(contact);
-  if (!normalizedContact) return false;
-  const haystack = normalizeEventText(`${row.title ?? ""} ${row.contact_name ?? ""} ${row.description ?? ""}`);
-  if (haystack.includes(normalizedContact)) return true;
-  const contactTokens = normalizedContact
-    .split(" ")
-    .filter((token) => token.length > 1)
-    .slice(0, 3);
-  return contactTokens.length > 0 && contactTokens.every((token) => haystack.includes(token));
-};
-
-function FlaggedCardInner({ item, trailing, leading, footer, elevated }: FlaggedCardInnerProps) {
-  const isAppt = APPOINTMENT_CATEGORIES.has((item.intent_category ?? "").toLowerCase().trim());
-  const tone = toneFor(item.updated_at);
-  const styles = toneStyles[tone];
-  const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
-  const senderLabel = senderLabelForItem(item) || "Unknown sender";
-  const itemWithBacklog = item as FlaggedMessage & {
-    backlog_count?: number;
-    backlog_items?: FlaggedMessage[];
-  };
-  const backlog = itemWithBacklog.backlog_count ?? 0;
-  const backlogItems = itemWithBacklog.backlog_items ?? [];
-  const [backlogOpen, setBacklogOpen] = useState(false);
-  const allMessages = [item, ...backlogItems];
-
-  return (
-    <Card
-      className={cn(
-        "border-l-4 transition-colors",
-        isAppt
-          ? "border-l-[#f59e0b] bg-[#0a0a1a]/95 ring-1 ring-amber-500/20 shadow-[0_8px_30px_-12px_rgba(245,158,11,0.25)]"
-          : styles.border,
-        elevated &&
-          !isAppt &&
-          "border-l-[#2dd4a8] bg-[#0a0a1a]/95 ring-1 ring-[rgba(115,255,184,0.55)] shadow-[0_20px_50px_-15px_rgba(45,212,168,0.55)]",
-        elevated &&
-          isAppt &&
-          "border-l-[#f59e0b] ring-1 ring-amber-500/40 shadow-[0_20px_50px_-15px_rgba(245,158,11,0.55)]",
-      )}
-    >
-      <CardContent className="p-4 space-y-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 flex items-start gap-2">
-            {leading}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-                {isAppt ? (
-                  <CalendarCheck size={14} className="text-amber-400 shrink-0" />
-                ) : (
-                  <MessageCircle size={14} className="text-muted-foreground shrink-0" />
-                )}
-                <span className="truncate">{senderLabel}</span>
-                {backlog > 0 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setBacklogOpen(true);
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="ml-1 shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    title={`View ${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
-                  >
-                    <Badge
-                      variant="secondary"
-                      className="h-5 px-1.5 text-[10px] font-semibold cursor-pointer hover:bg-secondary/70"
-                    >
-                      +{backlog}
-                    </Badge>
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                isAppt
-                  ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-                  : styles.badge,
-              )}
-            >
-              <Clock size={11} />
-              {age}
-            </span>
-            {trailing}
-          </div>
-        </div>
-
-
-        <div className="space-y-1">
-          {item.intent_category && (
-            <Badge
-              variant="outline"
-              className={cn(
-                "text-[10px] uppercase tracking-wide",
-                isAppt && "border-amber-400/30 text-amber-400 bg-amber-400/5",
-              )}
-            >
-              {item.intent_category}
-            </Badge>
-          )}
-          {(item.latest_message || item.preview || item.subject) && (
-            <p
-              className="text-xs text-foreground/90 line-clamp-3 whitespace-pre-wrap leading-relaxed"
-              title={item.latest_message ?? item.preview ?? item.subject ?? undefined}
-            >
-              “{item.latest_message ?? item.preview ?? item.subject}”
-            </p>
-          )}
-          {item.intent_reason && (
-            <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
-              {item.intent_reason}
-            </p>
-          )}
-        </div>
-
-        {footer}
-      </CardContent>
-
-      <Dialog open={backlogOpen} onOpenChange={setBacklogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>
-              Messages from {senderLabel}
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {allMessages.length} total
-              </span>
-            </DialogTitle>
-          </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
-            {allMessages.map((m, idx) => {
-              const text = m.latest_message ?? m.preview ?? m.subject ?? "";
-              const when = m.updated_at
-                ? formatDistanceToNow(new Date(m.updated_at), { addSuffix: true })
-                : "";
-              return (
-                <div
-                  key={`${m.thread_id}-${idx}`}
-                  className="rounded-md border border-border bg-muted/30 p-3 space-y-1"
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/80">
-                      {idx === 0 ? "Latest" : `#${allMessages.length - idx}`}
-                    </span>
-                    <span>{when}</span>
-                  </div>
-                  {text ? (
-                    <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                      {text}
-                    </p>
-                  ) : (
-                    <p className="text-xs italic text-muted-foreground">No preview available.</p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </Card>
-  );
-}
-
-// =====================================================================
-// Draft reply panel
-// =====================================================================
-
-type DraftPhase =
-  | "idle"
-  | "generating"
-  | "sent"
-  | "error";
-
-type DraftState = {
-  open: boolean;
-  instruction: string;
-  draft: string;
-  loading: boolean;
-  error: string | null;
-  draftId: string | null;
-  phase: DraftPhase;
-  sentAt: string | null;
-};
-
-const defaultDraft: DraftState = {
-  open: false,
-  instruction: "",
-  draft: "",
-  loading: false,
-  error: null,
-  draftId: null,
-  phase: "idle",
-  sentAt: null,
-};
-
-function DraftReplyFooter({
-  item,
-  enrichedMessage,
-  state,
-  onChange,
-  onClose,
-  onGenerate,
-  onRetry,
-  isAppointment = false,
-}: {
-  item: FlaggedMessage;
-  enrichedMessage?: string | null;
-  state: DraftState;
-  onChange: (patch: Partial<DraftState>) => void;
-  onClose: () => void;
-  onGenerate: () => void;
-  onRetry: () => void;
-  isAppointment?: boolean;
-}) {
-  const incoming = (
-    enrichedMessage ??
-    item.latest_message ??
-    item.preview ??
-    item.subject ??
-    ""
-  ).trim();
-  const hasIncoming = incoming.length > 0;
-  const trimmedInstruction = state.instruction.trim();
-  const canGenerate = hasIncoming && trimmedInstruction.length > 0 && !state.loading;
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    if (!state.draft) return;
-    try {
-      await navigator.clipboard.writeText(state.draft);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  if (!state.open) {
-    return (
-      <div className="flex items-center justify-between gap-2 pt-1">
-        {item.thread_url ? (
-          <a
-            href={item.thread_url}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
-          >
-            <ExternalLink size={11} />
-            Open thread
-          </a>
-        ) : (
-          <span />
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            if (isAppointment && !state.instruction) {
-              onChange({ open: true, instruction: "Check calendar, reply and update google calendar" });
-            } else {
-              onChange({ open: true });
-            }
-          }}
-          className={cn(
-            "h-7 gap-1.5 text-[11px]",
-            isAppointment
-              ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
-              : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
-          )}
-        >
-          <Sparkles size={12} />
-          {isAppointment ? "Manage Appointment" : "Draft reply"}
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-1 rounded-lg border border-border bg-muted/40 p-3 space-y-2.5">
-      <div className="space-y-1">
-        <span className="block text-[11px] font-medium text-muted-foreground">
-          Incoming message
-        </span>
-        {hasIncoming ? (
-          <div className="rounded-md border border-border bg-background p-2.5 text-xs whitespace-pre-wrap leading-relaxed max-h-48 overflow-y-auto">
-            {incoming}
-          </div>
-        ) : (
-          <div className="rounded-md border border-dashed border-border bg-background/50 p-2.5 text-[11px] text-muted-foreground italic">
-            No message text available.
-          </div>
-        )}
-      </div>
-
-      <div>
-        <label
-          htmlFor={`draft-instr-${item.thread_id}`}
-          className="block text-[11px] font-medium text-muted-foreground mb-1"
-        >
-          {isAppointment ? "Appointment instructions" : "How should we reply?"}
-        </label>
-        <Textarea
-          id={`draft-instr-${item.thread_id}`}
-          value={state.instruction}
-          onChange={(e) => onChange({ instruction: e.target.value })}
-          placeholder={
-            isAppointment
-              ? "Check calendar, reply and update google calendar"
-              : "e.g. Politely confirm and propose Tuesday at 10am."
-          }
-          maxLength={2000}
-          rows={3}
-          className="text-xs bg-background"
-          disabled={state.loading}
-        />
-      </div>
-
-      <div className="flex items-center gap-2">
-        <Button
-          size="sm"
-          onClick={onGenerate}
-          disabled={!canGenerate}
-          className={cn(
-            "h-7 gap-1.5 text-[11px]",
-            isAppointment
-              ? "bg-amber-500 text-black hover:bg-amber-400"
-              : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
-          )}
-        >
-          {state.loading ? (
-            <Loader2 size={12} className="animate-spin" />
-          ) : (
-            <Sparkles size={12} />
-          )}
-          {state.loading
-            ? "Generating…"
-            : state.draft
-              ? isAppointment
-                ? "Regenerate & manage"
-                : "Regenerate & send"
-              : isAppointment
-                ? "Manage Appointment"
-                : "Generate & send"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onClose}
-          disabled={state.loading}
-          className="h-7 text-[11px]"
-        >
-          Close
-        </Button>
-        <span className="ml-auto text-[10px] text-muted-foreground">
-          {trimmedInstruction.length}/2000
-        </span>
-      </div>
-
-      {state.error && (
-        <div className="flex items-start justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/10 p-2">
-          <p className="text-[11px] text-destructive flex-1">{state.error}</p>
-          {state.phase === "error" && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onRetry}
-              className="h-6 text-[11px] text-destructive hover:text-destructive"
-            >
-              <RefreshCw size={11} className="mr-1" />
-              Retry
-            </Button>
-          )}
-        </div>
-      )}
-
-      {state.draft && (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              Suggested draft
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              className="h-6 gap-1 text-[11px] text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]"
-            >
-              {copied ? <Check size={11} /> : <Copy size={11} />}
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <div
-            className="rounded-md border border-border bg-background p-2.5 text-xs whitespace-pre-wrap leading-relaxed"
-            aria-readonly
-          >
-            {state.draft}
-          </div>
-
-          {state.phase === "sent" && (
-            <div className="flex items-center gap-1.5 rounded-md border border-[rgba(45,212,168,0.35)] bg-[rgba(45,212,168,0.08)] p-2 text-[11px] text-[#2dd4a8]">
-              <CheckCircle2 size={12} />
-              Sent
-              {state.sentAt && (
-                <span className="text-muted-foreground">
-                  · {formatDistanceToNow(new Date(state.sentAt), { addSuffix: true })}
-                </span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-function DraggableFlaggedCard({
-  item,
-  folders,
-  onMoveTo,
-  onActivate,
-  expanded,
-  footer,
-}: {
-  item: FlaggedMessage;
-  folders: FolderDef[];
-  onMoveTo: (threadId: string, folderId: string) => void;
-  onActivate?: () => void;
-  expanded?: boolean;
-  footer?: React.ReactNode;
-}) {
-  const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
-    useDraggable({ id: item.thread_id, data: { item } });
-
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [isHovered, setIsHovered] = useState(false);
-
-  const setRefs = (node: HTMLDivElement | null) => {
-    wrapperRef.current = node;
-    setNodeRef(node);
-  };
-
-  const handleFocusClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Ignore clicks on interactive children.
-    const target = e.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, [role='menuitem']")) return;
-    onActivate?.();
-    window.requestAnimationFrame(() => {
-      wrapperRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-  };
-
-  // Mimic the drag-utility visual on hover.
-  const liftActive = isHovered && !isDragging && !expanded;
-
-  return (
-    <div
-      ref={setRefs}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onClick={handleFocusClick}
-      className={cn(
-        "group/card relative cursor-pointer transition-all duration-300 ease-out will-change-transform",
-        isDragging && "opacity-40",
-        liftActive && "-rotate-[1.5deg] scale-[1.02] z-10",
-        expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
-      )}
-    >
-      <FlaggedCardInner
-        item={item}
-        footer={footer}
-        elevated={liftActive || expanded}
-        leading={
-          <TooltipProvider delayDuration={250}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  ref={setActivatorNodeRef}
-                  type="button"
-                  aria-label="Drag to folder"
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    "touch-none mt-0.5 -ml-1 rounded p-0.5 text-muted-foreground/60",
-                    "cursor-grab active:cursor-grabbing",
-                    "hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)] transition-colors",
-                  )}
-                  {...listeners}
-                  {...attributes}
-                >
-                  <GripVertical size={14} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-[11px]">
-                Drag to folder
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        }
-        trailing={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-[#73ffb8]"
-                aria-label="More actions"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreVertical size={12} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-                Move to folder
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {folders.length === 0 ? (
-                <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
-              ) : (
-                folders.map((f) => (
-                  <DropdownMenuItem key={f.id} onClick={() => onMoveTo(item.thread_id, f.id)}>
-                    <Folder size={12} className="mr-2 text-[#2dd4a8]" />
-                    {f.name}
-                  </DropdownMenuItem>
-                ))
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        }
-      />
-    </div>
-  );
-}
-
-// =====================================================================
-// Folder drop zone
-// =====================================================================
-
-function FolderTile({
-  folder,
-  count,
-  onOpen,
-  onDelete,
-  isAnyDragging,
-}: {
-  folder: FolderDef;
-  count: number;
-  onOpen: () => void;
-  onDelete: () => void;
-  isAnyDragging: boolean;
-}) {
-  const { isOver, setNodeRef } = useDroppable({
-    id: `${FOLDER_DROP_PREFIX}${folder.id}`,
-    data: { folderId: folder.id },
-  });
-
-  const isEmpty = count === 0;
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "group/folder relative rounded-xl border px-3 py-2.5 transition-all cursor-pointer select-none",
-        "bg-[rgba(15,23,42,0.55)] border-[rgba(45,212,168,0.3)]",
-        "hover:border-[rgba(115,255,184,0.55)] hover:shadow-[0_0_18px_rgba(115,255,184,0.18)]",
-        isEmpty && "border-dashed",
-        isAnyDragging && !isOver && "border-[rgba(45,212,168,0.55)] shadow-[0_0_12px_rgba(45,212,168,0.2)]",
-        isOver &&
-          "scale-[1.04] border-[rgba(115,255,184,0.95)] shadow-[0_0_28px_rgba(115,255,184,0.55)] bg-[rgba(45,212,168,0.12)]",
-      )}
-      onClick={onOpen}
-      role="button"
-      aria-label={`Open folder ${folder.name}`}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        {isOver ? (
-          <FolderOpen size={16} className="text-[#73ffb8] shrink-0" />
-        ) : (
-          <Folder size={16} className="text-[#2dd4a8] shrink-0" />
-        )}
-        <span className="text-sm font-medium truncate">{folder.name}</span>
-        <span
-          className={cn(
-            "ml-auto inline-flex items-center justify-center min-w-[20px] h-[20px] rounded-full px-1.5 text-[10px] font-bold transition-colors",
-            count > 0
-              ? "bg-[#2dd4a8] text-[#0a0a1a]"
-              : "bg-[rgba(45,212,168,0.15)] text-[#2dd4a8]",
-          )}
-        >
-          {count}
-        </span>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          aria-label={`Delete folder ${folder.name}`}
-          className="opacity-0 group-hover/folder:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-        >
-          <Trash2 size={12} />
-        </button>
-      </div>
-      <p
-        className={cn(
-          "text-[10px] mt-1 transition-colors",
-          isOver
-            ? "text-[#73ffb8]"
-            : isEmpty
-              ? "text-muted-foreground/70"
-              : "text-muted-foreground/60",
-        )}
-      >
-        {isOver ? "Release to add" : isEmpty ? "Drop cards here" : `${count} card${count === 1 ? "" : "s"} grouped`}
-      </p>
-    </div>
-  );
-}
-
-// =====================================================================
-// Trash drop zone
-// =====================================================================
-
-function TrashDropZone({ isAnyDragging }: { isAnyDragging: boolean }) {
-  const { isOver, setNodeRef } = useDroppable({ id: TRASH_DROP_ID });
-  return (
-    <div
-      ref={setNodeRef}
-      aria-label="Drop here to delete"
-      className={cn(
-        "rounded-xl border border-dashed px-4 py-3 flex items-center justify-center gap-2 text-sm transition-all select-none",
-        "border-destructive/40 text-destructive/80 bg-destructive/[0.04]",
-        isAnyDragging && !isOver && "border-destructive/60 bg-destructive/[0.08]",
-        isOver &&
-          "scale-[1.02] border-destructive text-destructive bg-destructive/15 shadow-[0_0_28px_hsl(var(--destructive)/0.45)]",
-        !isAnyDragging && "opacity-60",
-      )}
-    >
-      <Trash2 size={16} />
-      <span className="font-medium">
-        {isOver ? "Release to delete" : "Drag here to delete"}
-      </span>
-    </div>
-  );
-}
-
-// =====================================================================
-// Main
-// =====================================================================
+// ── Main ──
 
 export default function FlaggedReviewSection() {
-  const { user } = useAuth();
   const { toast } = useToast();
-  const { data, isLoading, isFetching, error, refetch } = useFlaggedMessages(20);
-  const { data: usageData, refetch: refetchUsage } = useSendSmartUsage();
-
-  const normalizeLookup = (s: string | null | undefined) =>
-    cleanSenderLabel(s)
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-  const normalizePhone = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
-  const threadContactKey = (threadId: string | null | undefined) => normalizeLookup(senderFromThreadId(threadId));
-  const lookupKeysForFlagged = (item: FlaggedMessage) => {
-    const keys = [
-      item.thread_id,
-      item.sender,
-      item.subject,
-      senderLabelForItem(item),
-      threadContactKey(item.thread_id),
-      normalizePhone(item.sender),
-      normalizePhone(item.thread_id),
-    ];
-    return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
-  };
-  const lookupKeysForActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
-    const keys = [
-      r.thread_id,
-      r.threadId,
-      r.senderEmail,
-      r.sender,
-      r.contactName,
-      r.subject,
-      senderLabelForActivity(r),
-      threadContactKey(r.thread_id ?? r.threadId),
-      normalizePhone(r.senderEmail),
-      normalizePhone(r.thread_id ?? r.threadId),
-    ];
-    return Array.from(new Set(keys.map(normalizeLookup).filter(Boolean)));
-  };
-
-  const textForActivity = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (r.latestMessage ?? r.preview ?? "").trim();
-
-  const activityThreadId = (r: NonNullable<typeof usageData>["recent"][number]) =>
-    (
-      (r.thread_id ?? r.threadId) ||
-      cleanSenderLabel(r.senderEmail) ||
-      cleanSenderLabel(r.sender) ||
-      cleanSenderLabel(r.contactName) ||
-      cleanSenderLabel(r.subject) ||
-      ""
-    ).trim();
+  const { data, isLoading, isFetching, error, refetch } =
+    useFlaggedMessages(20);
+  const { data: usageData, refetch: refetchUsage } =
+    useSendSmartUsage();
 
   const activityRows = usageData?.recent ?? [];
 
-  const senderLabelForActivity = (
-    r: NonNullable<typeof usageData>["recent"][number],
-    rows: NonNullable<typeof usageData>["recent"] = activityRows,
-  ) => {
-    const direct =
-      cleanSenderLabel(r.senderEmail) ||
-      cleanSenderLabel(r.sender) ||
-      cleanSenderLabel(r.contactName) ||
-      cleanSenderLabel(r.subject) ||
-      senderFromThreadId(r.thread_id ?? r.threadId);
-    if (direct) return direct;
+  const enricher = createEnricher(activityRows);
+  const { enrichedMessageFor, withActivityPreview } = enricher;
 
-    const currentAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
-    const neighbor = rows
-      .map((candidate) => ({
-        label:
-          cleanSenderLabel(candidate.senderEmail) ||
-          cleanSenderLabel(candidate.sender) ||
-          cleanSenderLabel(candidate.contactName) ||
-          cleanSenderLabel(candidate.subject) ||
-          senderFromThreadId(candidate.thread_id ?? candidate.threadId),
-        distance: Math.abs(new Date(candidate.createdAt).getTime() - currentAt),
-      }))
-      .filter((candidate) => candidate.label && candidate.distance <= 2 * 60 * 1000)
-      .sort((a, b) => a.distance - b.distance)[0];
-    return neighbor?.label ?? "";
-  };
+  // ── State ──
 
-  const isFlaggedActivity = (r: NonNullable<typeof usageData>["recent"][number]) => {
-    const decision = (r.decision ?? "").toLowerCase();
-    return decision.includes("flagged") || decision.includes("review");
-  };
-
-  // Build a multi-key lookup from the Activity feed so flagged cards can be
-  // refreshed by exact thread id, contact name, sender label, or phone number.
-  // Some WhatsApp rows expose names while others expose phone/thread ids; a
-  // sender-only map was why Dominique updated while other cards stayed stale.
-  const enrichedByKey = (() => {
-    const map = new Map<string, { text: string; createdAt: number; flagged: boolean }>();
-    for (const r of activityRows) {
-      const text = textForActivity(r);
-      if (!text) continue;
-      const createdAt = r.createdAt ? new Date(r.createdAt).getTime() : 0;
-      const flagged = isFlaggedActivity(r);
-      for (const key of lookupKeysForActivity(r)) {
-        const existing = map.get(key);
-        if (!existing) {
-          map.set(key, { text, createdAt, flagged });
-          continue;
-        }
-        const existingIsStub = isVoiceStub(existing.text);
-        const candidateIsStub = isVoiceStub(text);
-        // Prefer real Activity transcripts over voice stubs, then panel-owned
-        // review/flagged rows, then newest entry. Activity uses "review" for
-        // these pills, while the old flagged endpoint often stays stale.
-        if (existingIsStub && !candidateIsStub) {
-          map.set(key, { text, createdAt, flagged });
-        } else if (existingIsStub === candidateIsStub && flagged && !existing.flagged) {
-          map.set(key, { text, createdAt, flagged });
-        } else if (existingIsStub === candidateIsStub && flagged === existing.flagged && createdAt > existing.createdAt) {
-          map.set(key, { text, createdAt, flagged });
-        }
-      }
-    }
-    return map;
-  })();
-
-  function isVoiceStub(text: string | null | undefined) {
-    const t = (text ?? "").trim();
-    if (!t) return true;
-    return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
-  }
-
-  const activityCandidateFor = (item: FlaggedMessage) =>
-    lookupKeysForFlagged(item)
-      .map((key) => enrichedByKey.get(key))
-      .filter((c): c is { text: string; createdAt: number; flagged: boolean } => Boolean(c))
-      .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
-
-  const enrichedMessageFor = (item: FlaggedMessage): string | null => {
-    const current = (item.latest_message ?? item.preview ?? "").trim();
-    const candidate = activityCandidateFor(item);
-    if (!candidate) return null;
-    // Always replace voice-message stubs with a real transcript when we have one.
-    if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
-      return candidate.text;
-    }
-
-    // The Activity endpoint is the reliable stream; if it has a different real
-    // latest message for this flagged contact/thread, let it win immediately.
-    if (!isVoiceStub(candidate.text) && candidate.text !== current) {
-      return candidate.text;
-    }
-
-    return null;
-  };
-
-  const withActivityPreview = (item: FlaggedMessage): FlaggedMessage => {
-    const enriched = enrichedMessageFor(item);
-    const activityCreatedAt = activityCandidateFor(item)?.createdAt ?? 0;
-    if (!enriched && !activityCreatedAt) return item;
-    return {
-      ...item,
-      preview: enriched ?? item.preview,
-      latest_message: enriched ?? item.latest_message,
-      updated_at: activityCreatedAt
-        ? new Date(Math.max(new Date(item.updated_at).getTime(), activityCreatedAt)).toISOString()
-        : item.updated_at,
-    };
-  };
-
-  const [folders, setFolders] = useState<FolderDef[]>(() => loadFolders());
-  const [assignments, setAssignments] = useState<Record<string, string>>(() =>
-    loadAssignments(),
+  const [folders, setFolders] = useState<FolderDef[]>(() =>
+    loadFolders(),
   );
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set(loadDismissed()));
-  const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(null);
+  const [assignments, setAssignments] = useState<
+    Record<string, string>
+  >(() => loadAssignments());
+  const [dismissed, setDismissed] = useState<Set<string>>(
+    () => new Set(loadDismissed()),
+  );
+  const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(
+    null,
+  );
   const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
@@ -1028,25 +114,28 @@ export default function FlaggedReviewSection() {
     draftsRef.current = drafts;
   }, [drafts]);
 
-
-  const updateDraft = (threadId: string, patch: Partial<DraftState>) =>
+  const updateDraft = (
+    threadId: string,
+    patch: Partial<DraftState>,
+  ) =>
     setDrafts((prev) => ({
       ...prev,
       [threadId]: { ...defaultDraft, ...prev[threadId], ...patch },
     }));
 
   const friendlyError = (status: number, raw: string): string => {
-    if (status === 401) return "Session expired — please sign in again.";
-    if (status === 402) return "Plan limit reached. Upgrade to continue drafting.";
-    if (status === 429) return "Too many requests — try again in a moment.";
-    if (status === 502) return "AI service is unavailable right now. Please retry.";
+    if (status === 401)
+      return "Session expired — please sign in again.";
+    if (status === 402)
+      return "Plan limit reached. Upgrade to continue drafting.";
+    if (status === 429)
+      return "Too many requests — try again in a moment.";
+    if (status === 502)
+      return "AI service is unavailable right now. Please retry.";
     return raw || `Request failed (${status})`;
   };
 
-  const needsCalendarContext = (item: FlaggedMessage, incomingMessage: string, userInstruction: string) => {
-    const text = `${item.intent_category ?? ""} ${incomingMessage} ${userInstruction}`.toLowerCase();
-    return /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/.test(text);
-  };
+  // ── Draft generation ──
 
   const callDraftFunction = async (item: FlaggedMessage) => {
     const id = item.thread_id;
@@ -1060,150 +149,24 @@ export default function FlaggedReviewSection() {
     )
       .trim()
       .slice(0, 4000);
-    const userInstruction = (drafts[id]?.instruction ?? "").trim().slice(0, 2000);
+    const userInstruction = (drafts[id]?.instruction ?? "")
+      .trim()
+      .slice(0, 2000);
     if (!incomingMessage || !userInstruction) return;
 
-    // For scheduling-related messages, first sync Google Calendar into
-    // agenda_events, then prepend the user's busy blocks to the instruction.
-    // If we can't verify the calendar, do not draft a positive confirmation.
     let instruction = userInstruction;
-    if (needsCalendarContext(item, incomingMessage, userInstruction)) {
-      try {
-        const { error: syncError } = await supabase.functions.invoke("google-calendar-sync", { body: {} });
-        if (syncError) {
-          throw new Error(syncError.message || "Calendar sync failed");
-        }
-
-        const nowIso = new Date().toISOString();
-        const horizonIso = new Date(
-          Date.now() + 180 * 24 * 60 * 60 * 1000,
-        ).toISOString();
-        const { data: events } = await supabase
-          .from("agenda_events")
-          .select(
-            "id, source_type, source_event_id, thread_id, contact_name, contact_channel, title, description, location, start_time, end_time, timezone, status, notes",
-          )
-          // Include future Google Calendar events AND WhatsApp events
-          // (which have end_time: null). WhatsApp events are always "current."
-          .or(`end_time.gte.${nowIso},end_time.is.null`)
-          .lte("start_time", horizonIso)
-          .neq("status", "cancelled")
-          .order("start_time", { ascending: true })
-          .limit(500);
-
-        if (events === null) {
-          throw new Error("Calendar events could not be loaded");
-        }
-
-        const tz =
-          Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-        const fmt = new Intl.DateTimeFormat("en-GB", {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: tz,
-        });
-        const fmtTime = new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: false,
-          timeZone: tz,
-        });
-
-        const currentThreadId = item.thread_id;
-        const currentContact = senderLabelForItem(item);
-
-        // Partition events: "own" = same contact/thread (being moved),
-        // "other" = everyone else (real conflicts).
-        const ownEvents: typeof events = [];
-        const otherEvents: typeof events = [];
-        for (const e of (events ?? [])) {
-          if (!e.start_time) continue;
-          const isOwn =
-            (currentThreadId && e.thread_id === currentThreadId) ||
-            (currentContact &&
-              e.contact_name &&
-              normalizeEventText(e.contact_name).includes(normalizeEventText(currentContact)));
-          (isOwn ? ownEvents : otherEvents).push(e);
-        }
-
-        function formatEventLine(e: NonNullable<typeof events>[number]): string {
-          const startDate = new Date(e.start_time as string);
-          const endDate = e.end_time
-            ? new Date(e.end_time as string)
-            : new Date(startDate.getTime() + 60 * 60 * 1000);
-          const start = fmt.format(startDate);
-          const end = fmtTime.format(endDate);
-          const loc = e.location ? ` @ ${e.location}` : "";
-          const title = e.title?.trim() || "(busy)";
-          const contact = e.contact_name?.trim()
-            ? ` [contact: ${e.contact_name.trim()}${e.contact_channel ? ` via ${e.contact_channel}` : ""}]`
-            : "";
-          const desc = e.description?.trim()
-            ? ` — ${e.description.trim().slice(0, 140)}`
-            : "";
-          const note = e.notes?.trim()
-            ? ` (notes: ${e.notes.trim().slice(0, 140)})`
-            : "";
-          return `- ${start}–${end} — ${title}${loc}${contact}${desc}${note}`;
-        }
-
-        const ownSection =
-          ownEvents.length > 0
-            ? `YOUR APPOINTMENT WITH THIS CONTACT (this is the event being moved — it is NOT a conflict, it will change time):\n${ownEvents.map(formatEventLine).join("\n")}`
-            : "";
-
-        const otherSection =
-          otherEvents.length > 0
-            ? `OTHER SCHEDULED EVENTS (these are REAL conflicts — the new time must NOT overlap):\n${otherEvents.map(formatEventLine).join("\n")}`
-            : "OTHER SCHEDULED EVENTS: None — the rest of your calendar is clear.";
-
-        const hasEvents = ownEvents.length > 0 || otherEvents.length > 0;
-        const calendarBlock = hasEvents
-          ? `CALENDAR CONTEXT — freshly synced. All times below are in ${tz} (your local timezone).\n\n${ownSection}\n\n${otherSection}`
-          : `CALENDAR CONTEXT — freshly synced from Google Calendar. User has no scheduled events (${tz}).`;
-
-        const intentText = `${incomingMessage}\n${userInstruction}`;
-        const isCancellation = looksLikeCancellation(intentText);
-        const isReschedule = !isCancellation && looksLikeReschedule(intentText);
-
-        let calendarRules = "";
-        if (isCancellation) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE the cancellation directly and empathetically in your reply.\n2. Confirm you've noted they want to cancel — mention specifically what's being cancelled (reference the appointment from CALENDAR CONTEXT if identifiable).\n3. Offer to reschedule if appropriate (e.g. "let me know if you'd like to set another time").\n4. Do NOT propose new times unless they explicitly ask to reschedule.`;
-        } else if (isReschedule) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. DO NOT say the contact's current appointment slot is "free" — it is occupied BY the appointment being moved (see YOUR APPOINTMENT WITH THIS CONTACT above). Say "your current appointment at [time] will be moved."\n2. Check the proposed new time only against OTHER SCHEDULED EVENTS — never against YOUR APPOINTMENT WITH THIS CONTACT.\n3. If the proposed new time does NOT overlap any OTHER SCHEDULED EVENTS, approve the reschedule. Example: "I can move your appointment to [new time]. The old slot at [old time] opens up."\n4. If no specific new time is proposed, suggest one based on gaps between OTHER SCHEDULED EVENTS.\n5. The customer's reschedule request is NOT itself a calendar event — do not block the new time because of it.`;
-        } else if (hasEvents) {
-          calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps an event listed above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against OTHER SCHEDULED EVENTS and YOUR APPOINTMENT WITH THIS CONTACT. If it conflicts with ANY event (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any listed event.`;
-        } else {
-          calendarRules = `\n\nBOOKING REPLY RULES:\n1. Any reasonable time can be proposed — the user has no scheduled events.\n2. If the contact proposes a specific time, confirm with warmth and clarity.`;
-        }
-
-        instruction = `${calendarBlock}\n\n---\n\n${userInstruction}${calendarRules}`.slice(
-          0,
-          8000,
-        );
-
-      } catch (err) {
-        console.warn("[flagged] failed to load calendar context", err);
-        const message =
-          err instanceof Error && err.message
-            ? err.message
-            : "Calendar could not be verified.";
-        updateDraft(id, {
-          loading: false,
-          error: `Calendar could not be verified, so I stopped before drafting: ${message}`,
-          phase: "error",
-        });
-        toast({
-          title: "Calendar not verified",
-          description: "I stopped the draft so we don't confirm an already-booked slot.",
-          variant: "destructive",
-        });
-        return;
-      }
+    if (
+      needsCalendarContext(item, incomingMessage, userInstruction)
+    ) {
+      const calendarInstruction = await buildCalendarInstruction({
+        item,
+        incomingMessage,
+        userInstruction,
+        updateDraft,
+        toast,
+      });
+      if (calendarInstruction === null) return;
+      instruction = calendarInstruction;
     }
 
     updateDraft(id, {
@@ -1220,7 +183,6 @@ export default function FlaggedReviewSection() {
       if (!session) throw new Error("Not signed in");
 
       const provider = (item.provider || "whatsapp").trim();
-
 
       const res = await fetch(
         `${FLAGGED_SUPABASE_URL}/functions/v1/draft-whatsapp-manual`,
@@ -1254,7 +216,10 @@ export default function FlaggedReviewSection() {
       }
       const body = await res.json().catch(() => null);
       const draft =
-        (body && (body.draft ?? body.reply ?? body.text ?? body.message)) ??
+        (
+          body &&
+          (body.draft ?? body.reply ?? body.text ?? body.message)
+        ) ??
         (typeof body === "string" ? body : "");
       const draftId: string | null =
         (body && (body.draft_id ?? body.draftId)) ?? null;
@@ -1269,667 +234,41 @@ export default function FlaggedReviewSection() {
         sentAt: new Date().toISOString(),
       });
 
-      // ── Calendar update based on draft intent (mutually exclusive) ──
-      const isScheduling = needsCalendarContext(item, incomingMessage, userInstruction);
-      const draftText = String(draft);
-      const intentTextForSignal = `${incomingMessage}\n${userInstruction}`;
-      const reasonText = String(item.intent_reason ?? "").toLowerCase();
-
-      // The flagged-message pill (intent_reason) is the authoritative
-      // classification of the CONTACT's request. Trust it over draft inference.
-      const reasonMentionsReschedule =
-        /\b(reschedul|move|postpone|push back|shift|change (?:the |our )?(?:time|date|appointment|meeting)|spostare|rinviare|reprogramar)\b/i.test(
-          reasonText,
-        );
-      const reasonMentionsCancel =
-        /\b(cancel|call off|drop|annull|disd|rinunci|cancelar|anular)\b/i.test(
-          reasonText,
-        );
-      const classifiedCancel = reasonMentionsCancel && !reasonMentionsReschedule;
-      const classifiedReschedule = reasonMentionsReschedule;
-
-      const draftReschedule = looksLikeReschedule(draftText);
-      const draftCancel = looksLikeCancellation(draftText);
-      const intentReschedule = looksLikeReschedule(intentTextForSignal);
-      const intentCancel = looksLikeCancellation(intentTextForSignal);
-
-      // Priority: pill classification > draft inference > intent text
-      const cancelSignal = classifiedCancel
-        ? true
-        : classifiedReschedule
-          ? false
-          : draftReschedule
-            ? false
-            : draftCancel || intentCancel;
-      const rescheduleSignal = classifiedCancel
-        ? false
-        : classifiedReschedule
-          ? true
-          : !cancelSignal && (draftReschedule || intentReschedule);
-
-      console.log("[flagged] draft sent, isScheduling:", isScheduling,
-        "| confirm:", looksLikeConfirmation(draftText),
-        "| cancel:", cancelSignal,
-        "| reschedule:", rescheduleSignal,
-        "| classifiedC/R:", classifiedCancel, classifiedReschedule,
-        "| draftR/C:", draftReschedule, draftCancel,
-        "| intentR/C:", intentReschedule, intentCancel,
-        "| reason:", reasonText.slice(0, 160),
-        "| draft:", draftText.slice(0, 200));
-
-      // Cancellation first: most specific, rarely overlaps with other categories
-      if (isScheduling && cancelSignal) {
-        console.log("[flagged][cancel] entering cancel branch", {
-          thread_id: item.thread_id,
+      if (
+        needsCalendarContext(item, incomingMessage, userInstruction)
+      ) {
+        await handleCalendarAfterDraft({
+          item,
+          incomingMessage,
+          userInstruction,
+          draftText: String(draft),
+          toast,
         });
-        try {
-          const { data: userData, error: userErr } = await supabase.auth.getUser();
-          console.log("[flagged][cancel] auth", {
-            user_id: userData?.user?.id,
-            userErr,
-          });
-          if (userData.user) {
-            const { data: existingRows, error: rowErr } = await supabase
-              .from("agenda_events")
-              .select("id, source_event_id, status, title")
-              .eq("thread_id", item.thread_id)
-              .eq("user_id", userData.user.id);
-            console.log("[flagged][cancel] db lookup", {
-              count: existingRows?.length ?? 0,
-              existingRows,
-              rowErr,
-            });
-
-            let toCancel = (existingRows ?? []).filter(
-              (r) => r.status !== "cancelled",
-            );
-
-            if ((existingRows ?? []).length > 0 && toCancel.length === 0) {
-              console.log("[flagged][cancel] all events already cancelled for thread");
-              toast({
-                title: "Already cancelled",
-                description:
-                  "This appointment was already cancelled in a previous action.",
-              });
-              return;
-            } else if (toCancel.length === 0) {
-              const cancellationTime = extractDateTime(incomingMessage, userInstruction, item.subject);
-              const contact = senderLabelForItem(item);
-              console.log("[flagged][cancel] thread lookup empty; trying date/contact fallback", {
-                extracted: cancellationTime
-                  ? {
-                      iso: cancellationTime.date.toISOString(),
-                      source: cancellationTime.source,
-                      confidence: cancellationTime.confidence,
-                    }
-                  : null,
-                contact,
-              });
-
-              if (cancellationTime) {
-                // Wide ±12h window to tolerate timezone mismatches between
-                // the message-parsed local time and the event stored time.
-                const windowStart = new Date(cancellationTime.date.getTime() - 12 * 60 * 60 * 1000).toISOString();
-                const windowEnd = new Date(cancellationTime.date.getTime() + 12 * 60 * 60 * 1000).toISOString();
-                const { data: fallbackRows, error: fallbackErr } = await supabase
-                  .from("agenda_events")
-                  .select("id, source_event_id, status, title, contact_name, description, start_time, end_time")
-                  .eq("user_id", userData.user.id)
-                  .neq("status", "cancelled")
-                  .gte("start_time", windowStart)
-                  .lte("start_time", windowEnd)
-                  .order("start_time", { ascending: true })
-                  .limit(50);
-
-                const matchedFallbackRows = (fallbackRows ?? []).filter((r) =>
-                  eventMatchesContact(r, contact),
-                );
-                console.log("[flagged][cancel] date/contact fallback lookup", {
-                  windowStart,
-                  windowEnd,
-                  fallbackCount: fallbackRows?.length ?? 0,
-                  matchedCount: matchedFallbackRows.length,
-                  fallbackRows,
-                  fallbackErr,
-                });
-                toCancel = matchedFallbackRows;
-              }
-
-              // Last-resort fallback: search broadly by contact name only.
-              if (toCancel.length === 0 && contact) {
-                const broadStart = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-                const broadEnd = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString();
-                const { data: contactRows, error: contactErr } = await supabase
-                  .from("agenda_events")
-                  .select("id, source_event_id, status, title, contact_name, description, start_time, end_time")
-                  .eq("user_id", userData.user.id)
-                  .neq("status", "cancelled")
-                  .gte("start_time", broadStart)
-                  .lte("start_time", broadEnd)
-                  .order("start_time", { ascending: true })
-                  .limit(500);
-
-                const matchedByContact = (contactRows ?? []).filter((r) =>
-                  eventMatchesContact(r, contact),
-                );
-                console.log("[flagged][cancel] contact-only fallback lookup", {
-                  contactCount: contactRows?.length ?? 0,
-                  matchedCount: matchedByContact.length,
-                  matched: matchedByContact,
-                  contactErr,
-                });
-
-                if (matchedByContact.length > 0) {
-                  if (cancellationTime) {
-                    const target = cancellationTime.date.getTime();
-                    matchedByContact.sort((a, b) => {
-                      const da = Math.abs(new Date(a.start_time as string).getTime() - target);
-                      const db = Math.abs(new Date(b.start_time as string).getTime() - target);
-                      return da - db;
-                    });
-                  }
-                  toCancel = [matchedByContact[0]];
-                  console.log("[flagged][cancel] contact-only fallback chose", toCancel);
-                }
-              }
-            }
-
-            if (toCancel.length === 0) {
-              console.log("[flagged][cancel] nothing to cancel for thread");
-              toast({
-                title: "Reply sent (no event found)",
-                description:
-                  "No existing appointment was found for this thread to cancel.",
-              });
-            } else {
-              let calendarFailures = 0;
-              let calendarSuccesses = 0;
-              let titleForToast = "Appointment";
-
-              for (const existing of toCancel) {
-                titleForToast = existing.title || titleForToast;
-                const sourceEventId = existing.source_event_id;
-
-                if (sourceEventId) {
-                  console.log("[flagged][cancel] invoking google-calendar-push", {
-                    agenda_event_id: existing.id,
-                    source_event_id: sourceEventId,
-                    action: "delete",
-                  });
-                  const { data: pushData, error: pushErr } =
-                    await supabase.functions.invoke("google-calendar-push", {
-                      body: {
-                        agenda_event_id: existing.id,
-                        source_event_id: sourceEventId,
-                        action: "delete",
-                      },
-                    });
-                  const errCode =
-                    (pushData as { error?: string } | null)?.error;
-                  console.log("[flagged][cancel] google-calendar-push response", {
-                    id: existing.id,
-                    pushData,
-                    pushErr,
-                    errCode,
-                  });
-                  if (pushErr || errCode) {
-                    calendarFailures += 1;
-                    console.warn(
-                      "[flagged][cancel] calendar delete FAILED",
-                      pushErr ?? errCode,
-                    );
-                  } else {
-                    calendarSuccesses += 1;
-                  }
-                }
-
-                const { error: updateErr } = await supabase
-                  .from("agenda_events")
-                  .update({ status: "cancelled", source_event_id: null })
-                  .eq("id", existing.id);
-                console.log("[flagged][cancel] row updated to cancelled", {
-                  id: existing.id,
-                  updateErr,
-                });
-              }
-
-              if (calendarFailures > 0 && calendarSuccesses === 0) {
-                toast({
-                  title: "Marked cancelled locally",
-                  description: "Google Calendar removal skipped.",
-                });
-              } else {
-                toast({
-                  title:
-                    calendarSuccesses > 0
-                      ? "Cancelled & removed from Google Calendar"
-                      : "Appointment cancelled",
-                  description: `${titleForToast} has been cancelled${
-                    toCancel.length > 1 ? ` (${toCancel.length} entries)` : ""
-                  }.`,
-                });
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[flagged][cancel] threw exception", e);
-          toast({
-            title: "Reply sent, cancellation skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
-        }
-      }
-
-      // Reschedule: update existing event to new time, or cancel+create
-      else if (isScheduling && rescheduleSignal) {
-        console.log("[flagged][reschedule] entering reschedule branch", {
-          thread_id: item.thread_id,
-          sender: item.sender,
-          draft: draftText.slice(0, 200),
-          reason: reasonText.slice(0, 160),
-        });
-        try {
-          const { data: userData } = await supabase.auth.getUser();
-          if (!userData.user) return;
-
-          // 1. Extract the NEW time. For reschedule, the contact's message
-          //    typically mentions the OLD time first ("move from X to Y")
-          //    so the AI draft is the better primary source — it states the
-          //    proposed new time upfront. Fall back to the contact's message
-          //    only if the draft has no parsible time.
-          let extracted = extractDateTime(draftText);
-          console.log("[flagged][reschedule] pass 1 (draft)", {
-            extracted: extracted
-              ? { iso: extracted.date.toISOString(), source: extracted.source }
-              : null,
-          });
-          if (!extracted) {
-            extracted = extractDateTime(incomingMessage, userInstruction, item.subject);
-            console.log("[flagged][reschedule] pass 2 (contact+instruction)", {
-              extracted: extracted
-                ? { iso: extracted.date.toISOString(), source: extracted.source }
-                : null,
-            });
-          }
-          if (!extracted) {
-            console.log("[flagged][reschedule] no time parsed, skipping new event");
-            toast({
-              title: "Reply sent, time unclear",
-              description:
-                "Could not determine the new appointment time. Set it manually in the Agenda panel.",
-            });
-            return;
-          }
-
-          const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-
-          // 2. Find the event to reschedule — prefer one with a Google Calendar
-          //    event ID so we can PATCH it in-place instead of delete+create.
-          let { data: existingRows } = await supabase
-            .from("agenda_events")
-            .select("id, source_event_id, status, title, contact_name, description, start_time")
-            .eq("thread_id", item.thread_id)
-            .eq("user_id", userData.user.id)
-            .neq("status", "cancelled")
-            .order("start_time", { ascending: true });
-
-          // Fallback: when thread_id finds nothing (e.g. mock test changed),
-          // search by contact name + extracted old time window.
-          const contact = senderLabelForItem(item);
-          if ((existingRows ?? []).length === 0 && contact && extracted) {
-            const windowStart = new Date(extracted.date.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-            const windowEnd = new Date(extracted.date.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString();
-            const { data: fallbackRows } = await supabase
-              .from("agenda_events")
-              .select("id, source_event_id, status, title, contact_name, description, start_time")
-              .eq("user_id", userData.user.id)
-              .neq("status", "cancelled")
-              .gte("start_time", windowStart)
-              .lte("start_time", windowEnd)
-              .order("start_time", { ascending: true })
-              .limit(500);
-            const matched = (fallbackRows ?? []).filter((r) =>
-              eventMatchesContact(r, contact),
-            );
-            console.log("[flagged][reschedule] thread_id found nothing; contact fallback", {
-              contact,
-              windowStart,
-              windowEnd,
-              fallbackCount: fallbackRows?.length ?? 0,
-              matchedCount: matched.length,
-            });
-            existingRows = matched;
-          }
-
-          console.log("[flagged][reschedule] existing events", {
-            count: existingRows?.length ?? 0,
-            rows: existingRows,
-          });
-
-          const existingWithGoogle = (existingRows ?? []).find((r) => r.source_event_id);
-          const others = (existingRows ?? []).filter((r) => r !== existingWithGoogle);
-
-          // ── PATCH path: event has source_event_id → update it in-place ──
-          if (existingWithGoogle) {
-            console.log("[flagged][reschedule] PATCHING existing event", {
-              id: existingWithGoogle.id,
-              source_event_id: existingWithGoogle.source_event_id,
-              old_start: existingWithGoogle.start_time,
-              new_start: extracted.date.toISOString(),
-            });
-
-            // Guard: if the extracted time matches an existing event's
-            // start_time, the parser likely grabbed the OLD appointment time
-            // from the AI draft ("I'll move from Wed 10 11am to Fri 12 3pm"
-            // → first match is the old time). Re-extract from draft only.
-            const extMs = extracted.date.getTime();
-            const sameAsExisting = (existingRows ?? []).some(
-              (r) => r.start_time && Math.abs(new Date(r.start_time).getTime() - extMs) < 60_000,
-            );
-            if (sameAsExisting) {
-              console.log("[flagged][reschedule] extracted time matches existing — re-extracting from draft only");
-              const reExtracted = extractDateTime(draftText);
-              if (reExtracted) {
-                extracted = reExtracted;
-                console.log("[flagged][reschedule] re-extracted new time", {
-                  iso: extracted.date.toISOString(),
-                  source: extracted.source,
-                });
-              }
-            }
-
-            // Clean up any duplicate non-Google events for this thread.
-            for (const other of others) {
-              await supabase
-                .from("agenda_events")
-                .update({ status: "cancelled", source_event_id: null })
-                .eq("id", other.id);
-            }
-
-            // Keep the original title — don't use item.subject which may
-            // be "Reschedule appointment" from mock/test data.
-            const keepTitle =
-              existingWithGoogle.title?.trim() ||
-              (item.sender ? `Appointment with ${item.sender}` : "Appointment");
-
-            const { error: updErr } = await supabase
-              .from("agenda_events")
-              .update({
-                start_time: extracted.date.toISOString(),
-                timezone: tz,
-                status: "confirmed",
-                title: keepTitle,
-              })
-              .eq("id", existingWithGoogle.id);
-
-            console.log("[flagged][reschedule] PATCH db update", {
-              id: existingWithGoogle.id,
-              updErr,
-            });
-            if (updErr) throw updErr;
-
-            console.log("[flagged][reschedule] calling google-calendar-push upsert (PATCH)", {
-              agenda_event_id: existingWithGoogle.id,
-              start_time: extracted.date.toISOString(),
-              timezone: tz,
-            });
-            const { data: pushData, error: pushErr } =
-              await supabase.functions.invoke("google-calendar-push", {
-                body: { agenda_event_id: existingWithGoogle.id, action: "upsert", start_time: extracted.date.toISOString(), timezone: tz },
-              });
-            const errCode = (pushData as { error?: string } | null)?.error;
-            console.log("[flagged][reschedule] google-calendar-push upsert response", {
-              pushData,
-              pushErr,
-              errCode,
-            });
-
-            if (pushErr || errCode) {
-              toast({
-                title: "Rescheduled (Google sync skipped)",
-                description:
-                  errCode === "not_connected"
-                    ? "Connect Google Calendar to sync the new time."
-                    : "New time saved locally.",
-              });
-            } else {
-              toast({
-                title: "Rescheduled & synced to Google Calendar",
-                description: `${keepTitle} moved to a new time.`,
-              });
-            }
-            return;
-          }
-
-          // ── DELETE+CREATE path: no Google-linked event exists ──
-          console.log("[flagged][reschedule] no Google-linked event, using delete+create");
-
-          for (const existing of (existingRows ?? [])) {
-            if (existing.source_event_id) {
-              console.log("[flagged][reschedule] calling google-calendar-push delete", {
-                agenda_event_id: existing.id,
-                source_event_id: existing.source_event_id,
-              });
-              const { data: delData, error: delErr } =
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: {
-                    agenda_event_id: existing.id,
-                    source_event_id: existing.source_event_id,
-                    action: "delete",
-                  },
-                });
-              console.log("[flagged][reschedule] google-calendar-push delete response", {
-                id: existing.id,
-                delData,
-                delErr,
-              });
-            }
-            const { error: updErr } = await supabase
-              .from("agenda_events")
-              .update({ status: "cancelled", source_event_id: null })
-              .eq("id", existing.id);
-            console.log("[flagged][reschedule] row updated to cancelled", {
-              id: existing.id,
-              updErr,
-            });
-          }
-
-          // Build title from existing event if available, otherwise sender-based.
-          const bestExisting = (existingRows ?? []).find(
-            (r) => r.title?.trim() && r.title.trim().toLowerCase() !== "reschedule appointment",
-          );
-          const title =
-            bestExisting?.title?.trim() ||
-            (item.sender ? `Appointment with ${item.sender}` : "Appointment");
-
-          const newEvent = {
-            user_id: userData.user.id,
-            source_type: "whatsapp",
-            source_event_id: `${item.thread_id}:rescheduled:${Date.now()}`,
-            thread_id: item.thread_id,
-            contact_name: item.sender ?? null,
-            contact_channel: item.provider ?? null,
-            title,
-            description: (item.preview ?? item.latest_message ?? null) as string | null,
-            start_time: extracted.date.toISOString(),
-            timezone: tz,
-            status: "confirmed",
-            imported_at: new Date().toISOString(),
-          };
-
-          console.log("[flagged][reschedule] inserting new event", newEvent);
-          const { data: inserted, error: insErr } = await supabase
-            .from("agenda_events")
-            .insert(newEvent)
-            .select("id")
-            .single();
-
-          console.log("[flagged][reschedule] insert result", {
-            inserted,
-            insErr,
-          });
-
-          if (insErr) throw insErr;
-
-          if (inserted?.id) {
-            console.log("[flagged][reschedule] calling google-calendar-push upsert (insert)", {
-              agenda_event_id: inserted.id,
-              start_time: extracted.date.toISOString(),
-              timezone: tz,
-            });
-            const { data: pushData, error: pushErr } =
-              await supabase.functions.invoke("google-calendar-push", {
-                body: { agenda_event_id: inserted.id, action: "upsert", start_time: extracted.date.toISOString(), timezone: tz },
-              });
-            const errCode =
-              (pushData as { error?: string } | null)?.error;
-            console.log("[flagged][reschedule] google-calendar-push upsert response", {
-              pushData,
-              pushErr,
-              errCode,
-            });
-            if (pushErr || errCode) {
-              toast({
-                title: "Rescheduled (Google sync skipped)",
-                description:
-                  errCode === "not_connected"
-                    ? "Connect Google Calendar to sync the new time."
-                    : "New time saved locally.",
-              });
-            } else {
-              toast({
-                title: "Rescheduled & synced to Google Calendar",
-                description: `${title} moved to a new time.`,
-              });
-            }
-          }
-        } catch (e) {
-          console.warn("[flagged] failed to reschedule event", e);
-          toast({
-            title: "Reply sent, reschedule skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
-        }
-      }
-
-      // Confirmation: book a new appointment (most generic, check last)
-      else if (isScheduling && looksLikeConfirmation(draftText)) {
-        // Two-pass: contact message + instruction first (clean signal),
-        // fall back to draft text only if nothing found.
-        let extracted = extractDateTime(incomingMessage, userInstruction);
-        console.log("[flagged] confirmation pass 1 (contact+instruction)", extracted);
-        if (!extracted) {
-          extracted = extractDateTime(draftText, item.subject);
-          console.log("[flagged] confirmation pass 2 (draft+subject)", extracted);
-        }
-        console.log("[flagged] confirmation block entered, extracted:", extracted);
-        const tz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
-        const title =
-          item.subject?.trim() ||
-          (item.sender ? `Appointment with ${item.sender}` : "Appointment");
-
-        const eventRow: Record<string, unknown> = {
-          source_type: "whatsapp",
-          source_event_id: item.thread_id,
-          thread_id: item.thread_id,
-          contact_name: item.sender ?? null,
-          contact_channel: item.provider ?? null,
-          title,
-          description: (item.preview ?? item.latest_message ?? null) as string | null,
-          start_time: extracted?.date.toISOString() ?? null,
-          timezone: extracted ? tz : null,
-          status: "confirmed",
-          imported_at: new Date().toISOString(),
-        };
-
-        try {
-          const { data: userData } = await supabase.auth.getUser();
-          if (userData.user) {
-            eventRow.user_id = userData.user.id;
-
-            const { data: inserted, error: insErr } = await supabase
-              .from("agenda_events")
-              .upsert(eventRow as never, {
-                onConflict: "user_id,source_type,source_event_id",
-                ignoreDuplicates: false,
-              })
-              .select("id")
-              .single();
-
-            if (insErr) throw insErr;
-
-            if (inserted?.id && extracted) {
-              console.log("[flagged][confirm] calling google-calendar-push upsert", {
-                agenda_event_id: inserted.id,
-                start_time: extracted.date.toISOString(),
-                timezone: tz,
-              });
-              const { data: pushData, error: pushErr } =
-                await supabase.functions.invoke("google-calendar-push", {
-                  body: { agenda_event_id: inserted.id, action: "upsert", start_time: extracted.date.toISOString(), timezone: tz },
-                });
-              const errCode =
-                (pushData as { error?: string } | null)?.error;
-              if (pushErr || errCode) {
-                console.warn(
-                  "[flagged] calendar push failed after draft",
-                  pushErr ?? errCode,
-                );
-                toast({
-                  title: extracted
-                    ? "Saved to agenda (Google sync skipped)"
-                    : "Added to agenda",
-                  description:
-                    errCode === "not_connected"
-                      ? "Connect Google Calendar to sync."
-                      : "Calendar event saved locally.",
-                });
-              } else {
-                toast({
-                  title: "Confirmed & synced to Google Calendar",
-                  description: `${title} added to your calendar.`,
-                });
-              }
-            } else if (inserted?.id) {
-              toast({
-                title: "Added to agenda (needs time)",
-                description: `${title} — set a time in the Agenda panel to sync.`,
-              });
-            }
-          }
-        } catch (e) {
-          console.warn("[flagged] failed to push booking to calendar", e);
-          toast({
-            title: "Reply sent, calendar update skipped",
-            description:
-              (e as Error)?.message?.slice(0, 120) ??
-              "Could not update calendar.",
-            variant: "destructive",
-          });
-        }
       }
     } catch (e) {
       updateDraft(id, {
         loading: false,
-        error: (e as Error)?.message ?? "Failed to generate draft",
+        error:
+          (e as Error)?.message ?? "Failed to generate draft",
         phase: "error",
       });
     }
   };
 
-  const generateDraft = (item: FlaggedMessage) => callDraftFunction(item);
-  const retryDraft = (item: FlaggedMessage) => callDraftFunction(item);
+  const generateDraft = (item: FlaggedMessage) =>
+    callDraftFunction(item);
+  const retryDraft = (item: FlaggedMessage) =>
+    callDraftFunction(item);
 
+  // ── dnd-kit sensors ──
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
   );
+
+  // ── localStorage persistence ──
 
   useEffect(() => {
     try {
@@ -1941,7 +280,10 @@ export default function FlaggedReviewSection() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(ASSIGNMENTS_KEY, JSON.stringify(assignments));
+      localStorage.setItem(
+        ASSIGNMENTS_KEY,
+        JSON.stringify(assignments),
+      );
     } catch {
       /* ignore */
     }
@@ -1949,11 +291,16 @@ export default function FlaggedReviewSection() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
+      localStorage.setItem(
+        DISMISSED_KEY,
+        JSON.stringify(Array.from(dismissed)),
+      );
     } catch {
       /* ignore */
     }
   }, [dismissed]);
+
+  // ── Dismissal ──
 
   const dismissKeysFor = (m: FlaggedMessage): string[] => {
     const keys = [m.thread_id];
@@ -1961,7 +308,8 @@ export default function FlaggedReviewSection() {
     if (sk) keys.push(`sender:${sk}`);
     return keys;
   };
-  const isDismissed = (m: FlaggedMessage) => dismissKeysFor(m).some((k) => dismissed.has(k));
+  const isDismissed = (m: FlaggedMessage) =>
+    dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
     const keys = dismissKeysFor(m);
     setDismissed((prev) => {
@@ -1971,34 +319,57 @@ export default function FlaggedReviewSection() {
     });
   };
 
-  const flaggedFromList: FlaggedMessage[] = (data ?? []).map(withActivityPreview);
+  // ── Dedup / sort / group pipeline ──
+
+  const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
+    withActivityPreview,
+  );
   const activityGroups = new Map<string, FlaggedMessage>();
-  for (const [index, r] of activityRows.filter(isFlaggedActivity).entries()) {
+  for (const [index, r] of activityRows
+    .filter(isFlaggedActivity)
+    .entries()) {
     const text = textForActivity(r);
     const realThreadId = activityThreadId(r);
-    const sender = senderLabelForActivity(r) || senderFromThreadId(realThreadId);
+    const sender =
+      senderLabelForActivity(r) ||
+      senderFromThreadId(realThreadId);
     if (!sender) continue;
-    const fallbackId = realThreadId || `activity:${r.createdAt}:${index}`;
-    const groupKey = normalizeLookup(sender || fallbackId) || fallbackId;
+    const fallbackId =
+      realThreadId || `activity:${r.createdAt}:${index}`;
+    const groupKey =
+      normalizeLookup(sender || fallbackId) || fallbackId;
     const existing = activityGroups.get(groupKey);
-    const existingText = existing?.latest_message ?? existing?.preview ?? "";
+    const existingText =
+      existing?.latest_message ?? existing?.preview ?? "";
     const useText =
       !existing ||
       !existingText ||
-      Boolean(text && !isVoiceStub(text) && (isVoiceStub(existingText) || text !== existingText));
+      Boolean(
+        text &&
+          !isVoiceStub(text) &&
+          (isVoiceStub(existingText) ||
+            text !== existingText),
+      );
     const createdAt = new Date(r.createdAt).getTime();
-    const existingAt = existing ? new Date(existing.updated_at).getTime() : 0;
+    const existingAt = existing
+      ? new Date(existing.updated_at).getTime()
+      : 0;
     if (!existing || useText || createdAt > existingAt) {
       activityGroups.set(groupKey, {
         thread_id: existing?.thread_id ?? fallbackId,
         provider: "whatsapp",
         sender,
-        subject: cleanSenderLabel(r.subject) || existing?.subject || null,
-        preview: useText ? text || r.preview : existing.preview,
-        latest_message: useText ? text || r.latestMessage : existing.latest_message,
+        subject:
+          cleanSenderLabel(r.subject) || existing?.subject || null,
+        preview:
+          useText ? text || r.preview : existing.preview,
+        latest_message: useText
+          ? text || r.latestMessage
+          : existing.latest_message,
         intent_category: "misc",
         intent_confidence: 1,
-        intent_reason: "Needs review from the Activity stream.",
+        intent_reason:
+          "Needs review from the Activity stream.",
         intent_source: "activity",
         intent_classified_at: r.createdAt,
         updated_at: r.createdAt,
@@ -2006,15 +377,25 @@ export default function FlaggedReviewSection() {
       });
     }
   }
-  const flaggedFromActivity: FlaggedMessage[] = Array.from(activityGroups.values()).map(withActivityPreview);
-  const all: FlaggedMessage[] = [...flaggedFromList, ...flaggedFromActivity];
+  const flaggedFromActivity: FlaggedMessage[] = Array.from(
+    activityGroups.values(),
+  ).map(withActivityPreview);
+  const all: FlaggedMessage[] = [
+    ...flaggedFromList,
+    ...flaggedFromActivity,
+  ];
   const recencyOf = (m: FlaggedMessage) => {
-    const candidates = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
-    return Math.max(...candidates.map((s) => new Date(s).getTime()));
+    const candidates = [
+      m.intent_classified_at,
+      m.updated_at,
+    ].filter(Boolean) as string[];
+    return Math.max(
+      ...candidates.map((s) => new Date(s).getTime()),
+    );
   };
-  const sorted = [...all].sort((a, b) => recencyOf(b) - recencyOf(a));
-  // One pill per sender. Newest message wins (sorted desc); older messages from
-  // the same sender become a backlog count surfaced on the pill.
+  const sorted = [...all].sort(
+    (a, b) => recencyOf(b) - recencyOf(a),
+  );
   const groups = new Map<
     string,
     FlaggedMessage & {
@@ -2024,30 +405,52 @@ export default function FlaggedReviewSection() {
     }
   >();
   const messageFingerprint = (m: FlaggedMessage) => {
-    const text = (m.latest_message ?? m.preview ?? m.subject ?? "").trim().toLowerCase();
-    // Round timestamps to the nearest minute so the same message arriving from
-    // both the flagged-list and activity sources is treated as one.
-    const ts = m.updated_at ? Math.floor(new Date(m.updated_at).getTime() / 60000) : 0;
+    const text = (
+      m.latest_message ??
+      m.preview ??
+      m.subject ??
+      ""
+    )
+      .trim()
+      .toLowerCase();
+    const ts = m.updated_at
+      ? Math.floor(
+          new Date(m.updated_at).getTime() / 60000,
+        )
+      : 0;
     return `${ts}|${text}`;
   };
   for (const m of sorted) {
     if (isDismissed(m)) continue;
-    const senderKey = normalizeLookup(senderLabelForItem(m) || m.sender || "");
+    const senderKey = normalizeLookup(
+      senderLabelForItem(m) || m.sender || "",
+    );
     const key = senderKey || m.thread_id;
     const fp = messageFingerprint(m);
     const existing = groups.get(key);
     if (!existing) {
       const seen = new Set<string>();
       seen.add(fp);
-      groups.set(key, { ...m, backlog_count: 0, backlog_items: [], _seen: seen });
+      groups.set(key, {
+        ...m,
+        backlog_count: 0,
+        backlog_items: [],
+        _seen: seen,
+      });
     } else {
-      if (existing._seen?.has(fp)) continue; // duplicate of an already-tracked message
+      if (existing._seen?.has(fp)) continue;
       existing._seen?.add(fp);
-      existing.backlog_count = (existing.backlog_count ?? 0) + 1;
-      existing.backlog_items = [...(existing.backlog_items ?? []), m];
+      existing.backlog_count =
+        (existing.backlog_count ?? 0) + 1;
+      existing.backlog_items = [
+        ...(existing.backlog_items ?? []),
+        m,
+      ];
     }
   }
   const deduped: FlaggedMessage[] = Array.from(groups.values());
+
+  // ── Folder helpers ──
 
   const folderIds = new Set(folders.map((f) => f.id));
   const ungrouped = deduped.filter((m) => {
@@ -2067,10 +470,18 @@ export default function FlaggedReviewSection() {
   })();
 
   const itemsInFolder = (folderId: string) =>
-    deduped.filter((m) => assignments[m.thread_id] === folderId);
+    deduped.filter(
+      (m) => assignments[m.thread_id] === folderId,
+    );
 
-  const moveToFolder = (threadId: string, folderId: string) => {
-    setAssignments((prev) => ({ ...prev, [threadId]: folderId }));
+  const moveToFolder = (
+    threadId: string,
+    folderId: string,
+  ) => {
+    setAssignments((prev) => ({
+      ...prev,
+      [threadId]: folderId,
+    }));
   };
   const removeFromFolder = (threadId: string) => {
     setAssignments((prev) => {
@@ -2083,14 +494,18 @@ export default function FlaggedReviewSection() {
   const createFolder = () => {
     const name = newFolderName.trim();
     if (!name) return;
-    const id = `f-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const id = `f-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2, 6)}`;
     setFolders((prev) => [...prev, { id, name }]);
     setNewFolderName("");
     setCreateOpen(false);
   };
 
   const deleteFolder = (folderId: string) => {
-    setFolders((prev) => prev.filter((f) => f.id !== folderId));
+    setFolders((prev) =>
+      prev.filter((f) => f.id !== folderId),
+    );
     setAssignments((prev) => {
       const next: Record<string, string> = {};
       for (const [k, v] of Object.entries(prev)) {
@@ -2101,8 +516,14 @@ export default function FlaggedReviewSection() {
     if (openFolderId === folderId) setOpenFolderId(null);
   };
 
+  // ── Drag handlers ──
+
   const handleDragStart = (e: DragStartEvent) => {
-    const item = (e.active.data.current as { item?: FlaggedMessage } | undefined)?.item;
+    const item = (
+      e.active.data.current as
+        | { item?: FlaggedMessage }
+        | undefined
+    )?.item;
     if (item) setActiveItem(item);
   };
   const handleDragEnd = (e: DragEndEvent) => {
@@ -2113,7 +534,9 @@ export default function FlaggedReviewSection() {
         dismissItem(item);
         toast({
           title: "Flagged message deleted",
-          description: `${item.sender ?? "Thread"} removed from review.`,
+          description: `${
+            item.sender ?? "Thread"
+          } removed from review.`,
           action: (
             <Button
               variant="ghost"
@@ -2121,7 +544,8 @@ export default function FlaggedReviewSection() {
               onClick={() =>
                 setDismissed((prev) => {
                   const next = new Set(prev);
-                  for (const k of dismissKeysFor(item)) next.delete(k);
+                  for (const k of dismissKeysFor(item))
+                    next.delete(k);
                   return next;
                 })
               }
@@ -2131,15 +555,22 @@ export default function FlaggedReviewSection() {
           ),
         });
       } else if (overId.startsWith(FOLDER_DROP_PREFIX)) {
-        const folderId = overId.slice(FOLDER_DROP_PREFIX.length);
+        const folderId = overId.slice(
+          FOLDER_DROP_PREFIX.length,
+        );
         moveToFolder(activeItem.thread_id, folderId);
       }
     }
     setActiveItem(null);
   };
 
-  const openFolder = folders.find((f) => f.id === openFolderId) ?? null;
-  const openFolderItems = openFolder ? itemsInFolder(openFolder.id) : [];
+  const openFolder =
+    folders.find((f) => f.id === openFolderId) ?? null;
+  const openFolderItems = openFolder
+    ? itemsInFolder(openFolder.id)
+    : [];
+
+  // ── Render ──
 
   return (
     <DndContext
@@ -2151,7 +582,9 @@ export default function FlaggedReviewSection() {
       <section className="space-y-4">
         <div className="flex items-center gap-2 flex-wrap">
           <Flag size={18} className="text-primary" />
-          <h2 className="text-xl font-semibold">Flagged messages</h2>
+          <h2 className="text-xl font-semibold">
+            Flagged messages
+          </h2>
           {!isLoading && (
             <Badge variant="secondary" className="ml-1">
               {ungrouped.length}
@@ -2178,7 +611,10 @@ export default function FlaggedReviewSection() {
             disabled={isFetching}
             className="ml-auto gap-1.5"
           >
-            <RefreshCw size={14} className={isFetching ? "animate-spin" : ""} />
+            <RefreshCw
+              size={14}
+              className={isFetching ? "animate-spin" : ""}
+            />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
         </div>
@@ -2199,9 +635,14 @@ export default function FlaggedReviewSection() {
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground/70 italic flex items-center gap-1.5">
-              <GripVertical size={11} className="text-[#2dd4a8]" />
-              Drag cards into folders to group related reviews — or use the
-              <MoreVertical size={11} className="inline" /> menu on each card.
+              <GripVertical
+                size={11}
+                className="text-[#2dd4a8]"
+              />
+              Drag cards into folders to group related reviews —
+              or use the
+              <MoreVertical size={11} className="inline" /> menu
+              on each card.
             </p>
           </div>
         )}
@@ -2209,7 +650,10 @@ export default function FlaggedReviewSection() {
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {[0, 1].map((i) => (
-              <Card key={i} className="border-l-4 border-l-border">
+              <Card
+                key={i}
+                className="border-l-4 border-l-border"
+              >
                 <CardContent className="p-4 space-y-3">
                   <Skeleton className="h-4 w-2/3" />
                   <Skeleton className="h-3 w-1/2" />
@@ -2221,7 +665,8 @@ export default function FlaggedReviewSection() {
           </div>
         ) : error ? (
           <p className="text-sm text-destructive">
-            Couldn't load flagged messages: {(error as Error).message}
+            Couldn't load flagged messages:{" "}
+            {(error as Error).message}
           </p>
         ) : ungrouped.length === 0 ? (
           <div className="flex items-center gap-2 text-sm text-muted-foreground py-6 justify-center">
@@ -2236,14 +681,18 @@ export default function FlaggedReviewSection() {
               className="flagged-scroll max-h-[640px] md:max-h-[560px] overflow-y-auto pr-2 pb-10"
               style={{
                 scrollbarWidth: "thin",
-                scrollbarColor: "rgba(115,255,184,0.25) transparent",
+                scrollbarColor:
+                  "rgba(115,255,184,0.25) transparent",
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {ungrouped.map((item) => {
-                  const draftState = drafts[item.thread_id] ?? defaultDraft;
+                  const draftState =
+                    drafts[item.thread_id] ?? defaultDraft;
                   const isAppt = APPOINTMENT_CATEGORIES.has(
-                    (item.intent_category ?? "").toLowerCase().trim(),
+                    (item.intent_category ?? "")
+                      .toLowerCase()
+                      .trim(),
                   );
                   return (
                     <DraggableFlaggedCard
@@ -2266,13 +715,25 @@ export default function FlaggedReviewSection() {
                       footer={
                         <DraftReplyFooter
                           item={item}
-                          enrichedMessage={enrichedMessageFor(item)}
+                          enrichedMessage={enrichedMessageFor(
+                            item,
+                          )}
                           state={draftState}
-                          onChange={(patch) => updateDraft(item.thread_id, patch)}
-                          onClose={() =>
-                            updateDraft(item.thread_id, { open: false, error: null })
+                          onChange={(patch) =>
+                            updateDraft(
+                              item.thread_id,
+                              patch,
+                            )
                           }
-                          onGenerate={() => generateDraft(item)}
+                          onClose={() =>
+                            updateDraft(item.thread_id, {
+                              open: false,
+                              error: null,
+                            })
+                          }
+                          onGenerate={() =>
+                            generateDraft(item)
+                          }
                           onRetry={() => retryDraft(item)}
                           isAppointment={isAppt}
                         />
@@ -2297,24 +758,31 @@ export default function FlaggedReviewSection() {
               style={{
                 background:
                   "linear-gradient(to right, transparent 0%, rgba(45,212,168,0.55) 50%, transparent 100%)",
-                boxShadow: "0 0 12px rgba(115,255,184,0.35)",
+                boxShadow:
+                  "0 0 12px rgba(115,255,184,0.35)",
               }}
             />
           </div>
         )}
 
         {(deduped.length > 0 || activeItem) && (
-          <TrashDropZone isAnyDragging={activeItem !== null} />
+          <TrashDropZone
+            isAnyDragging={activeItem !== null}
+          />
         )}
 
-
-
         {/* Create folder dialog */}
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <Dialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+        >
           <DialogContent className="max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <FolderPlus size={18} className="text-[#2dd4a8]" />
+                <FolderPlus
+                  size={18}
+                  className="text-[#2dd4a8]"
+                />
                 Create new folder
               </DialogTitle>
             </DialogHeader>
@@ -2322,18 +790,24 @@ export default function FlaggedReviewSection() {
               <Input
                 autoFocus
                 value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
+                onChange={(e) =>
+                  setNewFolderName(e.target.value)
+                }
                 onKeyDown={(e) => {
                   if (e.key === "Enter") createFolder();
                 }}
                 placeholder="e.g. Possible spam, Appointments…"
               />
               <p className="text-[11px] text-muted-foreground">
-                Folders help you group flagged reviews. They live on this device.
+                Folders help you group flagged reviews. They
+                live on this device.
               </p>
             </div>
             <DialogFooter>
-              <Button variant="ghost" onClick={() => setCreateOpen(false)}>
+              <Button
+                variant="ghost"
+                onClick={() => setCreateOpen(false)}
+              >
                 Cancel
               </Button>
               <Button
@@ -2348,19 +822,30 @@ export default function FlaggedReviewSection() {
         </Dialog>
 
         {/* Folder contents dialog */}
-        <Dialog open={openFolder !== null} onOpenChange={(o) => !o && setOpenFolderId(null)}>
+        <Dialog
+          open={openFolder !== null}
+          onOpenChange={(o) =>
+            !o && setOpenFolderId(null)
+          }
+        >
           <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <FolderOpen size={18} className="text-[#2dd4a8]" />
+                <FolderOpen
+                  size={18}
+                  className="text-[#2dd4a8]"
+                />
                 {openFolder?.name}
-                <Badge variant="secondary">{openFolderItems.length}</Badge>
+                <Badge variant="secondary">
+                  {openFolderItems.length}
+                </Badge>
               </DialogTitle>
             </DialogHeader>
 
             {openFolderItems.length === 0 ? (
               <p className="text-sm text-muted-foreground py-6 text-center">
-                Drag flagged cards onto this folder to collect them here.
+                Drag flagged cards onto this folder to collect
+                them here.
               </p>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -2373,7 +858,11 @@ export default function FlaggedReviewSection() {
                         variant="ghost"
                         size="icon"
                         className="h-6 w-6 text-muted-foreground hover:text-destructive"
-                        onClick={() => removeFromFolder(item.thread_id)}
+                        onClick={() =>
+                          removeFromFolder(
+                            item.thread_id,
+                          )
+                        }
                         aria-label="Remove from folder"
                       >
                         <X size={12} />
@@ -2387,7 +876,12 @@ export default function FlaggedReviewSection() {
         </Dialog>
       </section>
 
-      <DragOverlay dropAnimation={{ duration: 180, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }}>
+      <DragOverlay
+        dropAnimation={{
+          duration: 180,
+          easing: "cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+      >
         {activeItem ? (
           <div
             className="w-[320px] max-w-[80vw] rotate-[-1.5deg] scale-[1.02] pointer-events-none"

@@ -19,11 +19,11 @@ import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import { APPOINTMENT_CATEGORIES } from "@/lib/flagged-utils";
 import AppointmentDrawer from "./AppointmentDrawer";
 import PersonalAgendaPanel from "./PersonalAgendaPanel";
 import ConnectCalendarModal from "./ConnectCalendarModal";
 
-const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 
 function isAppointment(m: FlaggedMessage): boolean {
   return APPOINTMENT_CATEGORIES.has((m.intent_category ?? "").toLowerCase().trim());
