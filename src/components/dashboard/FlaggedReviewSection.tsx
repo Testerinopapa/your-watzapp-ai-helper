@@ -111,6 +111,23 @@ export default function FlaggedReviewSection() {
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const draftsRef = useRef<Record<string, DraftState>>({});
   useEffect(() => {
+    try {
+      const hasFreshState =
+        localStorage.getItem(ASSIGNMENTS_KEY) ||
+        localStorage.getItem(DISMISSED_KEY);
+      const hasLegacyHiddenState =
+        localStorage.getItem("flagged.assignments.v2") ||
+        localStorage.getItem("flagged.dismissed.v1");
+      if (!hasFreshState && hasLegacyHiddenState) {
+        setAssignments({});
+        setDismissed(new Set());
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
 
