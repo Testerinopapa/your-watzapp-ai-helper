@@ -782,6 +782,15 @@ export default function FlaggedReviewSection() {
                         items={groupItems}
                         folders={folders}
                         onMoveTo={moveToFolder}
+                        onDelete={(it) => {
+                          void deepDeleteItem(it);
+                          toast({
+                            title: "Flagged message deleted",
+                            description: `${
+                              it.sender ?? "Thread"
+                            } removed from review.`,
+                          });
+                        }}
                         isExpanded={(it) =>
                           !!drafts[it.thread_id]?.open
                         }
