@@ -181,24 +181,37 @@ export default function MiniChat() {
             style={{ scrollbarWidth: "thin" }}
           >
             {messages.length === 0 && !loading && (
-              <div className="flex flex-col items-center justify-center h-full gap-3 text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                  <Bot size={24} className="text-primary" />
+              <div className="flex flex-col items-center gap-3 pt-2 pb-1 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10">
+                  <Bot size={22} className="text-primary" />
                 </div>
-                <p className="text-sm text-muted-foreground max-w-[260px]">
-                  I can analyze your dashboard — flagged messages, appointments,
-                  complaints, and more.
+                <p className="text-xs text-muted-foreground max-w-[260px]">
+                  Pick a report or ask anything about your dashboard.
                 </p>
-                <Button
-                  size="sm"
-                  onClick={() => handleSend("Analyze this dashboard for me.")}
-                  className="gap-1.5"
-                >
-                  <Sparkles size={13} />
-                  Analyze this dashboard
-                </Button>
+                <div className="grid grid-cols-2 gap-1.5 w-full pt-1">
+                  {QUICK_ACTIONS.map((a) => {
+                    const Icon = a.icon;
+                    return (
+                      <button
+                        key={a.label}
+                        type="button"
+                        onClick={() => handleSend(a.prompt)}
+                        disabled={loading}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full border border-border bg-muted/40 hover:bg-muted hover:border-primary/40",
+                          "px-2.5 py-1.5 text-[11px] font-medium text-foreground/90 transition-colors text-left",
+                          "disabled:opacity-50 disabled:cursor-not-allowed",
+                        )}
+                      >
+                        <Icon size={12} className="text-primary shrink-0" />
+                        <span className="truncate">{a.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
+
 
             {messages.map((m, i) => (
               <div
