@@ -301,18 +301,14 @@ export default function FlaggedReviewSection() {
     dismissItem(item);
 
     // 2. Clear folder assignment + any open draft state.
-    setAssignments((prev) => {
-      if (!(threadId in prev)) return prev;
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
+    unassignFromFolder(threadId);
     setDrafts((prev) => {
       if (!(threadId in prev)) return prev;
       const next = { ...prev };
       delete next[threadId];
       return next;
     });
+
 
     // 3. If linked to an agenda_event, delete it and push delete to Google.
     const dbEvent = agendaByThread.get(threadId);
