@@ -46,6 +46,7 @@ import {
   TRASH_DROP_ID,
   defaultDraft,
   APPOINTMENT_CATEGORIES,
+  SUPPORT_CATEGORIES,
   senderLabelForItem,
   contactKeyForItem,
   normalizeLookup,
@@ -68,6 +69,10 @@ import {
   needsCalendarContext,
   buildCalendarInstruction,
 } from "@/lib/calendar-draft";
+import {
+  needsSupportContext,
+  buildSupportInstruction,
+} from "@/lib/support-draft";
 import { handleCalendarAfterDraft } from "@/lib/calendar-response";
 import FlaggedCardInner from "./FlaggedCardInner";
 import DraftReplyFooter from "./DraftReplyFooter";
@@ -170,6 +175,16 @@ export default function FlaggedReviewSection() {
       });
       if (calendarInstruction === null) return;
       instruction = calendarInstruction;
+    } else if (needsSupportContext(item)) {
+      const supportInstruction = await buildSupportInstruction({
+        item,
+        incomingMessage,
+        userInstruction,
+        updateDraft,
+        toast,
+      });
+      if (supportInstruction === null) return;
+      instruction = supportInstruction;
     }
 
     updateDraft(id, {
@@ -749,19 +764,31 @@ export default function FlaggedReviewSection() {
                               .toLowerCase()
                               .trim(),
                           );
+                          const isSupport = SUPPORT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
                           updateDraft(it.thread_id, {
                             open: true,
                             instruction:
                               draftState.instruction ||
                               (isAppt
                                 ? "Check calendar, reply and update google calendar"
-                                : ""),
+                                : isSupport
+                                  ? "Answer using the support knowledge base. Only use documented information."
+                                  : ""),
                           });
                         }}
                         renderFooter={(it) => {
                           const draftState =
                             drafts[it.thread_id] ?? defaultDraft;
                           const isAppt = APPOINTMENT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
+                          const isSupport = SUPPORT_CATEGORIES.has(
                             (it.intent_category ?? "")
                               .toLowerCase()
                               .trim(),
@@ -783,6 +810,7 @@ export default function FlaggedReviewSection() {
                               onGenerate={() => generateDraft(it)}
                               onRetry={() => retryDraft(it)}
                               isAppointment={isAppt}
+                              isSupport={isSupport}
                             />
                           );
                         }}
