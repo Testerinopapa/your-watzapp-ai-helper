@@ -169,15 +169,29 @@ export default function MiniChat() {
               </div>
               <span className="text-sm font-medium">Dashboard Assistant</span>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => setOpen(false)}
-              aria-label="Close assistant"
-            >
-              <X size={14} />
-            </Button>
+            <div className="flex items-center gap-1">
+              {messages.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleReset}
+                  title="New chat"
+                  aria-label="New chat"
+                >
+                  <RotateCcw size={14} />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setOpen(false)}
+                aria-label="Close assistant"
+              >
+                <X size={14} />
+              </Button>
+            </div>
           </div>
 
           {/* Body */}
