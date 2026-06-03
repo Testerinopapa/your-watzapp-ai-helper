@@ -41,16 +41,10 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
-  FOLDERS_KEY,
-  ASSIGNMENTS_KEY,
-  DISMISSED_KEY,
   FOLDER_DROP_PREFIX,
   TRASH_DROP_ID,
   defaultDraft,
   APPOINTMENT_CATEGORIES,
-  loadDismissed,
-  loadFolders,
-  loadAssignments,
   senderLabelForItem,
   contactKeyForItem,
   normalizeLookup,
@@ -60,6 +54,8 @@ import {
   type FolderDef,
   type DraftState,
 } from "@/lib/flagged-utils";
+import { useFlaggedState } from "@/hooks/useFlaggedState";
+
 import {
   createEnricher,
   senderLabelForActivity,
@@ -94,16 +90,18 @@ export default function FlaggedReviewSection() {
   const { enrichedMessageFor, withActivityPreview } = enricher;
 
   // ── State ──
+  // Folders / assignments / dismissals are cloud-backed (synced across browsers).
+  const {
+    folders,
+    assignments,
+    dismissed,
+    addFolder,
+    deleteFolder: deleteFolderRemote,
+    assignToFolder,
+    unassignFromFolder,
+    dismissThreads,
+  } = useFlaggedState();
 
-  const [folders, setFolders] = useState<FolderDef[]>(() =>
-    loadFolders(),
-  );
-  const [assignments, setAssignments] = useState<
-    Record<string, string>
-  >(() => loadAssignments());
-  const [dismissed, setDismissed] = useState<Set<string>>(
-    () => new Set(loadDismissed()),
-  );
   const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(
     null,
   );
@@ -112,26 +110,11 @@ export default function FlaggedReviewSection() {
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const draftsRef = useRef<Record<string, DraftState>>({});
-  useEffect(() => {
-    try {
-      const hasFreshState =
-        localStorage.getItem(ASSIGNMENTS_KEY) ||
-        localStorage.getItem(DISMISSED_KEY);
-      const hasLegacyHiddenState =
-        localStorage.getItem("flagged.assignments.v2") ||
-        localStorage.getItem("flagged.dismissed.v1");
-      if (!hasFreshState && hasLegacyHiddenState) {
-        setAssignments({});
-        setDismissed(new Set());
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
+
 
   const updateDraft = (
     threadId: string,
@@ -287,51 +270,17 @@ export default function FlaggedReviewSection() {
     }),
   );
 
-  // ── localStorage persistence ──
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
-    } catch {
-      /* ignore */
-    }
-  }, [folders]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        ASSIGNMENTS_KEY,
-        JSON.stringify(assignments),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [assignments]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        DISMISSED_KEY,
-        JSON.stringify(Array.from(dismissed)),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [dismissed]);
-
   // ── Dismissal ──
+  // Persistence (folders / assignments / dismissals) lives in useFlaggedState,
+  // which writes to the DB + mirrors to localStorage for instant paint.
 
   const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
   const isDismissed = (m: FlaggedMessage) =>
     dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
-    const keys = dismissKeysFor(m);
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      for (const k of keys) next.add(k);
-      return next;
-    });
+    dismissThreads(dismissKeysFor(m));
   };
+
 
   // ── Deep delete ──
   // Removes the card from review AND tears down anything we own for the
@@ -352,18 +301,14 @@ export default function FlaggedReviewSection() {
     dismissItem(item);
 
     // 2. Clear folder assignment + any open draft state.
-    setAssignments((prev) => {
-      if (!(threadId in prev)) return prev;
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
+    unassignFromFolder(threadId);
     setDrafts((prev) => {
       if (!(threadId in prev)) return prev;
       const next = { ...prev };
       delete next[threadId];
       return next;
     });
+
 
     // 3. If linked to an agenda_event, delete it and push delete to Google.
     const dbEvent = agendaByThread.get(threadId);
@@ -533,17 +478,10 @@ export default function FlaggedReviewSection() {
     threadId: string,
     folderId: string,
   ) => {
-    setAssignments((prev) => ({
-      ...prev,
-      [threadId]: folderId,
-    }));
+    assignToFolder(threadId, folderId);
   };
   const removeFromFolder = (threadId: string) => {
-    setAssignments((prev) => {
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
+    unassignFromFolder(threadId);
   };
 
   const createFolder = () => {
@@ -552,24 +490,16 @@ export default function FlaggedReviewSection() {
     const id = `f-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
-    setFolders((prev) => [...prev, { id, name }]);
+    addFolder({ id, name });
     setNewFolderName("");
     setCreateOpen(false);
   };
 
   const deleteFolder = (folderId: string) => {
-    setFolders((prev) =>
-      prev.filter((f) => f.id !== folderId),
-    );
-    setAssignments((prev) => {
-      const next: Record<string, string> = {};
-      for (const [k, v] of Object.entries(prev)) {
-        if (v !== folderId) next[k] = v;
-      }
-      return next;
-    });
+    deleteFolderRemote(folderId);
     if (openFolderId === folderId) setOpenFolderId(null);
   };
+
 
   // ── Drag handlers ──
 
