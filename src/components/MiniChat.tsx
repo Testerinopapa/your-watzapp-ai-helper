@@ -121,6 +121,11 @@ export default function MiniChat() {
     }
   };
 
+  const handleReset = () => {
+    setMessages([]);
+    setInput("");
+  };
+
   return (
     <>
       {/* Floating button (collapsed) */}
