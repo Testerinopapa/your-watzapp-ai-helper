@@ -23,6 +23,7 @@ const INTERACTIVE_SELECTOR =
 const intentAccent = (category?: string | null): string => {
   const c = (category ?? "").toLowerCase();
   if (c.includes("appoint") || c.includes("booking") || c.includes("reservation")) return "#f59e0b"; // amber
+  if (c.includes("complaint") || c.includes("negative") || c.includes("refund")) return "#ef4444"; // red
   if (c.includes("support") || c.includes("help") || c.includes("faq")) return "#3b82f6"; // blue
   if (c.includes("reschedule")) return "#38bdf8"; // sky
   if (c.includes("cancel")) return "#f43f5e"; // rose

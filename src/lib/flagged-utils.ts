@@ -24,6 +24,10 @@ export type DraftState = {
 
 export const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
 export const SUPPORT_CATEGORIES = new Set(["support", "help", "faq", "question", "inquiry"]);
+export const COMPLAINT_CATEGORIES = new Set([
+  "complaint", "complaint_low_risk", "complaint_medium_risk", "complaint_high_risk",
+  "negative_feedback", "refund_request",
+]);
 
 export const toneStyles: Record<Tone, { badge: string; border: string }> = {
   fresh: {

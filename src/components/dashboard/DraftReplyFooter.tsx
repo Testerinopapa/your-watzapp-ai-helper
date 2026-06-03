@@ -17,9 +17,11 @@ import {
   CheckCircle2,
   RefreshCw,
   FileText,
+  Flag,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { DraftState } from "@/lib/flagged-utils";
 
@@ -33,6 +35,7 @@ export default function DraftReplyFooter({
   onRetry,
   isAppointment = false,
   isSupport = false,
+  isComplaint = false,
   supportDocs = [],
   supportDocId = null,
 }: {
@@ -45,6 +48,7 @@ export default function DraftReplyFooter({
   onRetry: () => void;
   isAppointment?: boolean;
   isSupport?: boolean;
+  isComplaint?: boolean;
   supportDocs?: { id: string; title: string }[];
   supportDocId?: string | null;
 }) {
@@ -92,7 +96,13 @@ export default function DraftReplyFooter({
           variant="ghost"
           size="sm"
           onClick={() => {
-            if (isSupport && !state.instruction) {
+            if (isComplaint && !state.instruction) {
+              onChange({
+                open: true,
+                instruction:
+                  "Acknowledge the customer's frustration. Apologize sincerely. Offer a clear next step. If refunds or serious issues are involved, escalate to human.",
+              });
+            } else if (isSupport && !state.instruction) {
               onChange({
                 open: true,
                 instruction:
@@ -110,21 +120,25 @@ export default function DraftReplyFooter({
           }}
           className={cn(
             "h-7 gap-1.5 text-[11px]",
-            isSupport
-              ? "text-blue-400 hover:text-blue-300 hover:bg-blue-400/8"
-              : isAppointment
-                ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
-                : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
+            isComplaint
+              ? "text-red-400 hover:text-red-300 hover:bg-red-400/8"
+              : isSupport
+                ? "text-blue-400 hover:text-blue-300 hover:bg-blue-400/8"
+                : isAppointment
+                  ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
+                  : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
           )}
         >
           <Sparkles size={12} />
-          {isSupport
-            ? supportDocId && supportDocId !== "all"
-              ? `Get reply · ${supportDocs.find((d) => d.id === supportDocId)?.title?.slice(0, 18) ?? "Doc"}`
-              : "Get support reply"
-            : isAppointment
-              ? "Manage Appointment"
-              : "Draft reply"}
+          {isComplaint
+            ? "Handle complaint"
+            : isSupport
+              ? supportDocId && supportDocId !== "all"
+                ? `Get reply · ${supportDocs.find((d) => d.id === supportDocId)?.title?.slice(0, 18) ?? "Doc"}`
+                : "Get support reply"
+              : isAppointment
+                ? "Manage Appointment"
+                : "Draft reply"}
         </Button>
       </div>
     );
@@ -179,22 +193,26 @@ export default function DraftReplyFooter({
           htmlFor={`draft-instr-${item.thread_id}`}
           className="block text-[11px] font-medium text-muted-foreground mb-1"
         >
-          {isSupport
-            ? "Support instructions"
-            : isAppointment
-              ? "Appointment instructions"
-              : "How should we reply?"}
+          {isComplaint
+            ? "Complaint response instructions"
+            : isSupport
+              ? "Support instructions"
+              : isAppointment
+                ? "Appointment instructions"
+                : "How should we reply?"}
         </label>
         <Textarea
           id={`draft-instr-${item.thread_id}`}
           value={state.instruction}
           onChange={(e) => onChange({ instruction: e.target.value })}
           placeholder={
-            isSupport
-              ? "e.g. What's the return policy for international orders?"
-              : isAppointment
-                ? "Check calendar, reply and update google calendar"
-                : "e.g. Politely confirm and propose Tuesday at 10am."
+            isComplaint
+              ? "e.g. Acknowledge the delay, apologize sincerely, and offer to make it right."
+              : isSupport
+                ? "e.g. What's the return policy for international orders?"
+                : isAppointment
+                  ? "Check calendar, reply and update google calendar"
+                  : "e.g. Politely confirm and propose Tuesday at 10am."
           }
           maxLength={2000}
           rows={3}
@@ -210,11 +228,13 @@ export default function DraftReplyFooter({
           disabled={!canGenerate}
           className={cn(
             "h-7 gap-1.5 text-[11px]",
-            isSupport
-              ? "bg-blue-500 text-white hover:bg-blue-400"
-              : isAppointment
-                ? "bg-amber-500 text-black hover:bg-amber-400"
-                : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
+            isComplaint
+              ? "bg-red-500 text-white hover:bg-red-400"
+              : isSupport
+                ? "bg-blue-500 text-white hover:bg-blue-400"
+                : isAppointment
+                  ? "bg-amber-500 text-black hover:bg-amber-400"
+                  : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
           )}
         >
           {state.loading ? (
@@ -225,17 +245,39 @@ export default function DraftReplyFooter({
           {state.loading
             ? "Generating…"
             : state.draft
-              ? isSupport
-                ? "Regenerate support reply"
-                : isAppointment
-                  ? "Regenerate & manage"
-                  : "Regenerate & send"
-              : isSupport
-                ? "Get support reply"
-                : isAppointment
-                  ? "Manage Appointment"
-                  : "Generate & send"}
+              ? isComplaint
+                ? "Regenerate careful reply"
+                : isSupport
+                  ? "Regenerate support reply"
+                  : isAppointment
+                    ? "Regenerate & manage"
+                    : "Regenerate & send"
+              : isComplaint
+                ? "Draft careful reply"
+                : isSupport
+                  ? "Get support reply"
+                  : isAppointment
+                    ? "Manage Appointment"
+                    : "Generate & send"}
         </Button>
+        {isComplaint && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              onChange({ open: false, error: null });
+              toast({
+                title: "Marked for human review",
+                description: "This complaint has been flagged for manual handling.",
+              });
+            }}
+            disabled={state.loading}
+            className="h-7 text-[11px] text-red-400/70 hover:text-red-400 hover:bg-red-400/8 gap-1"
+          >
+            <Flag size={11} />
+            Escalate
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
