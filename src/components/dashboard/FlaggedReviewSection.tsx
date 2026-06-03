@@ -252,7 +252,15 @@ export default function FlaggedReviewSection() {
         sentAt: new Date().toISOString(),
       });
 
-      if (
+      if (needsSupportContext(item)) {
+        console.log("[flagged][support] draft sent", {
+          thread_id: item.thread_id,
+          sender: item.sender,
+          intent_category: item.intent_category,
+          intent_reason: item.intent_reason,
+          draft: String(draft).slice(0, 300),
+        });
+      } else if (
         needsCalendarContext(item, incomingMessage, userInstruction)
       ) {
         await handleCalendarAfterDraft({
