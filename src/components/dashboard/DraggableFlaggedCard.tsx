@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,24 +18,47 @@ import FlaggedCardInner from "./FlaggedCardInner";
 const INTERACTIVE_SELECTOR =
   "button, a, input, textarea, select, [role='menuitem'], [role='dialog'], [data-no-drag]";
 
+// Map common intent categories to an accent color used as the
+// left-border tint on each card in the stack.
+const intentAccent = (category?: string | null): string => {
+  const c = (category ?? "").toLowerCase();
+  if (c.includes("appoint") || c.includes("booking") || c.includes("reservation")) return "#f59e0b"; // amber
+  if (c.includes("reschedule")) return "#38bdf8"; // sky
+  if (c.includes("cancel")) return "#f43f5e"; // rose
+  if (c.includes("follow")) return "#a78bfa"; // violet
+  if (c.includes("question") || c.includes("inquiry")) return "#2dd4a8"; // teal
+  if (c.includes("confirm")) return "#4ade80"; // green
+  if (c.includes("mock")) return "#c084fc"; // purple
+  return "#2dd4a8";
+};
+
 export default function DraggableFlaggedCard({
-  item,
+  items,
   folders,
   onMoveTo,
   onActivate,
-  expanded,
-  footer,
+  isExpanded,
+  renderFooter,
 }: {
-  item: FlaggedMessage;
+  items: FlaggedMessage[];
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
-  onActivate?: () => void;
-  expanded?: boolean;
-  footer?: React.ReactNode;
+  onActivate?: (item: FlaggedMessage) => void;
+  isExpanded?: (item: FlaggedMessage) => boolean;
+  renderFooter?: (item: FlaggedMessage) => React.ReactNode;
 }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  // If the stack shrinks (e.g. messages dismissed), keep index valid.
+  useEffect(() => {
+    if (activeIndex >= items.length) setActiveIndex(0);
+  }, [items.length, activeIndex]);
+
+  const current = items[activeIndex] ?? items[0];
+  const behind = items.filter((_, i) => i !== activeIndex);
+
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: item.thread_id,
-    data: { item },
+    id: current.thread_id,
+    data: { item: current },
   });
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -46,10 +69,13 @@ export default function DraggableFlaggedCard({
     setNodeRef(node);
   };
 
+  const expanded = isExpanded?.(current) ?? false;
+
   const handleFocusClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     if (target.closest(INTERACTIVE_SELECTOR)) return;
-    onActivate?.();
+    if (target.closest("[data-deck-card]")) return; // back-card click handled separately
+    onActivate?.(current);
     window.requestAnimationFrame(() => {
       wrapperRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -65,6 +91,7 @@ export default function DraggableFlaggedCard({
           (event: React.SyntheticEvent) => {
             const target = event.target as HTMLElement | null;
             if (target?.closest(INTERACTIVE_SELECTOR)) return;
+            if (target?.closest("[data-deck-card]")) return;
             (handler as (e: React.SyntheticEvent) => void)(event);
           },
         ]),
@@ -72,22 +99,6 @@ export default function DraggableFlaggedCard({
     : {};
 
   const liftActive = isHovered && !isDragging && !expanded;
-  // Intent accent palette for the decorative "deck" behind the card.
-  const INTENT_ACCENTS = [
-    "#f59e0b", // appointment - amber
-    "#38bdf8", // reschedule - sky
-    "#a78bfa", // follow-up - violet
-    "#2dd4a8", // question - teal
-    "#f43f5e", // cancel - rose
-    "#4ade80", // confirmation - green
-  ];
-  const activeAccent = (item.intent_category ?? "").toLowerCase().includes("appoint")
-    ? "#f59e0b"
-    : "#2dd4a8";
-  // Stable per-thread selection so the deck doesn't shuffle on re-render.
-  const seed = Array.from(item.thread_id).reduce((a, c) => a + c.charCodeAt(0), 0);
-  const deckColors = INTENT_ACCENTS.filter((c) => c !== activeAccent);
-  const stack = [0, 1, 2].map((i) => deckColors[(seed + i) % deckColors.length]);
 
   return (
     <div
@@ -104,77 +115,95 @@ export default function DraggableFlaggedCard({
         expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
       )}
     >
-      {/* Decorative "deck of cards" behind the main card */}
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-0">
-        {stack.map((color, i) => {
-          const depth = i + 1;
-          const tx = depth * 5; // px right
-          const ty = -depth * 4; // px up
-          const scale = 1 - depth * 0.025;
-          const opacity = 0.55 - depth * 0.13;
-          const rotate = depth * 0.6;
-          return (
-            <div
-              key={i}
-              className="absolute inset-0 rounded-lg border border-l-4 bg-[#0a0a1a]/80 shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)]"
-              style={{
-                transform: `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg)`,
-                opacity,
-                borderLeftColor: color,
-                borderColor: "hsl(var(--border))",
-                borderLeftWidth: 4,
-                zIndex: -depth,
-              }}
-            />
-          );
-        })}
-      </div>
+      {/* Real cards in the stack behind — clickable to cycle to front */}
+      {behind.length > 0 && !expanded && (
+        <div aria-hidden={false} className="absolute inset-0 -z-0">
+          {behind.slice(0, 3).map((it, i) => {
+            const depth = i + 1;
+            const tx = depth * 6; // px right
+            const ty = -depth * 5; // px up
+            const scale = 1 - depth * 0.03;
+            const opacity = 0.85 - depth * 0.18;
+            const rotate = depth * 0.8;
+            const color = intentAccent(it.intent_category);
+            const realIndex = items.indexOf(it);
+            return (
+              <button
+                key={it.thread_id}
+                type="button"
+                data-deck-card
+                data-no-drag
+                aria-label={`Bring ${it.sender ?? "card"} to front`}
+                title={it.sender ?? "Bring to front"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveIndex(realIndex);
+                }}
+                className="absolute inset-0 rounded-lg border border-l-4 bg-card shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)] hover:opacity-100 hover:translate-y-[-2px] transition-all cursor-pointer"
+                style={{
+                  transform: `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg)`,
+                  opacity,
+                  borderLeftColor: color,
+                  borderColor: "hsl(var(--border))",
+                  borderLeftWidth: 4,
+                  zIndex: -depth,
+                }}
+              />
+            );
+          })}
+        </div>
+      )}
 
       <div className="relative z-[1]">
-      <FlaggedCardInner
-        item={item}
-        footer={footer}
-        elevated={liftActive || expanded}
-        trailing={
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 text-muted-foreground hover:text-[#73ffb8]"
-                aria-label="More actions"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <MoreVertical size={12} />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuLabel className="text-[11px] text-muted-foreground">
-                Move to folder
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {folders.length === 0 ? (
-                <DropdownMenuItem disabled>
-                  No folders yet
-                </DropdownMenuItem>
-              ) : (
-                folders.map((f) => (
-                  <DropdownMenuItem
-                    key={f.id}
-                    onClick={() => onMoveTo(item.thread_id, f.id)}
-                  >
-                    <Folder
-                      size={12}
-                      className="mr-2 text-[#2dd4a8]"
-                    />
-                    {f.name}
-                  </DropdownMenuItem>
-                ))
+        <FlaggedCardInner
+          item={current}
+          footer={renderFooter?.(current)}
+          elevated={liftActive || expanded}
+          trailing={
+            <div className="flex items-center gap-1">
+              {items.length > 1 && (
+                <span
+                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground"
+                  title={`${activeIndex + 1} of ${items.length} from this sender`}
+                >
+                  {activeIndex + 1}/{items.length}
+                </span>
               )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        }
-      />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-muted-foreground hover:text-[#73ffb8]"
+                    aria-label="More actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <MoreVertical size={12} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuLabel className="text-[11px] text-muted-foreground">
+                    Move to folder
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {folders.length === 0 ? (
+                    <DropdownMenuItem disabled>No folders yet</DropdownMenuItem>
+                  ) : (
+                    folders.map((f) => (
+                      <DropdownMenuItem
+                        key={f.id}
+                        onClick={() => onMoveTo(current.thread_id, f.id)}
+                      >
+                        <Folder size={12} className="mr-2 text-[#2dd4a8]" />
+                        {f.name}
+                      </DropdownMenuItem>
+                    ))
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          }
+        />
       </div>
     </div>
   );
