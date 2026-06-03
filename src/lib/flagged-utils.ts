@@ -35,8 +35,8 @@ export const toneStyles: Record<Tone, { badge: string; border: string }> = {
 };
 
 export const FOLDERS_KEY = "flagged.folders.v2";
-export const ASSIGNMENTS_KEY = "flagged.assignments.v2";
-export const DISMISSED_KEY = "flagged.dismissed.v1";
+export const ASSIGNMENTS_KEY = "flagged.assignments.v3";
+export const DISMISSED_KEY = "flagged.dismissed.v2";
 export const FOLDER_DROP_PREFIX = "folder-drop:";
 export const TRASH_DROP_ID = "flagged-trash-drop";
 

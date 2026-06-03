@@ -261,7 +261,7 @@ function AppointmentCard({
   );
 }
 
-const DISMISSED_KEY = "lovable.appointments.dismissed";
+const DISMISSED_KEY = "lovable.appointments.dismissed.v2";
 
 function readDismissed(): Set<string> {
   if (typeof window === "undefined") return new Set();
