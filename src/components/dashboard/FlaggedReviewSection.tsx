@@ -584,12 +584,23 @@ export default function FlaggedReviewSection() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={clearAll}
+            disabled={deduped.length === 0 || isFetching}
+            className="ml-auto gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <Archive size={14} />
+            <span className="hidden sm:inline">Clear all</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               refetch();
               refetchUsage();
             }}
             disabled={isFetching}
-            className="ml-auto gap-1.5"
+            className="gap-1.5"
           >
             <RefreshCw
               size={14}
