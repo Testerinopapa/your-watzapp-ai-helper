@@ -103,12 +103,21 @@ export const senderLabelForItem = (
 
 /** Stable contact key: prefers sender name, falls back to phone
  *  number extracted from the thread_id. Mock data where sender
- *  is null still gets consistent keys across threads. */
+ *  is null still gets consistent keys across threads.
+ *  Strips phone numbers embedded in sender labels so "Emma Thompson
+ *  +447911223346" and "Emma Thompson" produce the same key. */
 export const contactKeyForItem = (
   item: Pick<FlaggedMessage, "sender" | "subject" | "thread_id">,
 ): string => {
   const label = senderLabelForItem(item);
-  if (label) return normalizeLookup(label);
+  if (label) {
+    // Strip any phone number embedded in the sender label (e.g.
+    // "Emma Thompson +447911223346" → "Emma Thompson") so the
+    // grouping isn't broken by mock/production data differences.
+    const stripped = label.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim();
+    if (stripped) return normalizeLookup(stripped);
+    return normalizeLookup(label);
+  }
   // Extract phone digits from thread_id as last-resort stable key
   const phone = (item.thread_id ?? "").replace(/\D/g, "");
   return phone || item.thread_id;
