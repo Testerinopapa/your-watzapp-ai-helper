@@ -25,6 +25,14 @@ export function extractDateTime(
 
   const now = new Date();
 
+  // ─── Day-name + day-number + month + time (e.g. "Thursday 11 June at 10am") ───
+  const dayNameDayMonthTime = extractDayNameDayMonthTime(combined, now);
+  if (dayNameDayMonthTime) return dayNameDayMonthTime;
+
+  // ─── Day + month + time (e.g. "12 June at 10am", international order) ───
+  const dayMonthTime = extractDayMonthTime(combined, now);
+  if (dayMonthTime) return dayMonthTime;
+
   // ─── Month + day + time (e.g. "June 3rd at 2pm", "Jun 3 at 14:00") ───
   const monthDayTime = extractMonthDayTime(combined, now);
   if (monthDayTime) return monthDayTime;
@@ -196,6 +204,70 @@ function findStandaloneTime(text: string): string | null {
     if (h >= 0 && h <= 23) return m[1];
   }
   return null;
+}
+
+// "Thursday 11 June at 10am", "Friday 12th June at 2pm"
+// International format: day-name day-number month [year] time.
+// Placed before extractMonthDayTime so the more specific day-name prefix
+// wins over a bare "June 12" match.
+function extractDayNameDayMonthTime(
+  text: string,
+  now: Date,
+): ExtractedDateTime | null {
+  const re =
+    /\b(?:next\s+)?(mon(?:day)?|tue(?:s(?:day)?)?|wed(?:nesday)?|thu(?:r(?:s(?:day)?)?)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|domenica|dom|luned[ìi]|lun|marted[ìi]|mercoled[ìi]|mer|gioved[ìi]|gio|venerd[ìi]|ven|sabato|sab|domingo|lunes|martes|mi[ée]rcoles|mie|jueves|jue|viernes|vie|s[áa]bado)\s+(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)[,.]?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+
+  const match = re.exec(text);
+  if (!match) return null;
+
+  const dayOfWeekKey = match[1].toLowerCase();
+  const dayOfWeek = DAYS[dayOfWeekKey];
+  if (dayOfWeek === undefined) return null;
+
+  const day = parseInt(match[2], 10);
+  if (day < 1 || day > 31) return null;
+
+  const monthKey = match[3].toLowerCase();
+  const month = MONTHS[monthKey];
+  if (month === undefined) return null;
+
+  const year = guessYear(month, now);
+  const base = startOfDay(new Date(year, month, day));
+
+  // Sanity-check: the constructed date should match the stated day-of-week.
+  if (base.getDay() !== dayOfWeek) return null;
+
+  const withTime = parseTime(match[4], base);
+  if (!withTime) return null;
+
+  return { date: withTime, source: match[0], confidence: "high" };
+}
+
+// "12 June at 10am", "12th June at 2pm", "12 June 2026 at 10am"
+// International day-month order (common outside the US).
+function extractDayMonthTime(
+  text: string,
+  now: Date,
+): ExtractedDateTime | null {
+  const re =
+    /\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|gennaio|gen|febbraio|marzo|aprile|maggio|mag|giugno|giu|luglio|lug|agosto|ago|settembre|set|ottobre|ott|novembre|dicembre|dic|enero|ene|febrero|abril|mayo|junio|julio|septiembre|octubre|noviembre|diciembre)[,.]?\s*(?:,?\s*\d{4}\s*,?)?\s*(?:at\s+|alle\s+|a\s+las\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)/i;
+
+  const match = re.exec(text);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  if (day < 1 || day > 31) return null;
+
+  const monthKey = match[2].toLowerCase();
+  const month = MONTHS[monthKey];
+  if (month === undefined) return null;
+
+  const year = guessYear(month, now);
+  const base = startOfDay(new Date(year, month, day));
+  const withTime = parseTime(match[3], base);
+  if (!withTime) return null;
+
+  return { date: withTime, source: match[0], confidence: "high" };
 }
 
 // "June 3rd at 2pm", "Jun 3 at 14:00", "June 3, 2026 at 2:30 PM"
