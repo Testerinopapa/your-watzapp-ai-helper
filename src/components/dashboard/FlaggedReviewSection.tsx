@@ -332,6 +332,68 @@ export default function FlaggedReviewSection() {
     });
   };
 
+  // ── Deep delete ──
+  // Removes the card from review AND tears down anything we own for the
+  // thread: folder assignment, any draft state, and (for appointment threads)
+  // the linked agenda_event row + Google Calendar event. The flagged_messages
+  // table lives on an external project with no delete endpoint, so client-side
+  // dismissal is the deepest action available for that layer.
+  const { entries: agendaEntries, remove: removeDbAgenda } = useAgendaEvents();
+  const agendaByThread = new Map<string, (typeof agendaEntries)[number]>();
+  for (const e of agendaEntries) {
+    if (e.thread_id) agendaByThread.set(e.thread_id, e);
+  }
+
+  const deepDeleteItem = async (item: FlaggedMessage) => {
+    const threadId = item.thread_id;
+
+    // 1. Hide locally.
+    dismissItem(item);
+
+    // 2. Clear folder assignment + any open draft state.
+    setAssignments((prev) => {
+      if (!(threadId in prev)) return prev;
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+    setDrafts((prev) => {
+      if (!(threadId in prev)) return prev;
+      const next = { ...prev };
+      delete next[threadId];
+      return next;
+    });
+
+    // 3. If linked to an agenda_event, delete it and push delete to Google.
+    const dbEvent = agendaByThread.get(threadId);
+    if (dbEvent) {
+      const sourceEventId = dbEvent.source_event_id;
+      const sourceType = dbEvent.source_type;
+      try {
+        await removeDbAgenda(dbEvent.id);
+      } catch (e) {
+        console.warn("agenda_events delete failed (continuing)", e);
+      }
+      if (sourceType === "google_calendar" && sourceEventId) {
+        supabase.functions
+          .invoke("google-calendar-push", {
+            body: {
+              agenda_event_id: dbEvent.id,
+              action: "delete",
+              source_event_id: sourceEventId,
+            },
+          })
+          .catch((e) => {
+            console.warn(
+              "google-calendar-push delete failed (continuing)",
+              e,
+            );
+          });
+      }
+    }
+  };
+
+
   // ── Dedup / sort / group pipeline ──
 
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
