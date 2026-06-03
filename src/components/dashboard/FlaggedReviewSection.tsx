@@ -163,7 +163,20 @@ export default function FlaggedReviewSection() {
     if (!incomingMessage || !userInstruction) return;
 
     let instruction = userInstruction;
-    if (
+    // intent_category is the authoritative signal — check it first so a
+    // "support" message that happens to mention scheduling words ("booking
+    // page isn't working") doesn't get pulled into the calendar pipeline.
+    if (needsSupportContext(item)) {
+      const supportInstruction = await buildSupportInstruction({
+        item,
+        incomingMessage,
+        userInstruction,
+        updateDraft,
+        toast,
+      });
+      if (supportInstruction === null) return;
+      instruction = supportInstruction;
+    } else if (
       needsCalendarContext(item, incomingMessage, userInstruction)
     ) {
       const calendarInstruction = await buildCalendarInstruction({
@@ -175,16 +188,6 @@ export default function FlaggedReviewSection() {
       });
       if (calendarInstruction === null) return;
       instruction = calendarInstruction;
-    } else if (needsSupportContext(item)) {
-      const supportInstruction = await buildSupportInstruction({
-        item,
-        incomingMessage,
-        userInstruction,
-        updateDraft,
-        toast,
-      });
-      if (supportInstruction === null) return;
-      instruction = supportInstruction;
     }
 
     updateDraft(id, {
