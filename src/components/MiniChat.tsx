@@ -1,8 +1,39 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bot, X, Loader2, Send, Sparkles } from "lucide-react";
+import {
+  Bot,
+  X,
+  Loader2,
+  Send,
+  Sparkles,
+  AlertTriangle,
+  MessageSquareWarning,
+  CalendarClock,
+  LifeBuoy,
+  ListChecks,
+  FileText,
+  Activity,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+
+type QuickAction = {
+  label: string;
+  prompt: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+};
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: "Analyze dashboard", icon: Sparkles, prompt: "Analyze this dashboard and give me a clear summary." },
+  { label: "Urgent items", icon: AlertTriangle, prompt: "Review this dashboard and tell me what needs urgent attention." },
+  { label: "Complaints", icon: MessageSquareWarning, prompt: "Review the complaint cards and tell me which ones need careful handling or escalation." },
+  { label: "Appointments", icon: CalendarClock, prompt: "Review the appointment cards and summarize what needs to be scheduled, rescheduled, or reviewed." },
+  { label: "Support issues", icon: LifeBuoy, prompt: "Review the support cards and tell me which ones need a selected reference document or human review." },
+  { label: "What to handle first?", icon: ListChecks, prompt: "Prioritize the visible dashboard items and tell me what I should handle first." },
+  { label: "Today's report", icon: FileText, prompt: "Create a short daily report based on the visible dashboard." },
+  { label: "Usage summary", icon: Activity, prompt: "Summarize the visible usage, replies, tokens, and activity information." },
+];
+
 
 const ENDPOINT =
   "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/dashboard-chat";
