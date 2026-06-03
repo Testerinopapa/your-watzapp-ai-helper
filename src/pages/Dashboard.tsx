@@ -8,6 +8,7 @@ import DownloadInstallSection from "@/components/dashboard/DownloadInstallSectio
 import HelpSection from "@/components/dashboard/HelpSection";
 import ConnectExtension from "@/components/ConnectExtension";
 import FlaggedReviewSection from "@/components/dashboard/FlaggedReviewSection";
+import SupportKnowledgeSection from "@/components/dashboard/SupportKnowledgeSection";
 import AppointmentsSection from "@/components/dashboard/AppointmentsSection";
 import doodleBg from "@/assets/dashboard-doodles.jpg";
 import doodleBgDark from "@/assets/dashboard-doodles-dark.jpg";
@@ -76,6 +77,10 @@ const Dashboard = () => {
 
             <div id="review">
               <FlaggedReviewSection />
+            </div>
+
+            <div id="support-knowledge">
+              <SupportKnowledgeSection />
             </div>
 
             <div id="appointments">

@@ -11,6 +11,7 @@ import {
   CalendarCheck,
   MessageCircle,
   Clock,
+  LifeBuoy,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ import {
   toneStyles,
   senderLabelForItem,
   APPOINTMENT_CATEGORIES,
+  SUPPORT_CATEGORIES,
 } from "@/lib/flagged-utils";
 
 export type FlaggedCardInnerProps = {
@@ -38,6 +40,9 @@ export default function FlaggedCardInner({
   elevated,
 }: FlaggedCardInnerProps) {
   const isAppt = APPOINTMENT_CATEGORIES.has(
+    (item.intent_category ?? "").toLowerCase().trim(),
+  );
+  const isSupport = SUPPORT_CATEGORIES.has(
     (item.intent_category ?? "").toLowerCase().trim(),
   );
   const tone = toneFor(item.updated_at);
@@ -59,12 +64,18 @@ export default function FlaggedCardInner({
     <Card
       className={cn(
         "border-l-4 transition-colors",
-        isAppt
-          ? "border-l-[#f59e0b] bg-[#0a0a1a]/95 ring-1 ring-amber-500/20 shadow-[0_8px_30px_-12px_rgba(245,158,11,0.25)]"
-          : styles.border,
+        isSupport
+          ? "border-l-[#3b82f6] bg-[#0a0a1a]/95 ring-1 ring-blue-500/20 shadow-[0_8px_30px_-12px_rgba(59,130,246,0.25)]"
+          : isAppt
+            ? "border-l-[#f59e0b] bg-[#0a0a1a]/95 ring-1 ring-amber-500/20 shadow-[0_8px_30px_-12px_rgba(245,158,11,0.25)]"
+            : styles.border,
         elevated &&
           !isAppt &&
+          !isSupport &&
           "border-l-[#2dd4a8] bg-[#0a0a1a]/95 ring-1 ring-[rgba(115,255,184,0.55)] shadow-[0_20px_50px_-15px_rgba(45,212,168,0.55)]",
+        elevated &&
+          isSupport &&
+          "border-l-[#3b82f6] ring-1 ring-blue-500/40 shadow-[0_20px_50px_-15px_rgba(59,130,246,0.55)]",
         elevated &&
           isAppt &&
           "border-l-[#f59e0b] ring-1 ring-amber-500/40 shadow-[0_20px_50px_-15px_rgba(245,158,11,0.55)]",
@@ -76,7 +87,12 @@ export default function FlaggedCardInner({
             {leading}
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-                {isAppt ? (
+                {isSupport ? (
+                  <LifeBuoy
+                    size={14}
+                    className="text-blue-400 shrink-0"
+                  />
+                ) : isAppt ? (
                   <CalendarCheck
                     size={14}
                     className="text-amber-400 shrink-0"
@@ -114,9 +130,11 @@ export default function FlaggedCardInner({
             <span
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                isAppt
-                  ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-                  : styles.badge,
+                isSupport
+                  ? "bg-blue-400/10 text-blue-400 border-blue-400/20"
+                  : isAppt
+                    ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
+                    : styles.badge,
               )}
             >
               <Clock size={11} />
@@ -132,6 +150,8 @@ export default function FlaggedCardInner({
               variant="outline"
               className={cn(
                 "text-[10px] uppercase tracking-wide",
+                isSupport &&
+                  "border-blue-400/30 text-blue-400 bg-blue-400/5",
                 isAppt &&
                   "border-amber-400/30 text-amber-400 bg-amber-400/5",
               )}

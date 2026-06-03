@@ -22,6 +22,7 @@ export type DraftState = {
 // ── Constants ──
 
 export const APPOINTMENT_CATEGORIES = new Set(["appointment", "booking", "reservation"]);
+export const SUPPORT_CATEGORIES = new Set(["support", "help", "faq", "question", "inquiry"]);
 
 export const toneStyles: Record<Tone, { badge: string; border: string }> = {
   fresh: {
@@ -37,6 +38,7 @@ export const toneStyles: Record<Tone, { badge: string; border: string }> = {
 export const FOLDERS_KEY = "flagged.folders.v2";
 export const ASSIGNMENTS_KEY = "flagged.assignments.v3";
 export const DISMISSED_KEY = "flagged.dismissed.v2";
+export const SUPPORT_DOCS_CACHE_KEY = "support.docs.v1";
 export const FOLDER_DROP_PREFIX = "folder-drop:";
 export const TRASH_DROP_ID = "flagged-trash-drop";
 

@@ -440,6 +440,67 @@ export type Database = {
         }
         Relationships: []
       }
+      support_docs: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          filename: string | null
+          content: string
+          chunk_count: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          filename?: string | null
+          content: string
+          chunk_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          filename?: string | null
+          content?: string
+          chunk_count?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      support_doc_chunks: {
+        Row: {
+          id: string
+          doc_id: string
+          user_id: string
+          chunk_index: number
+          content: string
+          search_vector: unknown
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          doc_id: string
+          user_id: string
+          chunk_index: number
+          content: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          doc_id?: string
+          user_id?: string
+          chunk_index?: number
+          content?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

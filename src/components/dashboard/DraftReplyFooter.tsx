@@ -24,6 +24,7 @@ export default function DraftReplyFooter({
   onGenerate,
   onRetry,
   isAppointment = false,
+  isSupport = false,
 }: {
   item: FlaggedMessage;
   enrichedMessage?: string | null;
@@ -33,6 +34,7 @@ export default function DraftReplyFooter({
   onGenerate: () => void;
   onRetry: () => void;
   isAppointment?: boolean;
+  isSupport?: boolean;
 }) {
   const incoming = (
     enrichedMessage ??
@@ -78,7 +80,13 @@ export default function DraftReplyFooter({
           variant="ghost"
           size="sm"
           onClick={() => {
-            if (isAppointment && !state.instruction) {
+            if (isSupport && !state.instruction) {
+              onChange({
+                open: true,
+                instruction:
+                  "Answer using the support knowledge base. Only use documented information.",
+              });
+            } else if (isAppointment && !state.instruction) {
               onChange({
                 open: true,
                 instruction:
@@ -90,13 +98,19 @@ export default function DraftReplyFooter({
           }}
           className={cn(
             "h-7 gap-1.5 text-[11px]",
-            isAppointment
-              ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
-              : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
+            isSupport
+              ? "text-blue-400 hover:text-blue-300 hover:bg-blue-400/8"
+              : isAppointment
+                ? "text-amber-400 hover:text-amber-300 hover:bg-amber-400/8"
+                : "text-[#2dd4a8] hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)]",
           )}
         >
           <Sparkles size={12} />
-          {isAppointment ? "Manage Appointment" : "Draft reply"}
+          {isSupport
+            ? "Get support reply"
+            : isAppointment
+              ? "Manage Appointment"
+              : "Draft reply"}
         </Button>
       </div>
     );
@@ -124,18 +138,22 @@ export default function DraftReplyFooter({
           htmlFor={`draft-instr-${item.thread_id}`}
           className="block text-[11px] font-medium text-muted-foreground mb-1"
         >
-          {isAppointment
-            ? "Appointment instructions"
-            : "How should we reply?"}
+          {isSupport
+            ? "Support instructions"
+            : isAppointment
+              ? "Appointment instructions"
+              : "How should we reply?"}
         </label>
         <Textarea
           id={`draft-instr-${item.thread_id}`}
           value={state.instruction}
           onChange={(e) => onChange({ instruction: e.target.value })}
           placeholder={
-            isAppointment
-              ? "Check calendar, reply and update google calendar"
-              : "e.g. Politely confirm and propose Tuesday at 10am."
+            isSupport
+              ? "e.g. What's the return policy for international orders?"
+              : isAppointment
+                ? "Check calendar, reply and update google calendar"
+                : "e.g. Politely confirm and propose Tuesday at 10am."
           }
           maxLength={2000}
           rows={3}
@@ -151,9 +169,11 @@ export default function DraftReplyFooter({
           disabled={!canGenerate}
           className={cn(
             "h-7 gap-1.5 text-[11px]",
-            isAppointment
-              ? "bg-amber-500 text-black hover:bg-amber-400"
-              : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
+            isSupport
+              ? "bg-blue-500 text-white hover:bg-blue-400"
+              : isAppointment
+                ? "bg-amber-500 text-black hover:bg-amber-400"
+                : "bg-[#2dd4a8] text-[#0a0a1a] hover:bg-[#73ffb8]",
           )}
         >
           {state.loading ? (
@@ -164,12 +184,16 @@ export default function DraftReplyFooter({
           {state.loading
             ? "Generating…"
             : state.draft
-              ? isAppointment
-                ? "Regenerate & manage"
-                : "Regenerate & send"
-              : isAppointment
-                ? "Manage Appointment"
-                : "Generate & send"}
+              ? isSupport
+                ? "Regenerate support reply"
+                : isAppointment
+                  ? "Regenerate & manage"
+                  : "Regenerate & send"
+              : isSupport
+                ? "Get support reply"
+                : isAppointment
+                  ? "Manage Appointment"
+                  : "Generate & send"}
         </Button>
         <Button
           variant="ghost"
