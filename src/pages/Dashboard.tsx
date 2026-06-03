@@ -10,6 +10,7 @@ import ConnectExtension from "@/components/ConnectExtension";
 import FlaggedReviewSection from "@/components/dashboard/FlaggedReviewSection";
 import SupportKnowledgeSection from "@/components/dashboard/SupportKnowledgeSection";
 import AppointmentsSection from "@/components/dashboard/AppointmentsSection";
+import MiniChat from "@/components/MiniChat";
 import doodleBg from "@/assets/dashboard-doodles.jpg";
 import doodleBgDark from "@/assets/dashboard-doodles-dark.jpg";
 import { useTheme } from "@/components/ThemeProvider";
@@ -71,7 +72,7 @@ const Dashboard = () => {
         <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-8">
           <SidebarRail />
 
-          <main className="space-y-10 min-w-0">
+          <main data-dashboard-root className="space-y-10 min-w-0">
             <OverviewHeader />
             <StatTiles />
 
@@ -99,6 +100,8 @@ const Dashboard = () => {
           </main>
         </div>
       </div>
+
+      <MiniChat />
     </div>
   );
 };
