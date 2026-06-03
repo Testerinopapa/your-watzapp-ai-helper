@@ -98,7 +98,7 @@ export default function DraggableFlaggedCard({
       {...attributes}
       {...dragListeners}
       className={cn(
-        "group/card relative cursor-grab active:cursor-grabbing touch-none transition-all duration-300 ease-out will-change-transform outline-none",
+        "group/card relative cursor-grab active:cursor-grabbing touch-pan-y transition-all duration-300 ease-out will-change-transform outline-none",
         isDragging && "opacity-40",
         liftActive && "-rotate-[1.5deg] scale-[1.02] z-10",
         expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
