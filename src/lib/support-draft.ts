@@ -57,12 +57,14 @@ export async function buildSupportInstruction({
   let instruction = userInstruction;
 
   try {
-    // 0. Check how many docs exist so we can log whether the KB is empty.
-    const { count: totalDocs, error: countErr } = await (supabase
+    // 0. Fetch all doc titles so every log line can show what's in the KB.
+    const { data: allDocs, error: docsLoadErr } = await (supabase
       .from("support_docs") as any)
-      .select("*", { count: "exact", head: true });
+      .select("id,title")
+      .order("created_at", { ascending: false });
 
-    const docCount = countErr ? 0 : (totalDocs ?? 0);
+    const docCount = docsLoadErr ? 0 : (allDocs?.length ?? 0);
+    const docTitles: string[] = (allDocs ?? []).map((d: any) => d.title ?? "Untitled");
 
     // 1. Build a search query from the incoming message and user instruction.
     const rawQuery =
@@ -83,6 +85,7 @@ export async function buildSupportInstruction({
       sender: item.sender,
       intent_category: item.intent_category,
       total_docs: docCount,
+      kb_documents: docTitles,
       query: query.slice(0, 200),
     });
 
@@ -112,20 +115,13 @@ export async function buildSupportInstruction({
     });
 
     if (matchedChunks.length > 0) {
-      // 3a. Fetch document titles for grouping.
+      // 3a. Build title map from the upfront fetch (no extra DB round-trip).
       const docIds = [...new Set(matchedChunks.map((c) => c.doc_id))];
-      const { data: matchedDocs, error: docsErr } = await supabase
-        .from("support_docs")
-        .select("id,title")
-        .in("id", docIds);
-
-      if (docsErr) {
-        console.error("[flagged][support] doc title fetch failed", docsErr);
-      }
-
       const titleMap = new Map<string, string>();
-      for (const d of matchedDocs ?? []) {
-        titleMap.set(d.id, (d as { title: string }).title);
+      for (const d of allDocs ?? []) {
+        if (docIds.includes(d.id)) {
+          titleMap.set(d.id, (d as { title: string }).title);
+        }
       }
 
       // Group chunks by document, preserving rank order.
@@ -169,6 +165,8 @@ export async function buildSupportInstruction({
       console.log("[flagged][support] no matching chunks", {
         thread_id: item.thread_id,
         total_docs: docCount,
+        kb_documents: docTitles,
+        query: query.slice(0, 200),
       });
 
       const noContextBlock = [
