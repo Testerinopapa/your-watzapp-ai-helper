@@ -407,6 +407,77 @@ export type Database = {
         }
         Relationships: []
       }
+      support_doc_chunks: {
+        Row: {
+          chunk_index: number
+          content: string
+          created_at: string
+          doc_id: string
+          id: string
+          search_vector: unknown
+          user_id: string
+        }
+        Insert: {
+          chunk_index: number
+          content: string
+          created_at?: string
+          doc_id: string
+          id?: string
+          search_vector?: unknown
+          user_id: string
+        }
+        Update: {
+          chunk_index?: number
+          content?: string
+          created_at?: string
+          doc_id?: string
+          id?: string
+          search_vector?: unknown
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "support_doc_chunks_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "support_docs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      support_docs: {
+        Row: {
+          chunk_count: number
+          content: string
+          created_at: string
+          filename: string | null
+          id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          chunk_count?: number
+          content: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          chunk_count?: number
+          content?: string
+          created_at?: string
+          filename?: string | null
+          id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       usage_counters: {
         Row: {
           created_at: string
@@ -437,67 +508,6 @@ export type Database = {
           period?: string
           updated_at?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      support_docs: {
-        Row: {
-          id: string
-          user_id: string
-          title: string
-          filename: string | null
-          content: string
-          chunk_count: number
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          title: string
-          filename?: string | null
-          content: string
-          chunk_count?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          title?: string
-          filename?: string | null
-          content?: string
-          chunk_count?: number
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      support_doc_chunks: {
-        Row: {
-          id: string
-          doc_id: string
-          user_id: string
-          chunk_index: number
-          content: string
-          search_vector: unknown
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          doc_id: string
-          user_id: string
-          chunk_index: number
-          content: string
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          doc_id?: string
-          user_id?: string
-          chunk_index?: number
-          content?: string
-          created_at?: string
         }
         Relationships: []
       }
