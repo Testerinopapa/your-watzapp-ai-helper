@@ -12,7 +12,9 @@ import {
   CheckCircle2,
   Plug,
   Trash2,
+  Archive,
 } from "lucide-react";
+import { toast } from "@/hooks/use-toast";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
@@ -383,6 +385,39 @@ export default function AppointmentsSection() {
     }
   };
 
+  const clearAll = async () => {
+    if (fresh.length === 0) return;
+    const ids = fresh.map((m) => m.thread_id);
+    setDismissed((prev) => new Set([...prev, ...ids]));
+
+    for (const threadId of ids) {
+      const dbEvent = agendaByThread.get(threadId);
+      const localEvent = localByThread.get(threadId);
+      if (dbEvent) {
+        const sourceEventId = dbEvent.source_event_id;
+        const sourceType = dbEvent.source_type;
+        await removeDbAgenda(dbEvent.id);
+        if (sourceType === "google_calendar" && sourceEventId) {
+          supabase.functions
+            .invoke("google-calendar-push", {
+              body: {
+                agenda_event_id: dbEvent.id,
+                action: "delete",
+                source_event_id: sourceEventId,
+              },
+            })
+            .catch((e) => console.warn("google-calendar-push delete failed (continuing)", e));
+        }
+      }
+      if (localEvent) removeLocalAgenda(localEvent.id);
+    }
+
+    toast({
+      title: "Cleared",
+      description: `Removed ${ids.length} appointment${ids.length === 1 ? "" : "s"} across connected apps.`,
+    });
+  };
+
   return (
     <section
       className="relative overflow-hidden rounded-3xl border border-[#2dd4a8]/20 p-6 md:p-8"
@@ -439,6 +474,18 @@ export default function AppointmentsSection() {
               />
               {fresh.length} booked
             </span>
+          )}
+          {tab === "booked" && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clearAll}
+              disabled={fresh.length === 0 || isFetching}
+              className="gap-1.5 text-white/70 hover:bg-white/5 hover:text-white"
+            >
+              <Archive size={14} />
+              <span className="hidden sm:inline">Clear all</span>
+            </Button>
           )}
           <Button
             variant="ghost"
