@@ -9,21 +9,14 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
-  GripVertical,
-  MoreVertical,
-  Folder,
-} from "lucide-react";
+import { MoreVertical, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { FolderDef } from "@/lib/flagged-utils";
 import FlaggedCardInner from "./FlaggedCardInner";
+
+const INTERACTIVE_SELECTOR =
+  "button, a, input, textarea, select, [role='menuitem'], [role='dialog'], [data-no-drag]";
 
 export default function DraggableFlaggedCard({
   item,
@@ -40,8 +33,10 @@ export default function DraggableFlaggedCard({
   expanded?: boolean;
   footer?: React.ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, isDragging, setActivatorNodeRef } =
-    useDraggable({ id: item.thread_id, data: { item } });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: item.thread_id,
+    data: { item },
+  });
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const [isHovered, setIsHovered] = useState(false);
@@ -53,8 +48,7 @@ export default function DraggableFlaggedCard({
 
   const handleFocusClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
-    if (target.closest("button, a, input, textarea, [role='menuitem']"))
-      return;
+    if (target.closest(INTERACTIVE_SELECTOR)) return;
     onActivate?.();
     window.requestAnimationFrame(() => {
       wrapperRef.current?.scrollIntoView({
@@ -64,6 +58,19 @@ export default function DraggableFlaggedCard({
     });
   };
 
+  const dragListeners = listeners
+    ? Object.fromEntries(
+        Object.entries(listeners).map(([key, handler]) => [
+          key,
+          (event: React.SyntheticEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target?.closest(INTERACTIVE_SELECTOR)) return;
+            (handler as (e: React.SyntheticEvent) => void)(event);
+          },
+        ]),
+      )
+    : {};
+
   const liftActive = isHovered && !isDragging && !expanded;
 
   return (
@@ -72,44 +79,19 @@ export default function DraggableFlaggedCard({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onClick={handleFocusClick}
+      {...attributes}
+      {...dragListeners}
       className={cn(
-        "group/card relative cursor-pointer transition-all duration-300 ease-out will-change-transform",
+        "group/card relative cursor-grab active:cursor-grabbing touch-none transition-all duration-300 ease-out will-change-transform outline-none",
         isDragging && "opacity-40",
         liftActive && "-rotate-[1.5deg] scale-[1.02] z-10",
-        expanded &&
-          "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
+        expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
       )}
     >
       <FlaggedCardInner
         item={item}
         footer={footer}
         elevated={liftActive || expanded}
-        leading={
-          <TooltipProvider delayDuration={250}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  ref={setActivatorNodeRef}
-                  type="button"
-                  aria-label="Drag to folder"
-                  onClick={(e) => e.stopPropagation()}
-                  className={cn(
-                    "touch-none mt-0.5 -ml-1 rounded p-0.5 text-muted-foreground/60",
-                    "cursor-grab active:cursor-grabbing",
-                    "hover:text-[#73ffb8] hover:bg-[rgba(45,212,168,0.08)] transition-colors",
-                  )}
-                  {...listeners}
-                  {...attributes}
-                >
-                  <GripVertical size={14} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-[11px]">
-                Drag to folder
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        }
         trailing={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
