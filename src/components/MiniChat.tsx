@@ -243,6 +243,34 @@ export default function MiniChat() {
             )}
           </div>
 
+          {/* Compact quick-action row (visible once chat starts) */}
+          {messages.length > 0 && (
+            <div className="border-t border-border shrink-0 px-2 py-1.5 overflow-x-auto">
+              <div className="flex items-center gap-1.5 w-max">
+                {QUICK_ACTIONS.map((a) => {
+                  const Icon = a.icon;
+                  return (
+                    <button
+                      key={a.label}
+                      type="button"
+                      onClick={() => handleSend(a.prompt)}
+                      disabled={loading}
+                      title={a.prompt}
+                      className={cn(
+                        "flex items-center gap-1 rounded-full border border-border bg-muted/40 hover:bg-muted hover:border-primary/40",
+                        "px-2 py-1 text-[10.5px] font-medium text-foreground/90 transition-colors whitespace-nowrap",
+                        "disabled:opacity-50 disabled:cursor-not-allowed",
+                      )}
+                    >
+                      <Icon size={11} className="text-primary shrink-0" />
+                      {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Input */}
           <div className="flex items-center gap-2 px-3 py-2.5 border-t border-border shrink-0">
             <Input
@@ -263,6 +291,7 @@ export default function MiniChat() {
               <Send size={14} />
             </Button>
           </div>
+
         </div>
       )}
     </>
