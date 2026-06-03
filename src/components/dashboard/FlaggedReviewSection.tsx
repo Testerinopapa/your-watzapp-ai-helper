@@ -585,28 +585,12 @@ export default function FlaggedReviewSection() {
     if (typeof overId === "string" && activeItem) {
       if (overId === TRASH_DROP_ID) {
         const item = activeItem;
-        dismissItem(item);
+        void deepDeleteItem(item);
         toast({
           title: "Flagged message deleted",
           description: `${
             item.sender ?? "Thread"
           } removed from review.`,
-          action: (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() =>
-                setDismissed((prev) => {
-                  const next = new Set(prev);
-                  for (const k of dismissKeysFor(item))
-                    next.delete(k);
-                  return next;
-                })
-              }
-            >
-              Undo
-            </Button>
-          ),
         });
       } else if (overId.startsWith(FOLDER_DROP_PREFIX)) {
         const folderId = overId.slice(
