@@ -9,7 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Folder } from "lucide-react";
+import { MoreVertical, Folder, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { FolderDef } from "@/lib/flagged-utils";
@@ -36,6 +36,7 @@ export default function DraggableFlaggedCard({
   items,
   folders,
   onMoveTo,
+  onDelete,
   onActivate,
   isExpanded,
   renderFooter,
@@ -43,6 +44,7 @@ export default function DraggableFlaggedCard({
   items: FlaggedMessage[];
   folders: FolderDef[];
   onMoveTo: (threadId: string, folderId: string) => void;
+  onDelete?: (item: FlaggedMessage) => void;
   onActivate?: (item: FlaggedMessage) => void;
   isExpanded?: (item: FlaggedMessage) => boolean;
   renderFooter?: (item: FlaggedMessage) => React.ReactNode;
@@ -201,6 +203,23 @@ export default function DraggableFlaggedCard({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
+              {onDelete && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  data-no-drag
+                  aria-label="Delete flagged message"
+                  title="Delete (removes linked calendar event too)"
+                  className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(current);
+                  }}
+                >
+                  <Trash2 size={12} />
+                </Button>
+              )}
             </div>
           }
         />
