@@ -2,6 +2,13 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ExternalLink,
   Sparkles,
   Loader2,
@@ -9,6 +16,7 @@ import {
   Check,
   CheckCircle2,
   RefreshCw,
+  FileText,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -25,6 +33,8 @@ export default function DraftReplyFooter({
   onRetry,
   isAppointment = false,
   isSupport = false,
+  supportDocs = [],
+  supportDocId = null,
 }: {
   item: FlaggedMessage;
   enrichedMessage?: string | null;
@@ -35,6 +45,8 @@ export default function DraftReplyFooter({
   onRetry: () => void;
   isAppointment?: boolean;
   isSupport?: boolean;
+  supportDocs?: { id: string; title: string }[];
+  supportDocId?: string | null;
 }) {
   const incoming = (
     enrichedMessage ??
@@ -107,7 +119,9 @@ export default function DraftReplyFooter({
         >
           <Sparkles size={12} />
           {isSupport
-            ? "Get support reply"
+            ? supportDocId && supportDocId !== "all"
+              ? `Get reply · ${supportDocs.find((d) => d.id === supportDocId)?.title?.slice(0, 18) ?? "Doc"}`
+              : "Get support reply"
             : isAppointment
               ? "Manage Appointment"
               : "Draft reply"}
@@ -132,6 +146,33 @@ export default function DraftReplyFooter({
           </div>
         )}
       </div>
+
+      {isSupport && supportDocs.length > 0 && (
+        <div className="space-y-1">
+          <label className="block text-[11px] font-medium text-muted-foreground">
+            Reference document
+          </label>
+          <Select
+            value={supportDocId ?? ""}
+            onValueChange={(v) =>
+              onChange({ supportDocId: v || null })
+            }
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <FileText size={12} className="text-blue-400 mr-1" />
+              <SelectValue placeholder="All documents" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All documents</SelectItem>
+              {supportDocs.map((d) => (
+                <SelectItem key={d.id} value={d.id}>
+                  {d.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       <div>
         <label

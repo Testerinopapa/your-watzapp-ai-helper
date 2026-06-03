@@ -28,12 +28,12 @@ const SUPPORT_HEADER = [
  * Builds a draft instruction enriched with relevant support knowledge.
  *
  * 1. Derives a search query from the incoming message + user instruction.
- * 2. Queries `support_doc_chunks` via full-text search for the most
- *    relevant chunks across all uploaded support documents.
- * 3. Formats them as a "RELEVANT SUPPORT KNOWLEDGE" block prepended
+ * 2. Queries `support_doc_chunks` via full-text search — scoped to a single
+ *    document when `supportDocId` is provided, or across all documents when
+ *    `supportDocId === "all"` or `null`.
+ * 3. Formats matched chunks as a "RELEVANT SUPPORT KNOWLEDGE" block prepended
  *    to the user's instruction.
- * 4. Includes an anti-hallucination guard telling the AI to only use
- *    the provided information and to never reference the calendar.
+ * 4. Includes an anti-hallucination guard.
  *
  * Returns null when a DB error occurs (caller should abort the draft).
  */
@@ -41,12 +41,14 @@ export async function buildSupportInstruction({
   item,
   incomingMessage,
   userInstruction,
+  supportDocId,
   updateDraft,
   toast,
 }: {
   item: FlaggedMessage;
   incomingMessage: string;
   userInstruction: string;
+  supportDocId: string | null;
   updateDraft: (id: string, patch: Partial<DraftState>) => void;
   toast: (opts: {
     title: string;
@@ -57,12 +59,18 @@ export async function buildSupportInstruction({
   let instruction = userInstruction;
 
   try {
-    // 0. Check how many docs exist so we can log whether the KB is empty.
-    const { count: totalDocs, error: countErr } = await (supabase
+    // 0. Fetch all doc titles so every log line can show what's in the KB.
+    const { data: allDocs, error: docsLoadErr } = await (supabase
       .from("support_docs") as any)
-      .select("*", { count: "exact", head: true });
+      .select("id,title")
+      .order("created_at", { ascending: false });
 
-    const docCount = countErr ? 0 : (totalDocs ?? 0);
+    const docCount = docsLoadErr ? 0 : (allDocs?.length ?? 0);
+    const docTitles: string[] = (allDocs ?? []).map((d: any) => d.title ?? "Untitled");
+    const selectedTitle =
+      supportDocId && supportDocId !== "all"
+        ? ((allDocs ?? []) as any[]).find((d: any) => d.id === supportDocId)?.title ?? null
+        : null;
 
     // 1. Build a search query from the incoming message and user instruction.
     const rawQuery =
@@ -78,20 +86,36 @@ export async function buildSupportInstruction({
 
     const query = rawQuery || incomingMessage.trim().slice(0, 200);
 
+    const scopeLabel =
+      !supportDocId || supportDocId === "all"
+        ? "all documents"
+        : `"${selectedTitle ?? supportDocId}"`;
+
     console.log("[flagged][support] searching knowledge base", {
       thread_id: item.thread_id,
       sender: item.sender,
       intent_category: item.intent_category,
       total_docs: docCount,
+      kb_documents: docTitles,
+      selected_doc_id: supportDocId,
+      selected_doc_title: selectedTitle,
+      scope: scopeLabel,
       query: query.slice(0, 200),
     });
 
-    // 2. Search chunks via full-text search.
-    const { data: chunks, error: searchErr } = await (supabase
+    // 2. Search chunks via full-text search — filter by doc when a specific
+    //    document is selected (not "all" and not null).
+    let chunkQuery = (supabase
       .from("support_doc_chunks") as any)
       .select("id,doc_id,chunk_index,content")
       .textSearch("search_vector", query, { type: "websearch" })
       .limit(8);
+
+    if (supportDocId && supportDocId !== "all") {
+      chunkQuery = chunkQuery.eq("doc_id", supportDocId);
+    }
+
+    const { data: chunks, error: searchErr } = await chunkQuery;
 
     if (searchErr) {
       console.error("[flagged][support] search failed", searchErr);
@@ -109,23 +133,17 @@ export async function buildSupportInstruction({
       thread_id: item.thread_id,
       chunk_count: matchedChunks.length,
       doc_ids: [...new Set(matchedChunks.map((c) => c.doc_id))],
+      scope: scopeLabel,
     });
 
     if (matchedChunks.length > 0) {
-      // 3a. Fetch document titles for grouping.
+      // 3a. Build title map from the upfront fetch (no extra DB round-trip).
       const docIds = [...new Set(matchedChunks.map((c) => c.doc_id))];
-      const { data: matchedDocs, error: docsErr } = await supabase
-        .from("support_docs")
-        .select("id,title")
-        .in("id", docIds);
-
-      if (docsErr) {
-        console.error("[flagged][support] doc title fetch failed", docsErr);
-      }
-
       const titleMap = new Map<string, string>();
-      for (const d of matchedDocs ?? []) {
-        titleMap.set(d.id, (d as { title: string }).title);
+      for (const d of allDocs ?? []) {
+        if (docIds.includes(d.id)) {
+          titleMap.set(d.id, (d as { title: string }).title);
+        }
       }
 
       // Group chunks by document, preserving rank order.
@@ -147,12 +165,15 @@ export async function buildSupportInstruction({
         thread_id: item.thread_id,
         matched_docs: docChunks.map((d) => d.title),
         excerpt_count: docChunks.reduce((s, d) => s + d.excerpts.length, 0),
+        scope: scopeLabel,
       });
 
       const knowledgeBlock = [
         SUPPORT_HEADER,
         "RELEVANT SUPPORT KNOWLEDGE",
-        "(from uploaded business documents — ONLY use the information below to answer. If nothing below answers the question, say you don't have that specific information and suggest the customer contact the business directly. Do NOT invent policies, prices, rules, refund terms, cancellation terms, shipping details, or technical procedures.)",
+        supportDocId && supportDocId !== "all"
+          ? `(Source: "${selectedTitle}" — ONLY use the information below to answer. If nothing below answers the question, say you don't have that specific information and suggest the customer contact the business directly. Do NOT invent policies, prices, rules, refund terms, cancellation terms, shipping details, or technical procedures.)`
+          : "(from uploaded business documents — ONLY use the information below to answer. If nothing below answers the question, say you don't have that specific information and suggest the customer contact the business directly. Do NOT invent policies, prices, rules, refund terms, cancellation terms, shipping details, or technical procedures.)",
         "",
         ...docChunks.flatMap((dc) => [
           `[Document: "${dc.title}"]`,
@@ -169,13 +190,22 @@ export async function buildSupportInstruction({
       console.log("[flagged][support] no matching chunks", {
         thread_id: item.thread_id,
         total_docs: docCount,
+        kb_documents: docTitles,
+        scope: scopeLabel,
+        selected_doc_id: supportDocId,
+        query: query.slice(0, 200),
       });
 
       const noContextBlock = [
         SUPPORT_HEADER,
         docCount === 0
           ? "No support documents have been uploaded yet. Treat this as a general customer service inquiry."
-          : "No relevant support knowledge was found in the uploaded documents for this specific query.",
+          : supportDocId && supportDocId !== "all"
+            ? `The selected document ("${selectedTitle}") did not contain relevant information for this query.`
+            : "No relevant support knowledge was found in the uploaded documents for this specific query.",
+        supportDocId && supportDocId !== "all"
+          ? `IMPORTANT: You are restricted to the document "${selectedTitle}". If nothing in that document answers the question, say: "The document I have on file doesn't cover this specific situation. Let me check with the team and get back to you."`
+          : "",
         "",
         "HOW TO RESPOND:",
         "- Answer ONLY from general customer service best practices.",
@@ -195,6 +225,7 @@ export async function buildSupportInstruction({
       thread_id: item.thread_id,
       instruction_len: instruction.length,
       has_chunks: matchedChunks.length > 0,
+      scope: scopeLabel,
     });
   } catch (e) {
     console.error("[flagged][support] buildSupportInstruction failed", e);

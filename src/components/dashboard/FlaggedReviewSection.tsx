@@ -80,11 +80,13 @@ import DraggableFlaggedCard from "./DraggableFlaggedCard";
 import FolderTile from "./FolderTile";
 import TrashDropZone from "./TrashDropZone";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
+import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
 
 // ── Main ──
 
 export default function FlaggedReviewSection() {
   const { toast } = useToast();
+  const { docs: supportDocs } = useSupportKnowledge();
   const { data, isLoading, isFetching, error, refetch } =
     useFlaggedMessages(20);
   const { data: usageData, refetch: refetchUsage } =
@@ -171,6 +173,7 @@ export default function FlaggedReviewSection() {
         item,
         incomingMessage,
         userInstruction,
+        supportDocId: drafts[id]?.supportDocId ?? null,
         updateDraft,
         toast,
       });
@@ -754,6 +757,11 @@ export default function FlaggedReviewSection() {
                         items={groupItems}
                         folders={folders}
                         onMoveTo={moveToFolder}
+                        supportDocLabel={(() => {
+                          const ds = drafts[groupItems[0]?.thread_id];
+                          if (!ds?.supportDocId || ds.supportDocId === "all") return null;
+                          return supportDocs.find((d) => d.id === ds.supportDocId)?.title?.slice(0, 24) ?? null;
+                        })()}
                         onDelete={(it) => {
                           void deepDeleteItem(it);
                           toast({
@@ -822,6 +830,8 @@ export default function FlaggedReviewSection() {
                               onRetry={() => retryDraft(it)}
                               isAppointment={isAppt}
                               isSupport={isSupport}
+                              supportDocs={supportDocs.map((d) => ({ id: d.id, title: d.title }))}
+                              supportDocId={draftState.supportDocId}
                             />
                           );
                         }}
