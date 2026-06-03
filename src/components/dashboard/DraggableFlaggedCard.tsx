@@ -138,12 +138,12 @@ export default function DraggableFlaggedCard({
               setActiveIndex((idx) => (idx + 1) % items.length);
             }
           }}
-          className="absolute inset-0 -z-0 cursor-pointer group/deck focus:outline-none"
+          className="absolute inset-0 -z-0 cursor-pointer group/deck focus:outline-none transition-transform duration-300 ease-out hover:scale-[1.03] hover:-translate-y-0.5"
         >
           {behind.slice(0, 3).map((it, i) => {
             const depth = i + 1;
-            const tx = depth * 12; // px right
-            const ty = -depth * 10; // px up
+            const tx = depth * 12;
+            const ty = -depth * 10;
             const scale = 1 - depth * 0.03;
             const opacity = 0.85 - depth * 0.18;
             const rotate = depth * 1.2;
@@ -152,7 +152,7 @@ export default function DraggableFlaggedCard({
               <div
                 key={it.thread_id}
                 aria-hidden
-                className="absolute inset-0 rounded-lg border bg-card shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group-hover/deck:shadow-[0_10px_28px_-10px_rgba(45,212,168,0.45)] group-focus-visible/deck:ring-2 group-focus-visible/deck:ring-ring"
+                className="absolute inset-0 rounded-lg border bg-card shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)] transition-shadow duration-300 ease-out group-hover/deck:shadow-[0_14px_32px_-10px_rgba(45,212,168,0.55)] group-focus-visible/deck:ring-2 group-focus-visible/deck:ring-ring"
                 style={{
                   transform: `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg)`,
                   opacity,
@@ -160,20 +160,10 @@ export default function DraggableFlaggedCard({
                   borderColor: "hsl(var(--border))",
                   borderLeftWidth: 4,
                   zIndex: -depth,
-                  // Lift + fan slightly more on hover for affordance
-                  ["--deck-hover-tx" as string]: `${tx + depth * 4}px`,
-                  ["--deck-hover-ty" as string]: `${ty - depth * 4}px`,
-                  ["--deck-hover-rot" as string]: `${rotate + 0.8}deg`,
                 }}
               />
             );
           })}
-          <style>{`
-            .group\\/deck:hover > div[aria-hidden] {
-              transform: translate(var(--deck-hover-tx), var(--deck-hover-ty)) scale(var(--deck-scale, 1)) rotate(var(--deck-hover-rot)) !important;
-              opacity: 1 !important;
-            }
-          `}</style>
         </div>
       )}
 
