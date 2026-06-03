@@ -302,12 +302,7 @@ export default function FlaggedReviewSection() {
 
   // ── Dismissal ──
 
-  const dismissKeysFor = (m: FlaggedMessage): string[] => {
-    const keys = [m.thread_id];
-    const sk = normalizeLookup(m.sender ?? "");
-    if (sk) keys.push(`sender:${sk}`);
-    return keys;
-  };
+  const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
   const isDismissed = (m: FlaggedMessage) =>
     dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
