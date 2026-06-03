@@ -103,38 +103,62 @@ export async function buildSupportInstruction({
       query: query.slice(0, 200),
     });
 
-    // 2. Search chunks via full-text search — filter by doc when a specific
-    //    document is selected (not "all" and not null).
-    let chunkQuery = (supabase
-      .from("support_doc_chunks") as any)
-      .select("id,doc_id,chunk_index,content")
-      .textSearch("search_vector", query, { type: "websearch" })
-      .limit(8);
-
-    if (supportDocId && supportDocId !== "all") {
-      chunkQuery = chunkQuery.eq("doc_id", supportDocId);
-    }
-
-    const { data: chunks, error: searchErr } = await chunkQuery;
-
-    if (searchErr) {
-      console.error("[flagged][support] search failed", searchErr);
-      throw searchErr;
-    }
-
-    const matchedChunks = (chunks ?? []) as {
+    // 2. Get chunks — when a single document is selected, include all of its
+    //    chunks directly since the LLM is better at semantic relevance than
+    //    PostgreSQL tsvector (which can miss matches due to stemming and our
+    //    own stop-word stripping). For cross-document search ("all" or null),
+    //    use full-text search to narrow the result set.
+    let matchedChunks: {
       id: string;
       doc_id: string;
       chunk_index: number;
       content: string;
     }[];
 
-    console.log("[flagged][support] search results", {
-      thread_id: item.thread_id,
-      chunk_count: matchedChunks.length,
-      doc_ids: [...new Set(matchedChunks.map((c) => c.doc_id))],
-      scope: scopeLabel,
-    });
+    if (supportDocId && supportDocId !== "all") {
+      const { data: allChunks, error: allErr } = await (supabase
+        .from("support_doc_chunks") as any)
+        .select("id,doc_id,chunk_index,content")
+        .eq("doc_id", supportDocId)
+        .order("chunk_index", { ascending: true })
+        .limit(16);
+
+      matchedChunks = (allChunks ?? []) as typeof matchedChunks;
+
+      if (allErr) {
+        console.error("[flagged][support] chunk load failed", allErr);
+        throw allErr;
+      }
+
+      console.log("[flagged][support] document chunks loaded", {
+        thread_id: item.thread_id,
+        doc_id: supportDocId,
+        chunk_count: matchedChunks.length,
+        scope: scopeLabel,
+        mode: "full-document",
+      });
+    } else {
+      const { data: chunks, error: searchErr } = await (supabase
+        .from("support_doc_chunks") as any)
+        .select("id,doc_id,chunk_index,content")
+        .textSearch("search_vector", query, { type: "websearch" })
+        .limit(8);
+
+      if (searchErr) {
+        console.error("[flagged][support] search failed", searchErr);
+        throw searchErr;
+      }
+
+      matchedChunks = (chunks ?? []) as typeof matchedChunks;
+
+      console.log("[flagged][support] search results", {
+        thread_id: item.thread_id,
+        chunk_count: matchedChunks.length,
+        doc_ids: [...new Set(matchedChunks.map((c) => c.doc_id))],
+        scope: scopeLabel,
+        mode: matchedChunks.length > 0 ? "fts-match" : "fts-no-match",
+      });
+    }
 
     if (matchedChunks.length > 0) {
       // 3a. Build title map from the upfront fetch (no extra DB round-trip).
