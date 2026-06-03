@@ -336,8 +336,12 @@ export default function FlaggedReviewSection() {
     if (!sender) continue;
     const fallbackId =
       realThreadId || `activity:${r.createdAt}:${index}`;
+    // Key by thread first so two different people with the same display
+    // name (e.g. two "David Park"s on different threads) stay separate.
     const groupKey =
-      normalizeLookup(sender || fallbackId) || fallbackId;
+      realThreadId ||
+      normalizeLookup(sender || fallbackId) ||
+      fallbackId;
     const existing = activityGroups.get(groupKey);
     const existingText =
       existing?.latest_message ?? existing?.preview ?? "";
