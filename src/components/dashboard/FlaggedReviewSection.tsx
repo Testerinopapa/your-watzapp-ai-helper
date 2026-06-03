@@ -47,6 +47,7 @@ import {
   defaultDraft,
   APPOINTMENT_CATEGORIES,
   SUPPORT_CATEGORIES,
+  COMPLAINT_CATEGORIES,
   senderLabelForItem,
   contactKeyForItem,
   normalizeLookup,
@@ -260,6 +261,14 @@ export default function FlaggedReviewSection() {
 
       if (needsSupportContext(item)) {
         console.log("[flagged][support] draft sent", {
+          thread_id: item.thread_id,
+          sender: item.sender,
+          intent_category: item.intent_category,
+          intent_reason: item.intent_reason,
+          draft: String(draft).slice(0, 300),
+        });
+      } else if (COMPLAINT_CATEGORIES.has((item.intent_category ?? "").toLowerCase().trim())) {
+        console.log("[flagged][complaint] draft sent", {
           thread_id: item.thread_id,
           sender: item.sender,
           intent_category: item.intent_category,
@@ -788,15 +797,22 @@ export default function FlaggedReviewSection() {
                               .toLowerCase()
                               .trim(),
                           );
+                          const isComplaint = COMPLAINT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
                           updateDraft(it.thread_id, {
                             open: true,
                             instruction:
                               draftState.instruction ||
-                              (isAppt
-                                ? "Check calendar, reply and update google calendar"
-                                : isSupport
-                                  ? "Answer using the support knowledge base. Only use documented information."
-                                  : ""),
+                              (isComplaint
+                                ? "Acknowledge the customer's frustration. Apologize sincerely. Offer a clear next step. If refunds or serious issues are involved, escalate to human."
+                                : isAppt
+                                  ? "Check calendar, reply and update google calendar"
+                                  : isSupport
+                                    ? "Answer using the support knowledge base. Only use documented information."
+                                    : ""),
                           });
                         }}
                         renderFooter={(it) => {
@@ -808,6 +824,11 @@ export default function FlaggedReviewSection() {
                               .trim(),
                           );
                           const isSupport = SUPPORT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
+                          const isComplaint = COMPLAINT_CATEGORIES.has(
                             (it.intent_category ?? "")
                               .toLowerCase()
                               .trim(),
@@ -830,6 +851,7 @@ export default function FlaggedReviewSection() {
                               onRetry={() => retryDraft(it)}
                               isAppointment={isAppt}
                               isSupport={isSupport}
+                              isComplaint={isComplaint}
                               supportDocs={supportDocs.map((d) => ({ id: d.id, title: d.title }))}
                               supportDocId={draftState.supportDocId}
                             />
