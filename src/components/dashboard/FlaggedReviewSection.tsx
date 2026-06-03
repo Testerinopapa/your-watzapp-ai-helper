@@ -52,6 +52,7 @@ import {
   loadFolders,
   loadAssignments,
   senderLabelForItem,
+  contactKeyForItem,
   normalizeLookup,
   cleanSenderLabel,
   senderFromThreadId,
@@ -751,13 +752,13 @@ export default function FlaggedReviewSection() {
                   const senderToGroup = new Map<string, string>();
                   for (const key of threadOrder) {
                     const items = threadMap.get(key)!;
-                    const label = normalizeLookup(senderLabelForItem(items[0]));
+                    const ck = contactKeyForItem(items[0]);
                     let groupKey: string;
-                    if (label && senderToGroup.has(label)) {
-                      groupKey = senderToGroup.get(label)!;
+                    if (senderToGroup.has(ck)) {
+                      groupKey = senderToGroup.get(ck)!;
                     } else {
-                      groupKey = label || key;
-                      if (label) senderToGroup.set(label, groupKey);
+                      groupKey = ck;
+                      senderToGroup.set(ck, groupKey);
                     }
                     if (!groupMap.has(groupKey)) {
                       groupMap.set(groupKey, []);
