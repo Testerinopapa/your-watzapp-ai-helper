@@ -270,51 +270,17 @@ export default function FlaggedReviewSection() {
     }),
   );
 
-  // ── localStorage persistence ──
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
-    } catch {
-      /* ignore */
-    }
-  }, [folders]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        ASSIGNMENTS_KEY,
-        JSON.stringify(assignments),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [assignments]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        DISMISSED_KEY,
-        JSON.stringify(Array.from(dismissed)),
-      );
-    } catch {
-      /* ignore */
-    }
-  }, [dismissed]);
-
   // ── Dismissal ──
+  // Persistence (folders / assignments / dismissals) lives in useFlaggedState,
+  // which writes to the DB + mirrors to localStorage for instant paint.
 
   const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
   const isDismissed = (m: FlaggedMessage) =>
     dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
-    const keys = dismissKeysFor(m);
-    setDismissed((prev) => {
-      const next = new Set(prev);
-      for (const k of keys) next.add(k);
-      return next;
-    });
+    dismissThreads(dismissKeysFor(m));
   };
+
 
   // ── Deep delete ──
   // Removes the card from review AND tears down anything we own for the
