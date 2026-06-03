@@ -1,0 +1,1 @@
+DELETE FROM public.agenda_events WHERE status = 'cancelled';
