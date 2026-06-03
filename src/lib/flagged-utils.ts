@@ -93,6 +93,19 @@ export const senderLabelForItem = (
   cleanSenderLabel(item.subject) ||
   senderFromThreadId(item.thread_id);
 
+/** Stable contact key: prefers sender name, falls back to phone
+ *  number extracted from the thread_id. Mock data where sender
+ *  is null still gets consistent keys across threads. */
+export const contactKeyForItem = (
+  item: Pick<FlaggedMessage, "sender" | "subject" | "thread_id">,
+): string => {
+  const label = senderLabelForItem(item);
+  if (label) return normalizeLookup(label);
+  // Extract phone digits from thread_id as last-resort stable key
+  const phone = (item.thread_id ?? "").replace(/\D/g, "");
+  return phone || item.thread_id;
+};
+
 export const normalizeLookup = (s: string | null | undefined) =>
   cleanSenderLabel(s)
     .normalize("NFKD")
