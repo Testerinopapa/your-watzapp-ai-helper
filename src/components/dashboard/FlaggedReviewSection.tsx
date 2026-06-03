@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Inbox,
   X,
+  Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -279,6 +280,16 @@ export default function FlaggedReviewSection() {
     dismissKeysFor(m).some((k) => dismissed.has(k));
   const dismissItem = (m: FlaggedMessage) => {
     dismissThreads(dismissKeysFor(m));
+  };
+
+  const clearAll = () => {
+    const ids = deduped.map((m) => m.thread_id);
+    if (ids.length === 0) return;
+    dismissThreads(ids);
+    toast({
+      title: "Flagged messages cleared",
+      description: `${ids.length} item${ids.length === 1 ? "" : "s"} dismissed from review.`,
+    });
   };
 
 
@@ -573,12 +584,23 @@ export default function FlaggedReviewSection() {
           <Button
             variant="ghost"
             size="sm"
+            onClick={clearAll}
+            disabled={deduped.length === 0 || isFetching}
+            className="ml-auto gap-1.5 text-muted-foreground hover:text-foreground"
+          >
+            <Archive size={14} />
+            <span className="hidden sm:inline">Clear all</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => {
               refetch();
               refetchUsage();
             }}
             disabled={isFetching}
-            className="ml-auto gap-1.5"
+            className="gap-1.5"
           >
             <RefreshCw
               size={14}
