@@ -282,6 +282,16 @@ export default function FlaggedReviewSection() {
     dismissThreads(dismissKeysFor(m));
   };
 
+  const clearAll = () => {
+    const ids = deduped.map((m) => m.thread_id);
+    if (ids.length === 0) return;
+    dismissThreads(ids);
+    toast({
+      title: "Flagged messages cleared",
+      description: `${ids.length} item${ids.length === 1 ? "" : "s"} dismissed from review.`,
+    });
+  };
+
 
   // ── Deep delete ──
   // Removes the card from review AND tears down anything we own for the
