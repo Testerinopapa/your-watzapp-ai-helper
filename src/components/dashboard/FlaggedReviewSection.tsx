@@ -478,17 +478,10 @@ export default function FlaggedReviewSection() {
     threadId: string,
     folderId: string,
   ) => {
-    setAssignments((prev) => ({
-      ...prev,
-      [threadId]: folderId,
-    }));
+    assignToFolder(threadId, folderId);
   };
   const removeFromFolder = (threadId: string) => {
-    setAssignments((prev) => {
-      const next = { ...prev };
-      delete next[threadId];
-      return next;
-    });
+    unassignFromFolder(threadId);
   };
 
   const createFolder = () => {
@@ -497,24 +490,16 @@ export default function FlaggedReviewSection() {
     const id = `f-${Date.now()}-${Math.random()
       .toString(36)
       .slice(2, 6)}`;
-    setFolders((prev) => [...prev, { id, name }]);
+    addFolder({ id, name });
     setNewFolderName("");
     setCreateOpen(false);
   };
 
   const deleteFolder = (folderId: string) => {
-    setFolders((prev) =>
-      prev.filter((f) => f.id !== folderId),
-    );
-    setAssignments((prev) => {
-      const next: Record<string, string> = {};
-      for (const [k, v] of Object.entries(prev)) {
-        if (v !== folderId) next[k] = v;
-      }
-      return next;
-    });
+    deleteFolderRemote(folderId);
     if (openFolderId === folderId) setOpenFolderId(null);
   };
+
 
   // ── Drag handlers ──
 
