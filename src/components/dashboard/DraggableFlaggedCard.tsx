@@ -175,6 +175,7 @@ export default function DraggableFlaggedCard({
           </DropdownMenu>
         }
       />
+      </div>
     </div>
   );
 }
