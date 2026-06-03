@@ -120,11 +120,11 @@ export default function DraggableFlaggedCard({
         <div aria-hidden={false} className="absolute inset-0 -z-0">
           {behind.slice(0, 3).map((it, i) => {
             const depth = i + 1;
-            const tx = depth * 6; // px right
-            const ty = -depth * 5; // px up
+            const tx = depth * 12; // px right
+            const ty = -depth * 10; // px up
             const scale = 1 - depth * 0.03;
             const opacity = 0.85 - depth * 0.18;
-            const rotate = depth * 0.8;
+            const rotate = depth * 1.2;
             const color = intentAccent(it.intent_category);
             const realIndex = items.indexOf(it);
             return (
