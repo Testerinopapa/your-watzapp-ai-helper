@@ -396,14 +396,10 @@ export default function FlaggedReviewSection() {
   const sorted = [...all].sort(
     (a, b) => recencyOf(b) - recencyOf(a),
   );
-  const groups = new Map<
-    string,
-    FlaggedMessage & {
-      backlog_count?: number;
-      backlog_items?: FlaggedMessage[];
-      _seen?: Set<string>;
-    }
-  >();
+  // Each flagged message is rendered as its own card — no sender grouping.
+  // We still de-dup exact repeats of the same message (same thread + same
+  // text within the same minute) so polling doesn't double-insert.
+  const seenFp = new Set<string>();
   const messageFingerprint = (m: FlaggedMessage) => {
     const text = (
       m.latest_message ??
@@ -414,41 +410,18 @@ export default function FlaggedReviewSection() {
       .trim()
       .toLowerCase();
     const ts = m.updated_at
-      ? Math.floor(
-          new Date(m.updated_at).getTime() / 60000,
-        )
+      ? Math.floor(new Date(m.updated_at).getTime() / 60000)
       : 0;
-    return `${ts}|${text}`;
+    return `${m.thread_id}|${ts}|${text}`;
   };
+  const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
     if (isDismissed(m)) continue;
-    const senderKey = normalizeLookup(
-      senderLabelForItem(m) || m.sender || "",
-    );
-    const key = senderKey || m.thread_id;
     const fp = messageFingerprint(m);
-    const existing = groups.get(key);
-    if (!existing) {
-      const seen = new Set<string>();
-      seen.add(fp);
-      groups.set(key, {
-        ...m,
-        backlog_count: 0,
-        backlog_items: [],
-        _seen: seen,
-      });
-    } else {
-      if (existing._seen?.has(fp)) continue;
-      existing._seen?.add(fp);
-      existing.backlog_count =
-        (existing.backlog_count ?? 0) + 1;
-      existing.backlog_items = [
-        ...(existing.backlog_items ?? []),
-        m,
-      ];
-    }
+    if (seenFp.has(fp)) continue;
+    seenFp.add(fp);
+    deduped.push(m);
   }
-  const deduped: FlaggedMessage[] = Array.from(groups.values());
 
   // ── Folder helpers ──
 
