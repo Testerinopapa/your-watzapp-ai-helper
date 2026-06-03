@@ -23,6 +23,7 @@ import { APPOINTMENT_CATEGORIES } from "@/lib/flagged-utils";
 import AppointmentDrawer from "./AppointmentDrawer";
 import PersonalAgendaPanel from "./PersonalAgendaPanel";
 import ConnectCalendarModal from "./ConnectCalendarModal";
+import { supabase } from "@/integrations/supabase/client";
 
 
 function isAppointment(m: FlaggedMessage): boolean {
