@@ -94,16 +94,18 @@ export default function FlaggedReviewSection() {
   const { enrichedMessageFor, withActivityPreview } = enricher;
 
   // ── State ──
+  // Folders / assignments / dismissals are cloud-backed (synced across browsers).
+  const {
+    folders,
+    assignments,
+    dismissed,
+    addFolder,
+    deleteFolder: deleteFolderRemote,
+    assignToFolder,
+    unassignFromFolder,
+    dismissThreads,
+  } = useFlaggedState();
 
-  const [folders, setFolders] = useState<FolderDef[]>(() =>
-    loadFolders(),
-  );
-  const [assignments, setAssignments] = useState<
-    Record<string, string>
-  >(() => loadAssignments());
-  const [dismissed, setDismissed] = useState<Set<string>>(
-    () => new Set(loadDismissed()),
-  );
   const [activeItem, setActiveItem] = useState<FlaggedMessage | null>(
     null,
   );
@@ -112,26 +114,11 @@ export default function FlaggedReviewSection() {
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
   const draftsRef = useRef<Record<string, DraftState>>({});
-  useEffect(() => {
-    try {
-      const hasFreshState =
-        localStorage.getItem(ASSIGNMENTS_KEY) ||
-        localStorage.getItem(DISMISSED_KEY);
-      const hasLegacyHiddenState =
-        localStorage.getItem("flagged.assignments.v2") ||
-        localStorage.getItem("flagged.dismissed.v1");
-      if (!hasFreshState && hasLegacyHiddenState) {
-        setAssignments({});
-        setDismissed(new Set());
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
+
 
   const updateDraft = (
     threadId: string,
