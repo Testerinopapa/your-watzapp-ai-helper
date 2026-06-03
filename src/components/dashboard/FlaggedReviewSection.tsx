@@ -659,62 +659,85 @@ export default function FlaggedReviewSection() {
               }}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {ungrouped.map((item) => {
-                  const draftState =
-                    drafts[item.thread_id] ?? defaultDraft;
-                  const isAppt = APPOINTMENT_CATEGORIES.has(
-                    (item.intent_category ?? "")
-                      .toLowerCase()
-                      .trim(),
-                  );
-                  return (
-                    <DraggableFlaggedCard
-                      key={item.thread_id}
-                      item={item}
-                      folders={folders}
-                      onMoveTo={moveToFolder}
-                      expanded={draftState.open}
-                      onActivate={() => {
-                        if (draftState.open) return;
-                        updateDraft(item.thread_id, {
-                          open: true,
-                          instruction:
-                            draftState.instruction ||
-                            (isAppt
-                              ? "Check calendar, reply and update google calendar"
-                              : ""),
-                        });
-                      }}
-                      footer={
-                        <DraftReplyFooter
-                          item={item}
-                          enrichedMessage={enrichedMessageFor(
-                            item,
-                          )}
-                          state={draftState}
-                          onChange={(patch) =>
-                            updateDraft(
-                              item.thread_id,
-                              patch,
-                            )
-                          }
-                          onClose={() =>
-                            updateDraft(item.thread_id, {
-                              open: false,
-                              error: null,
-                            })
-                          }
-                          onGenerate={() =>
-                            generateDraft(item)
-                          }
-                          onRetry={() => retryDraft(item)}
-                          isAppointment={isAppt}
-                        />
-                      }
-                    />
-                  );
-                })}
+                {(() => {
+                  // Group ungrouped cards by sender so multiple messages from
+                  // the same person stack behind one main card (cycle-able).
+                  const groupOrder: string[] = [];
+                  const groupMap = new Map<string, FlaggedMessage[]>();
+                  for (const m of ungrouped) {
+                    const key =
+                      normalizeLookup(senderLabelForItem(m)) ||
+                      m.thread_id;
+                    if (!groupMap.has(key)) {
+                      groupMap.set(key, []);
+                      groupOrder.push(key);
+                    }
+                    groupMap.get(key)!.push(m);
+                  }
+                  return groupOrder.map((key) => {
+                    const groupItems = groupMap.get(key)!;
+                    const main = groupItems[0];
+                    return (
+                      <DraggableFlaggedCard
+                        key={key}
+                        items={groupItems}
+                        folders={folders}
+                        onMoveTo={moveToFolder}
+                        isExpanded={(it) =>
+                          !!drafts[it.thread_id]?.open
+                        }
+                        onActivate={(it) => {
+                          const draftState =
+                            drafts[it.thread_id] ?? defaultDraft;
+                          if (draftState.open) return;
+                          const isAppt = APPOINTMENT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
+                          updateDraft(it.thread_id, {
+                            open: true,
+                            instruction:
+                              draftState.instruction ||
+                              (isAppt
+                                ? "Check calendar, reply and update google calendar"
+                                : ""),
+                          });
+                        }}
+                        renderFooter={(it) => {
+                          const draftState =
+                            drafts[it.thread_id] ?? defaultDraft;
+                          const isAppt = APPOINTMENT_CATEGORIES.has(
+                            (it.intent_category ?? "")
+                              .toLowerCase()
+                              .trim(),
+                          );
+                          return (
+                            <DraftReplyFooter
+                              item={it}
+                              enrichedMessage={enrichedMessageFor(it)}
+                              state={draftState}
+                              onChange={(patch) =>
+                                updateDraft(it.thread_id, patch)
+                              }
+                              onClose={() =>
+                                updateDraft(it.thread_id, {
+                                  open: false,
+                                  error: null,
+                                })
+                              }
+                              onGenerate={() => generateDraft(it)}
+                              onRetry={() => retryDraft(it)}
+                              isAppointment={isAppt}
+                            />
+                          );
+                        }}
+                      />
+                    );
+                  });
+                })()}
               </div>
+
             </div>
 
             <div
