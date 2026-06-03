@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Inbox,
   X,
+  Archive,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
