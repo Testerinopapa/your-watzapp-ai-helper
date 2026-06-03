@@ -177,31 +177,11 @@ Deno.serve(async (req) => {
 
     const tz: string | null = (body.timezone as string) || (row.timezone as string) || null;
 
-    // When a timeZone is supplied, Google requires dateTime as a *local*
-    // wall-clock string with NO trailing "Z" / offset. Sending UTC ("...Z")
-    // together with timeZone makes PATCH fail with "Invalid start time."
-    const toLocalIso = (d: Date, zone: string): string => {
-      const parts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: zone,
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).formatToParts(d);
-      const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "00";
-      // en-CA gives YYYY-MM-DD parts; hour can be "24" at midnight — normalize.
-      const hour = get("hour") === "24" ? "00" : get("hour");
-      return `${get("year")}-${get("month")}-${get("day")}T${hour}:${get("minute")}:${get("second")}`;
-    };
-
     const startField = tz
-      ? { dateTime: toLocalIso(startDate, tz), timeZone: tz }
+      ? { dateTime: startDate.toISOString(), timeZone: tz }
       : { dateTime: startDate.toISOString() };
     const endField = tz
-      ? { dateTime: toLocalIso(endDate, tz), timeZone: tz }
+      ? { dateTime: endDate.toISOString(), timeZone: tz }
       : { dateTime: endDate.toISOString() };
 
     console.log("google-calendar-push payload times", {
