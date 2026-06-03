@@ -76,6 +76,7 @@ import DraftReplyFooter from "./DraftReplyFooter";
 import DraggableFlaggedCard from "./DraggableFlaggedCard";
 import FolderTile from "./FolderTile";
 import TrashDropZone from "./TrashDropZone";
+import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 
 // ── Main ──
 
