@@ -117,9 +117,29 @@ export default function DraggableFlaggedCard({
         expanded && "md:col-span-2 lg:col-span-3 z-20 animate-scale-in",
       )}
     >
-      {/* Real cards in the stack behind — clickable to cycle to front */}
+      {/* Stacked deck behind — one single clickable area that rotates the deck forward */}
       {behind.length > 0 && !expanded && (
-        <div aria-hidden={false} className="absolute inset-0 -z-0">
+        <div
+          role="button"
+          tabIndex={0}
+          data-deck-card
+          data-no-drag
+          aria-label={`Rotate deck — ${behind.length} more message${behind.length === 1 ? "" : "s"} from this sender`}
+          title="Click to bring the next message forward"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setActiveIndex((idx) => (idx + 1) % items.length);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              setActiveIndex((idx) => (idx + 1) % items.length);
+            }
+          }}
+          className="absolute inset-0 -z-0 cursor-pointer group/deck focus:outline-none"
+        >
           {behind.slice(0, 3).map((it, i) => {
             const depth = i + 1;
             const tx = depth * 12; // px right
@@ -128,20 +148,11 @@ export default function DraggableFlaggedCard({
             const opacity = 0.85 - depth * 0.18;
             const rotate = depth * 1.2;
             const color = intentAccent(it.intent_category);
-            const realIndex = items.indexOf(it);
             return (
-              <button
+              <div
                 key={it.thread_id}
-                type="button"
-                data-deck-card
-                data-no-drag
-                aria-label={`Bring ${it.sender ?? "card"} to front`}
-                title={it.sender ?? "Bring to front"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveIndex(realIndex);
-                }}
-                className="absolute inset-0 rounded-lg border border-l-4 bg-card shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)] hover:opacity-100 hover:translate-y-[-2px] transition-all cursor-pointer"
+                aria-hidden
+                className="absolute inset-0 rounded-lg border bg-card shadow-[0_6px_20px_-10px_rgba(0,0,0,0.6)] transition-all duration-300 ease-out group-hover/deck:shadow-[0_10px_28px_-10px_rgba(45,212,168,0.45)] group-focus-visible/deck:ring-2 group-focus-visible/deck:ring-ring"
                 style={{
                   transform: `translate(${tx}px, ${ty}px) scale(${scale}) rotate(${rotate}deg)`,
                   opacity,
@@ -149,10 +160,20 @@ export default function DraggableFlaggedCard({
                   borderColor: "hsl(var(--border))",
                   borderLeftWidth: 4,
                   zIndex: -depth,
+                  // Lift + fan slightly more on hover for affordance
+                  ["--deck-hover-tx" as string]: `${tx + depth * 4}px`,
+                  ["--deck-hover-ty" as string]: `${ty - depth * 4}px`,
+                  ["--deck-hover-rot" as string]: `${rotate + 0.8}deg`,
                 }}
               />
             );
           })}
+          <style>{`
+            .group\\/deck:hover > div[aria-hidden] {
+              transform: translate(var(--deck-hover-tx), var(--deck-hover-ty)) scale(var(--deck-scale, 1)) rotate(var(--deck-hover-rot)) !important;
+              opacity: 1 !important;
+            }
+          `}</style>
         </div>
       )}
 
