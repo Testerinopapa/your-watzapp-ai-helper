@@ -19,11 +19,10 @@ import { cn } from "@/lib/utils";
 
 type QuickAction = {
   label: string;
-type QuickAction = {
-  label: string;
   prompt: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>;
 };
+
 
 
 const QUICK_ACTIONS: QuickAction[] = [
