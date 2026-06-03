@@ -725,20 +725,20 @@ export default function FlaggedReviewSection() {
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(() => {
-                  // Appointment cards stay as their own decks (per thread)
-                  // so they aren't buried behind a sender's misc stack.
-                  // Non-appointment cards: two-pass grouping —
-                  //  1) Group by thread_id, then 2) merge groups that share
-                  //     the same sender label so same-contact messages stack.
+                  // Two-pass grouping for ALL cards (appointment and misc
+                  // alike) so the stacked deck-behind-card effect applies
+                  // consistently:
+                  //  1) Group by thread_id
+                  //  2) Merge thread groups that share the same sender label
+                  //     so a contact's messages stack into one deck.
+                  // Per-card visuals (amber appt accent, Manage Appointment
+                  // CTA) stay correct because they're resolved per-item in
+                  // FlaggedCardInner / renderFooter from each item's own
+                  // intent_category — not from the group key.
                   const threadOrder: string[] = [];
                   const threadMap = new Map<string, FlaggedMessage[]>();
                   for (const m of ungrouped) {
-                    const isAppt = APPOINTMENT_CATEGORIES.has(
-                      (m.intent_category ?? "").toLowerCase().trim(),
-                    );
-                    const key = isAppt
-                      ? `appt:${m.thread_id}`
-                      : m.thread_id;
+                    const key = m.thread_id;
                     if (!threadMap.has(key)) {
                       threadMap.set(key, []);
                       threadOrder.push(key);
@@ -751,14 +751,6 @@ export default function FlaggedReviewSection() {
                   const senderToGroup = new Map<string, string>();
                   for (const key of threadOrder) {
                     const items = threadMap.get(key)!;
-                    const isAppt = key.startsWith("appt:");
-                    if (isAppt) {
-                      // Appointments: never merge — one deck per thread.
-                      groupOrder.push(key);
-                      groupMap.set(key, items);
-                      continue;
-                    }
-                    // Non-appointment: merge by sender label across threads.
                     const label = normalizeLookup(senderLabelForItem(items[0]));
                     let groupKey: string;
                     if (label && senderToGroup.has(label)) {
@@ -774,6 +766,7 @@ export default function FlaggedReviewSection() {
                     groupMap.get(groupKey)!.push(...items);
                   }
                   return groupOrder.map((key) => {
+
                     const groupItems = groupMap.get(key)!;
                     const main = groupItems[0];
                     return (
