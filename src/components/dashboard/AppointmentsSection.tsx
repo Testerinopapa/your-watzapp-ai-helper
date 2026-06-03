@@ -306,7 +306,9 @@ export default function AppointmentsSection() {
   const seen = new Set<string>();
   const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
-    const key = m.sender ?? m.thread_id;
+    // Keep separate appointment cards for the same contact when they come from
+    // different threads/messages (e.g. two David Park appointment requests).
+    const key = m.thread_id;
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(m);
