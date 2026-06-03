@@ -41,16 +41,10 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
-  FOLDERS_KEY,
-  ASSIGNMENTS_KEY,
-  DISMISSED_KEY,
   FOLDER_DROP_PREFIX,
   TRASH_DROP_ID,
   defaultDraft,
   APPOINTMENT_CATEGORIES,
-  loadDismissed,
-  loadFolders,
-  loadAssignments,
   senderLabelForItem,
   contactKeyForItem,
   normalizeLookup,
@@ -60,6 +54,8 @@ import {
   type FolderDef,
   type DraftState,
 } from "@/lib/flagged-utils";
+import { useFlaggedState } from "@/hooks/useFlaggedState";
+
 import {
   createEnricher,
   senderLabelForActivity,
