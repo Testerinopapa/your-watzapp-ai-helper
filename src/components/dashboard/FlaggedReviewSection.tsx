@@ -678,14 +678,19 @@ export default function FlaggedReviewSection() {
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {(() => {
-                  // Group ungrouped cards by sender so multiple messages from
-                  // the same person stack behind one main card (cycle-able).
+                  // Group misc cards by sender so multiple messages from the
+                  // same person stack behind one main card (cycle-able).
+                  // Appointment cards are kept as their own decks (per thread)
+                  // so they aren't buried behind a sender's misc stack.
                   const groupOrder: string[] = [];
                   const groupMap = new Map<string, FlaggedMessage[]>();
                   for (const m of ungrouped) {
-                    const key =
-                      normalizeLookup(senderLabelForItem(m)) ||
-                      m.thread_id;
+                    const isAppt = APPOINTMENT_CATEGORIES.has(
+                      (m.intent_category ?? "").toLowerCase().trim(),
+                    );
+                    const key = isAppt
+                      ? `appt:${m.thread_id}`
+                      : normalizeLookup(senderLabelForItem(m)) || m.thread_id;
                     if (!groupMap.has(key)) {
                       groupMap.set(key, []);
                       groupOrder.push(key);
