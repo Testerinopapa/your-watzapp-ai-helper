@@ -94,13 +94,36 @@ const FORMAT_INSTRUCTION = [
   "--- END FORMAT ---",
 ].join("\n");
 
-/** Collect visible text from the dashboard DOM for context. */
+/** Collect visible text from the dashboard DOM for context.
+ *  Also appends a lightweight card index so the assistant can reference
+ *  specific cards by thread_id in its reply. */
 function collectDashboardContext(): string {
   const root =
     document.querySelector("[data-dashboard-root]") ??
     document.querySelector("main") ??
     document.body;
-  return (root?.textContent ?? "").trim().slice(0, 15000);
+  const text = (root?.textContent ?? "").trim().slice(0, 13000);
+
+  // Build a card index from DOM data attributes.
+  const cards = root.querySelectorAll("[data-thread-id]");
+  const index: { id: string; customer: string; intent: string }[] = [];
+  const seen = new Set<string>();
+  for (const el of cards) {
+    const id = el.getAttribute("data-thread-id") ?? "";
+    const customer = el.getAttribute("data-customer-name") ?? "";
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    // Extract intent from badge text if present
+    const badge = el.querySelector("[data-intent-badge]")?.textContent?.trim() ?? "";
+    index.push({ id, customer, intent: badge });
+  }
+
+  const cardBlock =
+    index.length === 0
+      ? ""
+      : `\n\nCARDS (for reference — mention thread_id when linking to a card):\n${index.map((c) => `- ${c.id} | ${c.customer} | ${c.intent}`).join("\n")}`;
+
+  return `${text}${cardBlock}`.slice(0, 15000);
 }
 
 /** Strip markdown formatting artifacts from AI responses. */
@@ -113,6 +136,77 @@ function cleanMarkdown(text: string): string {
     .replace(/^>\s+/gm, "")              // > blockquotes
     .replace(/`{1,3}[^`]*`{1,3}/g, "")  // inline code
     .trim();
+}
+
+// ── Card linking ──
+
+/** Scroll to a flagged card and apply a highlight pulse. */
+function scrollToFlagCard(threadId: string) {
+  const el = document.querySelector(`[data-thread-id="${CSS.escape(threadId)}"]`);
+  if (!el) return;
+
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.classList.add("mini-chat-target-pulse");
+  setTimeout(() => el.classList.remove("mini-chat-target-pulse"), 2200);
+}
+
+/** Scan the dashboard DOM and build a customer name → thread_id map. */
+function buildNameIndex(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const el of document.querySelectorAll("[data-thread-id]")) {
+    const id = el.getAttribute("data-thread-id");
+    const name = (el.getAttribute("data-customer-name") ?? "").trim();
+    if (id && name) map.set(name.toLowerCase(), id);
+  }
+  return map;
+}
+
+/** Split text at customer name boundaries and render them as clickable
+ *  dashboard links. Falls back to plain text when no names match. */
+function LinkifiedText({
+  text,
+  onCardClick,
+}: {
+  text: string;
+  onCardClick: (threadId: string) => void;
+}) {
+  const nameIndex = buildNameIndex();
+  const names = [...nameIndex.keys()].sort((a, b) => b.length - a.length); // longest first
+
+  if (names.length === 0) return <>{text}</>;
+
+  // Build a regex that matches any known customer name (case-insensitive).
+  const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const re = new RegExp(`\\b(${escaped.join("|")})\\b`, "gi");
+
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const idx = match.index;
+    if (idx > last) parts.push(text.slice(last, idx));
+    const matchedName = match[0];
+    const threadId = nameIndex.get(matchedName.toLowerCase());
+    if (threadId) {
+      parts.push(
+        <button
+          key={`${threadId}-${idx}`}
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onCardClick(threadId); }}
+          className="text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary transition-all cursor-pointer font-medium"
+          title={`Scroll to ${matchedName}`}
+        >
+          {matchedName}
+        </button>,
+      );
+    } else {
+      parts.push(matchedName);
+    }
+    last = idx + matchedName.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+
+  return <>{parts}</>;
 }
 
 async function sendMessages(msgs: Message[]): Promise<string> {
@@ -212,7 +306,7 @@ const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; classN
 
 // ── Report renderer ──
 
-function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible: string, api?: string) => void }) {
+function ReportCards({ text, onFollowUp, onCardClick }: { text: string; onFollowUp: (visible: string, api?: string) => void; onCardClick: (threadId: string) => void }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
   const report = parseReport(text);
@@ -242,7 +336,7 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible:
   if (!report && sections.length === 0) {
     return (
       <div className="rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-muted text-foreground">
-        {text}
+        <LinkifiedText text={text} onCardClick={onCardClick} />
       </div>
     );
   }
@@ -254,7 +348,9 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible:
         {sections.map((s, idx) => (
           <div key={idx} className="rounded-xl border border-border/60 bg-muted/70 overflow-hidden">
             <div className="px-3 py-1.5 text-[11px] font-semibold text-foreground/80 border-b border-border/40 bg-muted">{s.title}</div>
-            <div className="px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap leading-relaxed">{s.body}</div>
+            <div className="px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap leading-relaxed">
+              <LinkifiedText text={s.body} onCardClick={onCardClick} />
+            </div>
           </div>
         ))}
       </div>
@@ -267,7 +363,7 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible:
       {/* Verdict banner */}
       <div className="rounded-xl bg-primary/8 border border-primary/20 px-3 py-2.5">
         <p className="text-[12px] font-medium text-foreground/90 leading-snug">
-          {report.verdict}
+          <LinkifiedText text={report.verdict} onCardClick={onCardClick} />
         </p>
       </div>
 
@@ -294,12 +390,12 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible:
                     </span>
                   </div>
                   <p className="text-[12px] text-foreground/90 leading-snug">
-                    {p.detail}
+                    <LinkifiedText text={p.detail} onCardClick={onCardClick} />
                   </p>
                   {isOpen && (
                     <p className="text-[11px] text-primary/80 mt-1.5 flex items-center gap-1">
                       <ArrowRight size={10} />
-                      {p.next}
+                      <LinkifiedText text={p.next} onCardClick={onCardClick} />
                     </p>
                   )}
                 </button>
@@ -335,7 +431,7 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible:
             Recommended next step
           </p>
           <p className="text-[12px] text-foreground/90 leading-snug">
-            {report.next}
+            <LinkifiedText text={report.next} onCardClick={onCardClick} />
           </p>
         </div>
       )}
@@ -443,6 +539,20 @@ export default function MiniChat() {
 
   return (
     <>
+      <style>{`
+        @keyframes mini-chat-target-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(45,212,168,0); }
+          25% { box-shadow: 0 0 0 4px rgba(45,212,168,0.5), 0 0 20px 4px rgba(45,212,168,0.25); }
+          50% { box-shadow: 0 0 0 4px rgba(45,212,168,0.3), 0 0 20px 4px rgba(45,212,168,0.15); }
+          75% { box-shadow: 0 0 0 4px rgba(45,212,168,0.5), 0 0 20px 4px rgba(45,212,168,0.25); }
+        }
+        .mini-chat-target-pulse {
+          animation: mini-chat-target-pulse 2.2s ease-out forwards;
+          border-radius: 0.75rem;
+          transition: box-shadow 0.2s;
+        }
+      `}</style>
+
       {/* Floating button (collapsed) */}
       {!open && (
         <button
@@ -537,7 +647,7 @@ export default function MiniChat() {
             {messages.map((m, i) => (
               <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
                 {m.role === "assistant" ? (
-                  <ReportCards text={cleanMarkdown(m.content)} onFollowUp={handleFollowUp} />
+                  <ReportCards text={cleanMarkdown(m.content)} onFollowUp={handleFollowUp} onCardClick={scrollToFlagCard} />
                 ) : (
                   <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-primary/10 text-foreground">
                     {m.content}
