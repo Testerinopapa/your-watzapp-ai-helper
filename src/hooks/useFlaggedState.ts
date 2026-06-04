@@ -104,9 +104,14 @@ export function useFlaggedState() {
         setAssignmentsState(map);
       }
       if (!dismissRes.error && dismissRes.data) {
-        setDismissedState(
-          new Set(dismissRes.data.map((r) => r.thread_id as string)),
-        );
+        const m = new Map<string, number>();
+        for (const r of dismissRes.data) {
+          const ts = r.created_at
+            ? new Date(r.created_at as string).getTime()
+            : 0;
+          m.set(r.thread_id as string, Number.isFinite(ts) ? ts : 0);
+        }
+        setDismissedState(m);
       }
       setHydrated(true);
     })();
