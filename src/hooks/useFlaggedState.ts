@@ -73,7 +73,7 @@ export function useFlaggedState() {
           .select("folder_id,name,created_at")
           .order("created_at", { ascending: true }),
         supabase.from("flagged_assignments").select("thread_id,folder_id"),
-        supabase.from("flagged_dismissals").select("thread_id"),
+        supabase.from("flagged_dismissals").select("thread_id,created_at"),
       ]);
       if (cancelled) return;
 
