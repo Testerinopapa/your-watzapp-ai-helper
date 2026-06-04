@@ -71,6 +71,29 @@ export default function FlaggedCardInner({
   const [backlogOpen, setBacklogOpen] = useState(false);
   const allMessages = [item, ...backlogItems];
 
+  // "Analyzing conversation…" hint: a newer snapshot/scan landed but
+  // classify-intent hasn't written intent_classified_at yet.
+  const lastIngestMs = Math.max(
+    item.snapshot_captured_at ? +new Date(item.snapshot_captured_at) : 0,
+    item.scan_captured_at ? +new Date(item.scan_captured_at) : 0,
+  );
+  const classifiedMs = item.intent_classified_at
+    ? +new Date(item.intent_classified_at)
+    : 0;
+  const classifying = lastIngestMs > 0 && classifiedMs < lastIngestMs;
+
+  const urgency = (item.intent_urgency ?? "").toLowerCase();
+  const urgencyStyle =
+    urgency === "high"
+      ? "bg-red-400/10 text-red-400 border-red-400/20"
+      : urgency === "medium"
+        ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
+        : urgency === "low"
+          ? "bg-muted text-muted-foreground border-border"
+          : null;
+
+  const intentLabel = item.intent_subcategory || item.intent_category;
+
   return (
     <Card
       data-thread-id={item.thread_id}
