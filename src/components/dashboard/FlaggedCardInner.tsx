@@ -70,6 +70,8 @@ export default function FlaggedCardInner({
 
   return (
     <Card
+      data-thread-id={item.thread_id}
+      data-customer-name={senderLabel}
       className={cn(
         "border-l-4 transition-colors",
         isComplaint &&
@@ -178,6 +180,7 @@ export default function FlaggedCardInner({
           {item.intent_category && (
             <Badge
               variant="outline"
+              data-intent-badge=""
               className={cn(
                 "text-[10px] uppercase tracking-wide",
                 isComplaint &&
