@@ -1,0 +1,1 @@
+DELETE FROM public.flagged_dismissals WHERE user_id='2114edee-36ab-46c7-9f3d-e763aff4dc04' AND thread_id='197259358675176@lid';
