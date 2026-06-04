@@ -317,22 +317,15 @@ export default function FlaggedReviewSection() {
   // Dismissals always collapse onto the BASE thread id so a "Clear all"
   // doesn't leave dozens of frozen per-message ids in the DB that can never
   // be revived. The comparison uses the latest updated_at across every card
-  // sharing the base thread — so any fresh inbound on Maria's thread
-  // re-surfaces her entire stacked deck.
+  // sharing the base thread (computed below, once `all` is built) — so any
+  // fresh inbound on Maria's thread re-surfaces her entire stacked deck.
   const dismissKeysFor = (m: FlaggedMessage): string[] => [baseThreadId(m.thread_id)];
-  const isDismissed = (m: FlaggedMessage) => {
-    const base = baseThreadId(m.thread_id);
-    const dismissedAt = dismissed.get(base);
-    if (dismissedAt === undefined) return false;
-    const latest = latestUpdateByBase.get(base) ?? (m.updated_at ? new Date(m.updated_at).getTime() : 0);
-    return latest <= dismissedAt;
-  };
   const dismissItem = (m: FlaggedMessage) => {
     dismissThreads(dismissKeysFor(m));
   };
 
   const clearAll = () => {
-    const ids = deduped.map((m) => m.thread_id);
+    const ids = Array.from(new Set(deduped.map((m) => baseThreadId(m.thread_id))));
     if (ids.length === 0) return;
     dismissThreads(ids);
     toast({
