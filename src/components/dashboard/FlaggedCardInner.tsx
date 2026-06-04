@@ -71,7 +71,7 @@ export default function FlaggedCardInner({
   return (
     <Card
       data-thread-id={item.thread_id}
-      data-customer-name={senderLabel}
+      data-customer-name={senderLabel.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim()}
       className={cn(
         "border-l-4 transition-colors",
         isComplaint &&
