@@ -297,7 +297,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Usage: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
 };
 
-const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+const CATEGORY_ICONS: Record<string, React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>> = {
   Complaint: MessageSquareWarning,
   Appointment: CalendarClock,
   Support: LifeBuoy,

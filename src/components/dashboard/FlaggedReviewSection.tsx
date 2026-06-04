@@ -469,9 +469,18 @@ export default function FlaggedReviewSection() {
       ...candidates.map((s) => new Date(s).getTime()),
     );
   };
-  const sorted = [...all].sort(
-    (a, b) => recencyOf(b) - recencyOf(a),
-  );
+  const urgencyRank = (m: FlaggedMessage) => {
+    const u = (m.intent_urgency ?? "").toLowerCase();
+    if (u === "high") return 3;
+    if (u === "medium") return 2;
+    if (u === "low") return 1;
+    return 0;
+  };
+  const sorted = [...all].sort((a, b) => {
+    const ur = urgencyRank(b) - urgencyRank(a);
+    if (ur !== 0) return ur;
+    return recencyOf(b) - recencyOf(a);
+  });
   // Each flagged message is rendered as its own card — no sender grouping.
   // We still de-dup exact repeats of the same message (same thread + same
   // text within the same minute) so polling doesn't double-insert.
