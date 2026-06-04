@@ -61,22 +61,23 @@ export function useFlaggedMessages(limit = 20) {
   useEffect(() => {
     if (!userId) return;
     const client = getFlaggedRealtimeClient();
-    const channel = client
-      .channel(`flagged-thread-states-${userId}`)
-      .on(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        "postgres_changes" as any,
-        {
-          event: "*",
-          schema: "public",
-          table: "thread_states",
-          filter: `user_id=eq.${userId}`,
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ["flagged-messages"] });
-        },
-      )
-      .subscribe();
+    const channel = client.channel(
+      `flagged-thread-states-${userId}-${Math.random().toString(36).slice(2, 8)}`,
+    );
+    channel.on(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      "postgres_changes" as any,
+      {
+        event: "*",
+        schema: "public",
+        table: "thread_states",
+        filter: `user_id=eq.${userId}`,
+      },
+      () => {
+        queryClient.invalidateQueries({ queryKey: ["flagged-messages"] });
+      },
+    );
+    channel.subscribe();
     return () => {
       client.removeChannel(channel);
     };
