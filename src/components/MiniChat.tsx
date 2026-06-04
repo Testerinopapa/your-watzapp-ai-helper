@@ -1,20 +1,11 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Bot,
-  X,
-  Loader2,
-  Send,
-  Sparkles,
-  AlertTriangle,
-  MessageSquareWarning,
-  CalendarClock,
-  LifeBuoy,
-  ListChecks,
-  FileText,
-  Activity,
-  RotateCcw,
+  Bot, X, Loader2, Send, Sparkles, AlertTriangle,
+  MessageSquareWarning, CalendarClock, LifeBuoy, ListChecks,
+  FileText, Activity, RotateCcw, Copy, Check, ChevronDown,
+  ChevronUp, ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,8 +14,6 @@ type QuickAction = {
   prompt: string;
   icon: React.ComponentType<React.SVGProps<SVGSVGElement> & { size?: number | string }>;
 };
-
-
 
 const QUICK_ACTIONS: QuickAction[] = [
   { label: "Analyze dashboard", icon: Sparkles, prompt: "Analyze this dashboard and give me a clear summary." },
@@ -37,28 +26,61 @@ const QUICK_ACTIONS: QuickAction[] = [
   { label: "Usage summary", icon: Activity, prompt: "Summarize the visible usage, replies, tokens, and activity information." },
 ];
 
+const FOLLOW_UP_CHIPS = [
+  "Why is this urgent?",
+  "What should I do first?",
+  "Summarize shorter",
+  "Show only complaints",
+  "Show only appointments",
+];
 
 const ENDPOINT =
   "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/dashboard-chat";
 
 type Message = { role: "user" | "assistant"; content: string };
 
-// Injected with the first user message so the AI responds in a scannable
-// card-friendly format. Kept short to avoid hijacking the user's question.
+// Injected with the first user message. Tells the AI to produce a structured
+// report in a tag-based format that the frontend parses into UI cards.
 const FORMAT_INSTRUCTION = [
   "",
-  "---",
-  "Format your reply as short sections using ### headers.",
-  "Each section: one ### Header line, then 1-3 bullet points starting with -.",
-  "Keep it tight — no intros, no closings, no markdown besides ### and -.",
+  "--- OUTPUT FORMAT ---",
+  "Reply using the tags below. No markdown, no intro, no closing.",
+  "",
+  "[VERDICT]",
+  "One sentence. What is the most important thing the user needs to know?",
+  "Example: 1 complaint needs attention. Appointments are active but under control.",
+  "[/VERDICT]",
+  "",
+  "[PRIORITY]",
+  "1-3 items, each on its own line using this exact format:",
+  "CATEGORY | URGENCY | Name — one-sentence issue. | Next: one-sentence action.",
+  "Valid CATEGORY values: Complaint, Appointment, Support, Usage",
+  "Valid URGENCY values: High, Medium, Low",
   "Example:",
-  "### 🔴 2 complaints",
-  "- Emma Thompson — refund risk, needs careful reply",
-  "- James O'Connor — bad experience, escalate to human",
-  "### 📅 3 appointments",
-  "- David Park — confirmed, June 13 at 2pm",
-  "- Lisa Chen — needs time assigned",
-  "Stick to what the dashboard actually shows. Don't guess.",
+  "Complaint | High | Emma Thompson — unhappy about shortened session, may request refund. | Next: Review manually before replying.",
+  "Appointment | Medium | Several bookings being rescheduled around June 9–16. | Next: Check for conflicts before confirming.",
+  "Support | Low | Lisa Chen asking about gift card balance. | Next: Look up in support docs and reply.",
+  "[/PRIORITY]",
+  "",
+  "[SUMMARY]",
+  "One line per category. Just the key stat. No fluff.",
+  "Example:",
+  "Complaints: 1 needs review · Appointments: 3 need attention · Support: KB loaded · Usage: Normal · Follow-ups: 0 pending",
+  "[/SUMMARY]",
+  "",
+  "[NEXT]",
+  "One clear recommended action. One sentence.",
+  "Example: Review the complaint first, then confirm the appointment reschedules.",
+  "[/NEXT]",
+  "",
+  "RULES:",
+  "- Only report what the dashboard actually shows. Don't guess.",
+  "- If a section has nothing to report, write \"Nothing to report\" inside the tag.",
+  "- Max 3 priority items. Keep each to one line.",
+  "- No markdown formatting. No bold, no italics, no bullet points.",
+  "- If information is unclear, say it is unclear.",
+  "",
+  "--- END FORMAT ---",
 ].join("\n");
 
 /** Collect visible text from the dashboard DOM for context. */
@@ -70,9 +92,7 @@ function collectDashboardContext(): string {
   return (root?.textContent ?? "").trim().slice(0, 15000);
 }
 
-async function sendMessages(
-  msgs: Message[],
-): Promise<string> {
+async function sendMessages(msgs: Message[]): Promise<string> {
   const dashboardContext = collectDashboardContext();
   const res = await fetch(ENDPOINT, {
     method: "POST",
@@ -83,12 +103,59 @@ async function sendMessages(
   return data?.reply ?? "Sorry, I couldn't analyze the dashboard right now.";
 }
 
-/** Parse an assistant reply into sections (### Header ... content).
- *  Falls back to raw text if the message has no ### headers. */
+// ── Tag-based parser ──
+
+interface PriorityItem {
+  category: string;
+  urgency: string;
+  detail: string;
+  next: string;
+}
+
+interface ReportData {
+  verdict: string;
+  priorities: PriorityItem[];
+  summary: string;
+  next: string;
+}
+
+function extractTag(content: string, tag: string): string {
+  const re = new RegExp(`\\[${tag}\\]([\\s\\S]*?)\\[\\/${tag}\\]`, "i");
+  const m = content.match(re);
+  return (m?.[1] ?? "").trim();
+}
+
+function parseReport(text: string): ReportData | null {
+  const verdict = extractTag(text, "VERDICT");
+  if (!verdict) return null; // no tags → fall back
+
+  const rawPriorities = extractTag(text, "PRIORITY");
+  const summary = extractTag(text, "SUMMARY");
+  const next = extractTag(text, "NEXT");
+
+  const priorities: PriorityItem[] = [];
+  for (const line of rawPriorities.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("Example") || trimmed.startsWith("CATEGORY")) continue;
+    const parts = trimmed.split("|").map((s) => s.trim());
+    if (parts.length >= 4) {
+      priorities.push({
+        category: parts[0],
+        urgency: parts[1],
+        detail: parts[2],
+        next: parts.slice(3).join(" | ").replace(/^Next:\s*/i, ""),
+      });
+    }
+  }
+
+  return { verdict, priorities, summary, next };
+}
+
+// ── Legacy section parser (fallback for old ### format) ──
+
 function parseSections(text: string): { title: string; body: string }[] {
   const sections: { title: string; body: string }[] = [];
   const parts = text.split(/^### /m);
-  // First chunk is everything before the first ### header — skip it.
   for (let i = 1; i < parts.length; i++) {
     const lines = parts[i].split("\n");
     const title = lines[0].trim();
@@ -98,12 +165,58 @@ function parseSections(text: string): { title: string; body: string }[] {
   return sections;
 }
 
-/** Renders an assistant message as compact report cards when the content
- *  uses ### section headers. Falls back to a plain text bubble otherwise. */
-function ReportCards({ text }: { text: string }) {
-  const sections = parseSections(text);
+// ── Badge colors ──
 
-  if (sections.length === 0) {
+const URGENCY_COLORS: Record<string, string> = {
+  High: "bg-red-500/15 text-red-400 border-red-500/30",
+  Medium: "bg-amber-500/15 text-amber-400 border-amber-500/30",
+  Low: "bg-muted text-muted-foreground border-border",
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Complaint: "bg-red-500/10 text-red-400 border-red-500/20",
+  Appointment: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  Support: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  Usage: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+};
+
+const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
+  Complaint: MessageSquareWarning,
+  Appointment: CalendarClock,
+  Support: LifeBuoy,
+  Usage: Activity,
+};
+
+// ── Report renderer ──
+
+function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (q: string) => void }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [copied, setCopied] = useState(false);
+  const report = parseReport(text);
+  const sections = !report ? parseSections(text) : [];
+
+  const toggleExpand = (idx: number) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(idx) ? next.delete(idx) : next.add(idx);
+      return next;
+    });
+  };
+
+  // Copy plain-text summary
+  const handleCopy = async () => {
+    const plain = report
+      ? [report.verdict, "", ...report.priorities.map((p) => `${p.category} · ${p.urgency}: ${p.detail}\n${p.next}`), "", report.summary, "", `Next: ${report.next}`].join("\n")
+      : text;
+    try {
+      await navigator.clipboard.writeText(plain);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch { /* ignore */ }
+  };
+
+  // Fallback: no tags and no ### sections → raw text
+  if (!report && sections.length === 0) {
     return (
       <div className="rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-muted text-foreground">
         {text}
@@ -111,24 +224,130 @@ function ReportCards({ text }: { text: string }) {
     );
   }
 
+  // Legacy fallback: ### sections
+  if (!report) {
+    return (
+      <div className="space-y-2 max-w-full">
+        {sections.map((s, idx) => (
+          <div key={idx} className="rounded-xl border border-border/60 bg-muted/70 overflow-hidden">
+            <div className="px-3 py-1.5 text-[11px] font-semibold text-foreground/80 border-b border-border/40 bg-muted">{s.title}</div>
+            <div className="px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap leading-relaxed">{s.body}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Structured report
   return (
-    <div className="space-y-2 max-w-full">
-      {sections.map((s, idx) => (
-        <div
-          key={idx}
-          className="rounded-xl border border-border/60 bg-muted/70 overflow-hidden"
-        >
-          <div className="px-3 py-1.5 text-[11px] font-semibold text-foreground/80 border-b border-border/40 bg-muted">
-            {s.title}
-          </div>
-          <div className="px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap leading-relaxed">
-            {s.body}
-          </div>
+    <div className="space-y-3 max-w-full">
+      {/* Verdict banner */}
+      <div className="rounded-xl bg-primary/8 border border-primary/20 px-3 py-2.5">
+        <p className="text-[12px] font-medium text-foreground/90 leading-snug">
+          {report.verdict}
+        </p>
+      </div>
+
+      {/* Priority cards */}
+      {report.priorities.length > 0 && (
+        <div className="space-y-1.5">
+          {report.priorities.map((p, idx) => {
+            const CatIcon = CATEGORY_ICONS[p.category] ?? FileText;
+            const isOpen = expanded.has(idx);
+            return (
+              <div key={idx} className="rounded-xl border border-border/60 bg-muted/70 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleExpand(idx)}
+                  className="w-full text-left px-3 py-2"
+                >
+                  <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                    <CatIcon size={12} className={CATEGORY_COLORS[p.category]?.split(" ")[1] ?? "text-muted-foreground"} />
+                    <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full border", CATEGORY_COLORS[p.category] ?? "bg-muted text-muted-foreground border-border")}>
+                      {p.category}
+                    </span>
+                    <span className={cn("text-[10px] font-medium px-1.5 py-0.5 rounded-full border", URGENCY_COLORS[p.urgency] ?? "bg-muted text-muted-foreground border-border")}>
+                      {p.urgency} priority
+                    </span>
+                  </div>
+                  <p className="text-[12px] text-foreground/90 leading-snug">
+                    {p.detail}
+                  </p>
+                  {isOpen && (
+                    <p className="text-[11px] text-primary/80 mt-1.5 flex items-center gap-1">
+                      <ArrowRight size={10} />
+                      {p.next}
+                    </p>
+                  )}
+                </button>
+                {!isOpen && (
+                  <button
+                    type="button"
+                    onClick={() => toggleExpand(idx)}
+                    className="w-full flex items-center gap-1 px-3 pb-2 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <ChevronDown size={10} />
+                    Show details
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
-      ))}
+      )}
+
+      {/* Category summary */}
+      {report.summary && (
+        <div className="rounded-xl border border-border/60 bg-muted/50 px-3 py-2.5">
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            {report.summary}
+          </p>
+        </div>
+      )}
+
+      {/* Next step */}
+      {report.next && (
+        <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/20 px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mb-0.5">
+            Recommended next step
+          </p>
+          <p className="text-[12px] text-foreground/90 leading-snug">
+            {report.next}
+          </p>
+        </div>
+      )}
+
+      {/* Actions bar */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleCopy}
+          className="h-7 text-[10px] gap-1 text-muted-foreground hover:text-foreground"
+        >
+          {copied ? <Check size={11} /> : <Copy size={11} />}
+          {copied ? "Copied" : "Copy summary"}
+        </Button>
+      </div>
+
+      {/* Follow-up chips */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {FOLLOW_UP_CHIPS.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            onClick={() => onFollowUp(chip)}
+            className="text-[10px] px-2 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
+
+// ── Main component ──
 
 export default function MiniChat() {
   const [open, setOpen] = useState(false);
@@ -138,14 +357,12 @@ export default function MiniChat() {
   const bodyRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when messages change or loading state toggles.
   useEffect(() => {
     if (bodyRef.current) {
       bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
   }, [messages, loading]);
 
-  // Focus input when panel opens.
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 100);
@@ -156,29 +373,21 @@ export default function MiniChat() {
     const raw = (text ?? input).trim();
     if (!raw || loading) return;
 
-    // Inject format instruction into the first message so the AI replies
-    // in a compact, card-renderable structure.
     const isFirst = messages.length === 0;
     const content = isFirst ? `${raw}\n${FORMAT_INSTRUCTION}` : raw;
 
-    const userMsg: Message = { role: "user", content };
-    const next = [...messages, userMsg];
-    // Store the display version without the instruction so it looks clean.
-    setMessages([...messages, { role: "user", content: raw }]);
+    // Store display version without the format instruction.
+    setMessages((prev) => [...prev, { role: "user", content: raw }]);
     setInput("");
     setLoading(true);
 
     try {
-      const reply = await sendMessages(next);
+      const reply = await sendMessages([...messages, { role: "user", content }]);
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
     } catch {
       setMessages((prev) => [
         ...prev,
-        {
-          role: "assistant",
-          content:
-            "Something went wrong reaching the assistant. Please try again.",
-        },
+        { role: "assistant", content: "Something went wrong reaching the assistant. Please try again." },
       ]);
     } finally {
       setLoading(false);
@@ -196,6 +405,13 @@ export default function MiniChat() {
     setMessages([]);
     setInput("");
   };
+
+  const handleFollowUp = useCallback(
+    (question: string) => {
+      handleSend(question);
+    },
+    [messages, loading],
+  );
 
   return (
     <>
@@ -228,7 +444,7 @@ export default function MiniChat() {
         <div
           className={cn(
             "fixed bottom-6 right-6 z-50 flex flex-col",
-            "w-[380px] max-w-[calc(100vw-2rem)] h-[520px] max-h-[calc(100vh-4rem)]",
+            "w-[380px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-4rem)]",
             "rounded-2xl border border-border bg-card shadow-2xl overflow-hidden",
           )}
         >
@@ -242,24 +458,11 @@ export default function MiniChat() {
             </div>
             <div className="flex items-center gap-1">
               {messages.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={handleReset}
-                  title="New chat"
-                  aria-label="New chat"
-                >
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleReset} title="New chat" aria-label="New chat">
                   <RotateCcw size={14} />
                 </Button>
               )}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setOpen(false)}
-                aria-label="Close assistant"
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setOpen(false)} aria-label="Close assistant">
                 <X size={14} />
               </Button>
             </div>
@@ -303,24 +506,12 @@ export default function MiniChat() {
               </div>
             )}
 
-
             {messages.map((m, i) => (
-              <div
-                key={i}
-                className={cn(
-                  "flex",
-                  m.role === "user" ? "justify-end" : "justify-start",
-                )}
-              >
+              <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
                 {m.role === "assistant" ? (
-                  <ReportCards text={m.content} />
+                  <ReportCards text={m.content} onFollowUp={handleFollowUp} />
                 ) : (
-                  <div
-                    className={cn(
-                      "max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed",
-                      "bg-primary/10 text-foreground",
-                    )}
-                  >
+                  <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-primary/10 text-foreground">
                     {m.content}
                   </div>
                 )}
@@ -336,7 +527,7 @@ export default function MiniChat() {
             )}
           </div>
 
-          {/* Compact quick-action row (visible once chat starts) */}
+          {/* Quick-action row (visible once chat starts) */}
           {messages.length > 0 && (
             <div className="border-t border-border shrink-0 px-2 py-1.5 overflow-x-auto">
               <div className="flex items-center gap-1.5 w-max">
@@ -384,7 +575,6 @@ export default function MiniChat() {
               <Send size={14} />
             </Button>
           </div>
-
         </div>
       )}
     </>
