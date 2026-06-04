@@ -338,7 +338,12 @@ export default function AppointmentsSection() {
   };
   const fresh = deduped
     .filter((m) => !isStale(m))
-    .filter((m) => !dismissed.has(m.thread_id));
+    .filter((m) => {
+      const dismissedAt = dismissed.get(m.thread_id);
+      if (dismissedAt === undefined) return true;
+      const updatedAt = m.updated_at ? new Date(m.updated_at).getTime() : 0;
+      return updatedAt > dismissedAt;
+    });
 
   // Look up the real agenda_events row for a flagged thread.
   const agendaEventFor = (m: FlaggedMessage): AgendaEntry | undefined => {
