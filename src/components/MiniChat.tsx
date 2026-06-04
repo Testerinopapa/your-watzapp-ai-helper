@@ -43,6 +43,24 @@ const ENDPOINT =
 
 type Message = { role: "user" | "assistant"; content: string };
 
+// Injected with the first user message so the AI responds in a scannable
+// card-friendly format. Kept short to avoid hijacking the user's question.
+const FORMAT_INSTRUCTION = [
+  "",
+  "---",
+  "Format your reply as short sections using ### headers.",
+  "Each section: one ### Header line, then 1-3 bullet points starting with -.",
+  "Keep it tight — no intros, no closings, no markdown besides ### and -.",
+  "Example:",
+  "### 🔴 2 complaints",
+  "- Emma Thompson — refund risk, needs careful reply",
+  "- James O'Connor — bad experience, escalate to human",
+  "### 📅 3 appointments",
+  "- David Park — confirmed, June 13 at 2pm",
+  "- Lisa Chen — needs time assigned",
+  "Stick to what the dashboard actually shows. Don't guess.",
+].join("\n");
+
 /** Collect visible text from the dashboard DOM for context. */
 function collectDashboardContext(): string {
   const root =
@@ -63,6 +81,53 @@ async function sendMessages(
   });
   const data = await res.json().catch(() => null);
   return data?.reply ?? "Sorry, I couldn't analyze the dashboard right now.";
+}
+
+/** Parse an assistant reply into sections (### Header ... content).
+ *  Falls back to raw text if the message has no ### headers. */
+function parseSections(text: string): { title: string; body: string }[] {
+  const sections: { title: string; body: string }[] = [];
+  const parts = text.split(/^### /m);
+  // First chunk is everything before the first ### header — skip it.
+  for (let i = 1; i < parts.length; i++) {
+    const lines = parts[i].split("\n");
+    const title = lines[0].trim();
+    const body = lines.slice(1).join("\n").trim();
+    if (title) sections.push({ title, body });
+  }
+  return sections;
+}
+
+/** Renders an assistant message as compact report cards when the content
+ *  uses ### section headers. Falls back to a plain text bubble otherwise. */
+function ReportCards({ text }: { text: string }) {
+  const sections = parseSections(text);
+
+  if (sections.length === 0) {
+    return (
+      <div className="rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-muted text-foreground">
+        {text}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2 max-w-full">
+      {sections.map((s, idx) => (
+        <div
+          key={idx}
+          className="rounded-xl border border-border/60 bg-muted/70 overflow-hidden"
+        >
+          <div className="px-3 py-1.5 text-[11px] font-semibold text-foreground/80 border-b border-border/40 bg-muted">
+            {s.title}
+          </div>
+          <div className="px-3 py-2 text-[12px] text-foreground/90 whitespace-pre-wrap leading-relaxed">
+            {s.body}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function MiniChat() {
@@ -88,12 +153,18 @@ export default function MiniChat() {
   }, [open]);
 
   const handleSend = async (text?: string) => {
-    const content = (text ?? input).trim();
-    if (!content || loading) return;
+    const raw = (text ?? input).trim();
+    if (!raw || loading) return;
+
+    // Inject format instruction into the first message so the AI replies
+    // in a compact, card-renderable structure.
+    const isFirst = messages.length === 0;
+    const content = isFirst ? `${raw}\n${FORMAT_INSTRUCTION}` : raw;
 
     const userMsg: Message = { role: "user", content };
     const next = [...messages, userMsg];
-    setMessages(next);
+    // Store the display version without the instruction so it looks clean.
+    setMessages([...messages, { role: "user", content: raw }]);
     setInput("");
     setLoading(true);
 
@@ -241,16 +312,18 @@ export default function MiniChat() {
                   m.role === "user" ? "justify-end" : "justify-start",
                 )}
               >
-                <div
-                  className={cn(
-                    "max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed",
-                    m.role === "user"
-                      ? "bg-primary/10 text-foreground"
-                      : "bg-muted text-foreground",
-                  )}
-                >
-                  {m.content}
-                </div>
+                {m.role === "assistant" ? (
+                  <ReportCards text={m.content} />
+                ) : (
+                  <div
+                    className={cn(
+                      "max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed",
+                      "bg-primary/10 text-foreground",
+                    )}
+                  >
+                    {m.content}
+                  </div>
+                )}
               </div>
             ))}
 
