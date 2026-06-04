@@ -163,6 +163,14 @@ export const eventMatchesContact = (
   );
 };
 
+/** Strip per-message synthetic suffixes ("#recent:...") so dismissals,
+ *  comparisons, and lookups always reference the underlying thread. */
+export function baseThreadId(id: string | null | undefined): string {
+  const s = (id ?? "").toString();
+  const i = s.indexOf("#recent:");
+  return i >= 0 ? s.slice(0, i) : s;
+}
+
 export function isVoiceStub(text: string | null | undefined) {
   const t = (text ?? "").trim();
   if (!t) return true;
