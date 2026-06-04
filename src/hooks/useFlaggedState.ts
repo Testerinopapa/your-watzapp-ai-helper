@@ -32,8 +32,8 @@ export function useFlaggedState() {
   const [assignments, setAssignmentsState] = useState<Record<string, string>>(
     () => loadAssignments(),
   );
-  const [dismissed, setDismissedState] = useState<Set<string>>(
-    () => new Set(loadDismissed()),
+  const [dismissed, setDismissedState] = useState<Map<string, number>>(
+    () => new Map(Object.entries(loadDismissed())),
   );
   const [hydrated, setHydrated] = useState(false);
 
