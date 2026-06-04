@@ -53,7 +53,10 @@ export function useFlaggedState() {
   }, [assignments]);
   useEffect(() => {
     try {
-      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
+      localStorage.setItem(
+        DISMISSED_KEY,
+        JSON.stringify(Object.fromEntries(dismissed)),
+      );
     } catch { /* ignore */ }
   }, [dismissed]);
 
