@@ -27,12 +27,23 @@ const QUICK_ACTIONS: QuickAction[] = [
 ];
 
 const FOLLOW_UP_CHIPS = [
-  "Why is this urgent?",
-  "What should I do first?",
-  "Summarize shorter",
-  "Show only complaints",
-  "Show only appointments",
+  { label: "Why is this urgent?", prompt: "Why is this urgent?" },
+  { label: "What should I do first?", prompt: "What should I do first?" },
+  { label: "Summarize shorter", prompt: "Summarize this shorter." },
+  { label: "Show only complaints", prompt: "Filter: show only complaint items from the last report." },
+  { label: "Show only appointments", prompt: "Filter: show only appointment items from the last report." },
 ];
+
+// Appended to every follow-up chip click so the response stays compact.
+const FOLLOW_UP_INSTRUCTION = [
+  "Answer in a compact dashboard format:",
+  "- One short headline.",
+  "- 2-3 short bullet points max.",
+  "- One clear next step.",
+  "- No markdown headings, no **bold**, no numbered lists.",
+  "- Use plain business language. No technical explanation.",
+  "- If you need a section header, use the [VERDICT] tag format.",
+].join("\n");
 
 const ENDPOINT =
   "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/dashboard-chat";
@@ -90,6 +101,18 @@ function collectDashboardContext(): string {
     document.querySelector("main") ??
     document.body;
   return (root?.textContent ?? "").trim().slice(0, 15000);
+}
+
+/** Strip markdown formatting artifacts from AI responses. */
+function cleanMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "")        // # ## ### headings
+    .replace(/\*\*(.+?)\*\*/g, "$1")     // **bold**
+    .replace(/^[-*]\s+/gm, "• ")         // - or * bullets → •
+    .replace(/^\d+\.\s+/gm, "")          // 1. numbered lists
+    .replace(/^>\s+/gm, "")              // > blockquotes
+    .replace(/`{1,3}[^`]*`{1,3}/g, "")  // inline code
+    .trim();
 }
 
 async function sendMessages(msgs: Message[]): Promise<string> {
@@ -334,12 +357,12 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (q: strin
       <div className="flex items-center gap-1 flex-wrap">
         {FOLLOW_UP_CHIPS.map((chip) => (
           <button
-            key={chip}
+            key={chip.label}
             type="button"
-            onClick={() => onFollowUp(chip)}
+            onClick={() => onFollowUp(chip.prompt)}
             className="text-[10px] px-2 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
           >
-            {chip}
+            {chip.label}
           </button>
         ))}
       </div>
@@ -408,7 +431,7 @@ export default function MiniChat() {
 
   const handleFollowUp = useCallback(
     (question: string) => {
-      handleSend(question);
+      handleSend(`${question}\n\n${FOLLOW_UP_INSTRUCTION}`);
     },
     [messages, loading],
   );
@@ -509,7 +532,7 @@ export default function MiniChat() {
             {messages.map((m, i) => (
               <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
                 {m.role === "assistant" ? (
-                  <ReportCards text={m.content} onFollowUp={handleFollowUp} />
+                  <ReportCards text={cleanMarkdown(m.content)} onFollowUp={handleFollowUp} />
                 ) : (
                   <div className="max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed bg-primary/10 text-foreground">
                     {m.content}
