@@ -394,14 +394,16 @@ export default function FlaggedReviewSection() {
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
-  // One card per activity message (no per-thread grouping). Same thread
-  // with multiple inbound messages = multiple cards. We still drop exact
-  // duplicates (same thread + same text + same timestamp) so polling
-  // doesn't double-insert.
+  // Build per-message cards from the Activity stream. We include BOTH
+  // explicitly-flagged activity rows AND any other recent activity rows
+  // whose sender matches a contact already surfaced in the flagged list
+  // — so e.g. "Maria" gets every recent message of hers stacked into
+  // her deck, not just the one row the flagged backend returns.
+  const flaggedContactKeys = new Set(
+    flaggedFromList.map((m) => contactKeyForItem(m)).filter(Boolean),
+  );
   const flaggedFromActivity: FlaggedMessage[] = [];
-  for (const [index, r] of activityRows
-    .filter(isFlaggedActivity)
-    .entries()) {
+  for (const [index, r] of activityRows.entries()) {
     const text = textForActivity(r);
     const explicitThreadId = (r.thread_id ?? r.threadId ?? "").trim();
     const activityId = activityThreadId(r);
@@ -413,9 +415,10 @@ export default function FlaggedReviewSection() {
       senderFromThreadId(activityId) ||
       cleanSenderLabel(r.subject) ||
       "Unknown sender";
-    // Unique per-message id so each inbound becomes its own card. We keep
-    // the real thread id on a separate field-less convention by suffixing
-    // — drafting/dismissal still works because handlers key off thread_id.
+    const ck = normalizeLookup(displaySender);
+    const matchesFlaggedContact = ck && flaggedContactKeys.has(ck);
+    if (!isFlaggedActivity(r) && !matchesFlaggedContact) continue;
+    // Unique per-message id so each inbound becomes its own card.
     const cardId = explicitThreadId
       ? `${explicitThreadId}#${r.createdAt}:${index}`
       : `activity:${r.createdAt}:${index}`;
@@ -429,7 +432,9 @@ export default function FlaggedReviewSection() {
         latest_message: text || r.latestMessage,
         intent_category: "misc",
         intent_confidence: 1,
-        intent_reason: "Needs review from the Activity stream.",
+        intent_reason: matchesFlaggedContact
+          ? "Earlier message from a flagged contact."
+          : "Needs review from the Activity stream.",
         intent_source: "activity",
         intent_classified_at: r.createdAt,
         updated_at: r.createdAt,
