@@ -14,6 +14,9 @@ import {
   LifeBuoy,
   FileText,
   AlertTriangle,
+  Loader2,
+  Target,
+  Zap,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
