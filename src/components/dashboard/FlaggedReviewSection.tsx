@@ -394,6 +394,25 @@ export default function FlaggedReviewSection() {
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
+  const flaggedRecentMessageCards: FlaggedMessage[] = [];
+  for (const item of flaggedFromList) {
+    const messages = item.recent_messages ?? [];
+    for (const [index, message] of messages.entries()) {
+      const text = (message.body ?? "").trim();
+      const capturedAt = message.captured_at ?? item.updated_at;
+      if (!text || !capturedAt || message.from_me) continue;
+      flaggedRecentMessageCards.push({
+        ...item,
+        thread_id: `${item.thread_id}#recent:${capturedAt}:${index}`,
+        preview: text,
+        latest_message: text,
+        updated_at: capturedAt,
+        intent_classified_at: item.intent_classified_at ?? capturedAt,
+        intent_reason:
+          item.intent_reason || "Earlier inbound message from this flagged thread.",
+      });
+    }
+  }
   // Build per-message cards from the Activity stream. We include BOTH
   // explicitly-flagged activity rows AND any other recent activity rows
   // whose sender matches a contact already surfaced in the flagged list
@@ -444,6 +463,7 @@ export default function FlaggedReviewSection() {
   }
   const all: FlaggedMessage[] = [
     ...flaggedFromList,
+    ...flaggedRecentMessageCards,
     ...flaggedFromActivity,
   ];
   const recencyOf = (m: FlaggedMessage) => {
