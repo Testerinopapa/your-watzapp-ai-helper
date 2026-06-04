@@ -314,8 +314,16 @@ export default function FlaggedReviewSection() {
   // which writes to the DB + mirrors to localStorage for instant paint.
 
   const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
-  const isDismissed = (m: FlaggedMessage) =>
-    dismissKeysFor(m).some((k) => dismissed.has(k));
+  const isDismissed = (m: FlaggedMessage) => {
+    const updatedAt = m.updated_at ? new Date(m.updated_at).getTime() : 0;
+    return dismissKeysFor(m).some((k) => {
+      const dismissedAt = dismissed.get(k);
+      if (dismissedAt === undefined) return false;
+      // A new inbound message (thread updated after the dismissal)
+      // automatically un-hides the card.
+      return updatedAt <= dismissedAt;
+    });
+  };
   const dismissItem = (m: FlaggedMessage) => {
     dismissThreads(dismissKeysFor(m));
   };

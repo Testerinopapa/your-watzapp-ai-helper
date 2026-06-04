@@ -42,7 +42,7 @@ export const toneStyles: Record<Tone, { badge: string; border: string }> = {
 
 export const FOLDERS_KEY = "flagged.folders.v2";
 export const ASSIGNMENTS_KEY = "flagged.assignments.v3";
-export const DISMISSED_KEY = "flagged.dismissed.v2";
+export const DISMISSED_KEY = "flagged.dismissed.v3";
 export const SUPPORT_DOCS_CACHE_KEY = "support.docs.v1";
 export const FOLDER_DROP_PREFIX = "folder-drop:";
 export const TRASH_DROP_ID = "flagged-trash-drop";
@@ -171,16 +171,28 @@ export function isVoiceStub(text: string | null | undefined) {
 
 // ── localStorage loaders ──
 
-export function loadDismissed(): string[] {
+export function loadDismissed(): Record<string, number> {
   try {
     const raw = localStorage.getItem(DISMISSED_KEY);
-    if (!raw) return [];
+    if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed)
-      ? parsed.filter((s): s is string => typeof s === "string")
-      : [];
+    if (Array.isArray(parsed)) {
+      // Legacy shape: list of thread ids. Treat as dismissed at epoch 0
+      // so any thread update wins and re-surfaces the card.
+      const out: Record<string, number> = {};
+      for (const id of parsed) if (typeof id === "string") out[id] = 0;
+      return out;
+    }
+    if (parsed && typeof parsed === "object") {
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(parsed)) {
+        if (typeof k === "string" && typeof v === "number") out[k] = v;
+      }
+      return out;
+    }
+    return {};
   } catch {
-    return [];
+    return {};
   }
 }
 

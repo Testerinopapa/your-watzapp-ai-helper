@@ -32,8 +32,8 @@ export function useFlaggedState() {
   const [assignments, setAssignmentsState] = useState<Record<string, string>>(
     () => loadAssignments(),
   );
-  const [dismissed, setDismissedState] = useState<Set<string>>(
-    () => new Set(loadDismissed()),
+  const [dismissed, setDismissedState] = useState<Map<string, number>>(
+    () => new Map(Object.entries(loadDismissed())),
   );
   const [hydrated, setHydrated] = useState(false);
 
@@ -53,7 +53,10 @@ export function useFlaggedState() {
   }, [assignments]);
   useEffect(() => {
     try {
-      localStorage.setItem(DISMISSED_KEY, JSON.stringify(Array.from(dismissed)));
+      localStorage.setItem(
+        DISMISSED_KEY,
+        JSON.stringify(Object.fromEntries(dismissed)),
+      );
     } catch { /* ignore */ }
   }, [dismissed]);
 
@@ -70,7 +73,7 @@ export function useFlaggedState() {
           .select("folder_id,name,created_at")
           .order("created_at", { ascending: true }),
         supabase.from("flagged_assignments").select("thread_id,folder_id"),
-        supabase.from("flagged_dismissals").select("thread_id"),
+        supabase.from("flagged_dismissals").select("thread_id,created_at"),
       ]);
       if (cancelled) return;
 
@@ -101,9 +104,14 @@ export function useFlaggedState() {
         setAssignmentsState(map);
       }
       if (!dismissRes.error && dismissRes.data) {
-        setDismissedState(
-          new Set(dismissRes.data.map((r) => r.thread_id as string)),
-        );
+        const m = new Map<string, number>();
+        for (const r of dismissRes.data) {
+          const ts = r.created_at
+            ? new Date(r.created_at as string).getTime()
+            : 0;
+          m.set(r.thread_id as string, Number.isFinite(ts) ? ts : 0);
+        }
+        setDismissedState(m);
       }
       setHydrated(true);
     })();
@@ -213,27 +221,26 @@ export function useFlaggedState() {
   const dismissThreads = useCallback(
     async (threadIds: string[]) => {
       if (threadIds.length === 0) return;
-      const added: string[] = [];
+      const now = Date.now();
+      const prevSnapshot = new Map(dismissedRef.current);
       setDismissedState((prev) => {
-        const next = new Set(prev);
-        for (const id of threadIds) {
-          if (!next.has(id)) { next.add(id); added.push(id); }
-        }
+        const next = new Map(prev);
+        for (const id of threadIds) next.set(id, now);
         return next;
       });
-      if (!userId || added.length === 0) return;
+      if (!userId) return;
       const { error } = await supabase
         .from("flagged_dismissals")
         .upsert(
-          added.map((id) => ({ user_id: userId, thread_id: id })),
+          threadIds.map((id) => ({
+            user_id: userId,
+            thread_id: id,
+            created_at: new Date(now).toISOString(),
+          })),
           { onConflict: "user_id,thread_id" },
         );
       if (error) {
-        setDismissedState((prev) => {
-          const next = new Set(prev);
-          for (const id of added) next.delete(id);
-          return next;
-        });
+        setDismissedState(prevSnapshot);
       }
     },
     [userId],
@@ -241,10 +248,10 @@ export function useFlaggedState() {
 
   const undismissThread = useCallback(
     async (threadId: string) => {
-      const wasDismissed = dismissedRef.current.has(threadId);
-      if (!wasDismissed) return;
-      setDismissedState((prev) => {
-        const next = new Set(prev);
+      const prev = dismissedRef.current.get(threadId);
+      if (prev === undefined) return;
+      setDismissedState((p) => {
+        const next = new Map(p);
         next.delete(threadId);
         return next;
       });
@@ -255,7 +262,7 @@ export function useFlaggedState() {
         .eq("user_id", userId)
         .eq("thread_id", threadId);
       if (error) {
-        setDismissedState((prev) => new Set(prev).add(threadId));
+        setDismissedState((p) => new Map(p).set(threadId, prev));
       }
     },
     [userId],
