@@ -221,27 +221,26 @@ export function useFlaggedState() {
   const dismissThreads = useCallback(
     async (threadIds: string[]) => {
       if (threadIds.length === 0) return;
-      const added: string[] = [];
+      const now = Date.now();
+      const prevSnapshot = new Map(dismissedRef.current);
       setDismissedState((prev) => {
-        const next = new Set(prev);
-        for (const id of threadIds) {
-          if (!next.has(id)) { next.add(id); added.push(id); }
-        }
+        const next = new Map(prev);
+        for (const id of threadIds) next.set(id, now);
         return next;
       });
-      if (!userId || added.length === 0) return;
+      if (!userId) return;
       const { error } = await supabase
         .from("flagged_dismissals")
         .upsert(
-          added.map((id) => ({ user_id: userId, thread_id: id })),
+          threadIds.map((id) => ({
+            user_id: userId,
+            thread_id: id,
+            created_at: new Date(now).toISOString(),
+          })),
           { onConflict: "user_id,thread_id" },
         );
       if (error) {
-        setDismissedState((prev) => {
-          const next = new Set(prev);
-          for (const id of added) next.delete(id);
-          return next;
-        });
+        setDismissedState(prevSnapshot);
       }
     },
     [userId],
@@ -249,10 +248,10 @@ export function useFlaggedState() {
 
   const undismissThread = useCallback(
     async (threadId: string) => {
-      const wasDismissed = dismissedRef.current.has(threadId);
-      if (!wasDismissed) return;
-      setDismissedState((prev) => {
-        const next = new Set(prev);
+      const prev = dismissedRef.current.get(threadId);
+      if (prev === undefined) return;
+      setDismissedState((p) => {
+        const next = new Map(p);
         next.delete(threadId);
         return next;
       });
@@ -263,7 +262,7 @@ export function useFlaggedState() {
         .eq("user_id", userId)
         .eq("thread_id", threadId);
       if (error) {
-        setDismissedState((prev) => new Set(prev).add(threadId));
+        setDismissedState((p) => new Map(p).set(threadId, prev));
       }
     },
     [userId],
