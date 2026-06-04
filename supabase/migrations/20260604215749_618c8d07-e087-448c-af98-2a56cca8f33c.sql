@@ -1,0 +1,1 @@
+DELETE FROM public.flagged_dismissals WHERE thread_id LIKE '%#recent:%' OR thread_id LIKE 'activity:%';
