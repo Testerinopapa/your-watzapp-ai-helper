@@ -491,6 +491,23 @@ export default function FlaggedReviewSection() {
     if (ur !== 0) return ur;
     return recencyOf(b) - recencyOf(a);
   });
+  // Precompute the latest updated_at per base thread so a fresh inbound
+  // on Maria's main thread re-surfaces every stacked recent-message card
+  // even though each card carries its own (older) captured_at timestamp.
+  const latestUpdateByBase = new Map<string, number>();
+  for (const m of all) {
+    const base = baseThreadId(m.thread_id);
+    const ts = m.updated_at ? new Date(m.updated_at).getTime() : 0;
+    const prev = latestUpdateByBase.get(base) ?? 0;
+    if (ts > prev) latestUpdateByBase.set(base, ts);
+  }
+  const isDismissed = (m: FlaggedMessage) => {
+    const base = baseThreadId(m.thread_id);
+    const dismissedAt = dismissed.get(base);
+    if (dismissedAt === undefined) return false;
+    const latest = latestUpdateByBase.get(base) ?? 0;
+    return latest <= dismissedAt;
+  };
   // Drop exact repeats only (same card id OR identical thread+text+timestamp).
   const seenIds = new Set<string>();
   const seenFp = new Set<string>();
