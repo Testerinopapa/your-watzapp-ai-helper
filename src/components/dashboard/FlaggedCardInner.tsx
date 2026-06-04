@@ -203,23 +203,48 @@ export default function FlaggedCardInner({
         </div>
 
         <div className="space-y-1">
-          {item.intent_category && (
-            <Badge
-              variant="outline"
-              data-intent-badge=""
-              className={cn(
-                "text-[10px] uppercase tracking-wide",
-                isComplaint &&
-                  "border-red-400/30 text-red-400 bg-red-400/5",
-                isSupport &&
-                  "border-blue-400/30 text-blue-400 bg-blue-400/5",
-                isAppt &&
-                  "border-amber-400/30 text-amber-400 bg-amber-400/5",
-              )}
-            >
-              {item.intent_category}
-            </Badge>
-          )}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {intentLabel && (
+              <Badge
+                variant="outline"
+                data-intent-badge=""
+                className={cn(
+                  "text-[10px] uppercase tracking-wide",
+                  isComplaint &&
+                    "border-red-400/30 text-red-400 bg-red-400/5",
+                  isSupport &&
+                    "border-blue-400/30 text-blue-400 bg-blue-400/5",
+                  isAppt &&
+                    "border-amber-400/30 text-amber-400 bg-amber-400/5",
+                )}
+              >
+                {intentLabel}
+              </Badge>
+            )}
+            {urgencyStyle && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
+                  urgencyStyle,
+                )}
+                title={`Urgency: ${urgency}`}
+              >
+                <Zap size={9} />
+                {urgency}
+              </span>
+            )}
+            {typeof item.intent_confidence === "number" && item.intent_confidence > 0 && (
+              <span className="text-[10px] text-muted-foreground/70">
+                {Math.round(item.intent_confidence * 100)}% conf
+              </span>
+            )}
+            {classifying && (
+              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground italic">
+                <Loader2 size={10} className="animate-spin" />
+                Analyzing conversation…
+              </span>
+            )}
+          </div>
           {isComplaint && (() => {
             const cat = (item.intent_category ?? "").toLowerCase();
             let riskLabel = "";
@@ -260,12 +285,25 @@ export default function FlaggedCardInner({
               "{item.latest_message ?? item.preview ?? item.subject}"
             </p>
           )}
-          {item.intent_reason && (
+          {item.customer_goal && (
+            <p className="text-[11px] text-foreground/80 pt-1 flex items-start gap-1">
+              <Target size={11} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <span><span className="text-muted-foreground">Customer goal:</span> {item.customer_goal}</span>
+            </p>
+          )}
+          {item.business_action && (
+            <p className="text-[11px] text-foreground/80 flex items-start gap-1">
+              <CalendarCheck size={11} className="mt-0.5 shrink-0 text-muted-foreground" />
+              <span><span className="text-muted-foreground">Next action:</span> {item.business_action}</span>
+            </p>
+          )}
+          {(item.intent_review_reason || item.intent_reason) && (
             <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
-              {item.intent_reason}
+              {item.intent_review_reason ?? item.intent_reason}
             </p>
           )}
         </div>
+
 
         {footer}
       </CardContent>
