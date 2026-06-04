@@ -53,6 +53,7 @@ import {
   normalizeLookup,
   cleanSenderLabel,
   senderFromThreadId,
+  baseThreadId,
   isVoiceStub,
   type FolderDef,
   type DraftState,
@@ -313,23 +314,18 @@ export default function FlaggedReviewSection() {
   // Persistence (folders / assignments / dismissals) lives in useFlaggedState,
   // which writes to the DB + mirrors to localStorage for instant paint.
 
-  const dismissKeysFor = (m: FlaggedMessage): string[] => [m.thread_id];
-  const isDismissed = (m: FlaggedMessage) => {
-    const updatedAt = m.updated_at ? new Date(m.updated_at).getTime() : 0;
-    return dismissKeysFor(m).some((k) => {
-      const dismissedAt = dismissed.get(k);
-      if (dismissedAt === undefined) return false;
-      // A new inbound message (thread updated after the dismissal)
-      // automatically un-hides the card.
-      return updatedAt <= dismissedAt;
-    });
-  };
+  // Dismissals always collapse onto the BASE thread id so a "Clear all"
+  // doesn't leave dozens of frozen per-message ids in the DB that can never
+  // be revived. The comparison uses the latest updated_at across every card
+  // sharing the base thread (computed below, once `all` is built) — so any
+  // fresh inbound on Maria's thread re-surfaces her entire stacked deck.
+  const dismissKeysFor = (m: FlaggedMessage): string[] => [baseThreadId(m.thread_id)];
   const dismissItem = (m: FlaggedMessage) => {
     dismissThreads(dismissKeysFor(m));
   };
 
   const clearAll = () => {
-    const ids = deduped.map((m) => m.thread_id);
+    const ids = Array.from(new Set(deduped.map((m) => baseThreadId(m.thread_id))));
     if (ids.length === 0) return;
     dismissThreads(ids);
     toast({
@@ -495,6 +491,23 @@ export default function FlaggedReviewSection() {
     if (ur !== 0) return ur;
     return recencyOf(b) - recencyOf(a);
   });
+  // Precompute the latest updated_at per base thread so a fresh inbound
+  // on Maria's main thread re-surfaces every stacked recent-message card
+  // even though each card carries its own (older) captured_at timestamp.
+  const latestUpdateByBase = new Map<string, number>();
+  for (const m of all) {
+    const base = baseThreadId(m.thread_id);
+    const ts = m.updated_at ? new Date(m.updated_at).getTime() : 0;
+    const prev = latestUpdateByBase.get(base) ?? 0;
+    if (ts > prev) latestUpdateByBase.set(base, ts);
+  }
+  const isDismissed = (m: FlaggedMessage) => {
+    const base = baseThreadId(m.thread_id);
+    const dismissedAt = dismissed.get(base);
+    if (dismissedAt === undefined) return false;
+    const latest = latestUpdateByBase.get(base) ?? 0;
+    return latest <= dismissedAt;
+  };
   // Drop exact repeats only (same card id OR identical thread+text+timestamp).
   const seenIds = new Set<string>();
   const seenFp = new Set<string>();
