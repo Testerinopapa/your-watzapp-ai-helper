@@ -48,7 +48,7 @@ const FOLLOW_UP_INSTRUCTION = [
 const ENDPOINT =
   "https://ocpphyjkstvfespxrajk.supabase.co/functions/v1/dashboard-chat";
 
-type Message = { role: "user" | "assistant"; content: string };
+type Message = { role: "user" | "assistant"; content: string; apiContent?: string };
 
 // Injected with the first user message. Tells the AI to produce a structured
 // report in a tag-based format that the frontend parses into UI cards.
@@ -212,7 +212,7 @@ const CATEGORY_ICONS: Record<string, React.ComponentType<{ size?: number; classN
 
 // ── Report renderer ──
 
-function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (q: string) => void }) {
+function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (visible: string, api?: string) => void }) {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [copied, setCopied] = useState(false);
   const report = parseReport(text);
@@ -359,7 +359,7 @@ function ReportCards({ text, onFollowUp }: { text: string; onFollowUp: (q: strin
           <button
             key={chip.label}
             type="button"
-            onClick={() => onFollowUp(chip.prompt)}
+            onClick={() => onFollowUp(chip.label, chip.prompt)}
             className="text-[10px] px-2 py-1 rounded-full border border-border bg-muted/50 text-muted-foreground hover:text-foreground hover:border-primary/30 transition-colors"
           >
             {chip.label}
@@ -392,15 +392,19 @@ export default function MiniChat() {
     }
   }, [open]);
 
-  const handleSend = async (text?: string) => {
+  const handleSend = async (text?: string, apiText?: string) => {
     const raw = (text ?? input).trim();
     if (!raw || loading) return;
 
     const isFirst = messages.length === 0;
-    const content = isFirst ? `${raw}\n${FORMAT_INSTRUCTION}` : raw;
+    // apiContent is what goes to the backend — may have hidden instructions.
+    // When apiText is provided, use it as the API payload and `raw` as the
+    // visible bubble. Otherwise they're the same (normal chat input).
+    const visible = raw;
+    const api = (apiText ?? raw).trim();
+    const content = isFirst ? `${api}\n${FORMAT_INSTRUCTION}` : api;
 
-    // Store display version without the format instruction.
-    setMessages((prev) => [...prev, { role: "user", content: raw }]);
+    setMessages((prev) => [...prev, { role: "user", content: visible }]);
     setInput("");
     setLoading(true);
 
@@ -430,8 +434,9 @@ export default function MiniChat() {
   };
 
   const handleFollowUp = useCallback(
-    (question: string) => {
-      handleSend(`${question}\n\n${FOLLOW_UP_INSTRUCTION}`);
+    (visible: string, api?: string) => {
+      const apiPayload = api ?? visible;
+      handleSend(visible, `${apiPayload}\n\n${FOLLOW_UP_INSTRUCTION}`);
     },
     [messages, loading],
   );
