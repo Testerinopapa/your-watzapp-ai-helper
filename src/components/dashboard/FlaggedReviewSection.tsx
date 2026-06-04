@@ -394,7 +394,11 @@ export default function FlaggedReviewSection() {
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
-  const activityGroups = new Map<string, FlaggedMessage>();
+  // One card per activity message (no per-thread grouping). Same thread
+  // with multiple inbound messages = multiple cards. We still drop exact
+  // duplicates (same thread + same text + same timestamp) so polling
+  // doesn't double-insert.
+  const flaggedFromActivity: FlaggedMessage[] = [];
   for (const [index, r] of activityRows
     .filter(isFlaggedActivity)
     .entries()) {
@@ -404,58 +408,35 @@ export default function FlaggedReviewSection() {
     const sender =
       senderLabelForActivity(r) ||
       senderFromThreadId(explicitThreadId || activityId);
-    const fallbackId =
-      explicitThreadId || `activity:${r.createdAt}:${index}`;
     const displaySender =
       sender ||
       senderFromThreadId(activityId) ||
       cleanSenderLabel(r.subject) ||
       "Unknown sender";
-    // Key by an actual backend thread id only. If a mock/activity row does
-    // not provide one, keep it as its own card so same-name rows can stack.
-    const groupKey = explicitThreadId || fallbackId;
-    const existing = activityGroups.get(groupKey);
-    const existingText =
-      existing?.latest_message ?? existing?.preview ?? "";
-    const useText =
-      !existing ||
-      !existingText ||
-      Boolean(
-        text &&
-          !isVoiceStub(text) &&
-          (isVoiceStub(existingText) ||
-            text !== existingText),
-      );
-    const createdAt = new Date(r.createdAt).getTime();
-    const existingAt = existing
-      ? new Date(existing.updated_at).getTime()
-      : 0;
-    if (!existing || useText || createdAt > existingAt) {
-      activityGroups.set(groupKey, {
-        thread_id: existing?.thread_id ?? fallbackId,
+    // Unique per-message id so each inbound becomes its own card. We keep
+    // the real thread id on a separate field-less convention by suffixing
+    // — drafting/dismissal still works because handlers key off thread_id.
+    const cardId = explicitThreadId
+      ? `${explicitThreadId}#${r.createdAt}:${index}`
+      : `activity:${r.createdAt}:${index}`;
+    flaggedFromActivity.push(
+      withActivityPreview({
+        thread_id: cardId,
         provider: "whatsapp",
         sender: displaySender,
-        subject:
-          cleanSenderLabel(r.subject) || existing?.subject || null,
-        preview:
-          useText ? text || r.preview : existing.preview,
-        latest_message: useText
-          ? text || r.latestMessage
-          : existing.latest_message,
+        subject: cleanSenderLabel(r.subject) || null,
+        preview: text || r.preview,
+        latest_message: text || r.latestMessage,
         intent_category: "misc",
         intent_confidence: 1,
-        intent_reason:
-          "Needs review from the Activity stream.",
+        intent_reason: "Needs review from the Activity stream.",
         intent_source: "activity",
         intent_classified_at: r.createdAt,
         updated_at: r.createdAt,
         thread_url: null,
-      });
-    }
+      }),
+    );
   }
-  const flaggedFromActivity: FlaggedMessage[] = Array.from(
-    activityGroups.values(),
-  ).map(withActivityPreview);
   const all: FlaggedMessage[] = [
     ...flaggedFromList,
     ...flaggedFromActivity,
@@ -481,29 +462,22 @@ export default function FlaggedReviewSection() {
     if (ur !== 0) return ur;
     return recencyOf(b) - recencyOf(a);
   });
-  // Each flagged message is rendered as its own card — no sender grouping.
-  // We still de-dup exact repeats of the same message (same thread + same
-  // text within the same minute) so polling doesn't double-insert.
+  // Drop exact repeats only (same card id OR identical thread+text+timestamp).
+  const seenIds = new Set<string>();
   const seenFp = new Set<string>();
   const messageFingerprint = (m: FlaggedMessage) => {
-    const text = (
-      m.latest_message ??
-      m.preview ??
-      m.subject ??
-      ""
-    )
+    const text = (m.latest_message ?? m.preview ?? m.subject ?? "")
       .trim()
       .toLowerCase();
-    const ts = m.updated_at
-      ? Math.floor(new Date(m.updated_at).getTime() / 60000)
-      : 0;
-    return `${m.thread_id}|${ts}|${text}`;
+    return `${m.thread_id}|${m.updated_at ?? ""}|${text}`;
   };
   const deduped: FlaggedMessage[] = [];
   for (const m of sorted) {
     if (isDismissed(m)) continue;
+    if (seenIds.has(m.thread_id)) continue;
     const fp = messageFingerprint(m);
     if (seenFp.has(fp)) continue;
+    seenIds.add(m.thread_id);
     seenFp.add(fp);
     deduped.push(m);
   }
