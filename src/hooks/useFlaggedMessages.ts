@@ -30,10 +30,18 @@ export interface FlaggedMessage {
   preview: string | null;
   latest_message: string | null;
   intent_category: "misc" | "support" | string;
+  intent_subcategory?: string | null;
   intent_confidence: number;
+  intent_urgency?: "low" | "medium" | "high" | string | null;
+  customer_goal?: string | null;
+  business_action?: string | null;
   intent_reason: string | null;
+  intent_review_reason?: string | null;
   intent_source: string | null;
   intent_classified_at: string | null;
+  snapshot_captured_at?: string | null;
+  scan_captured_at?: string | null;
+  needs_human_review?: boolean | null;
   updated_at: string;
   thread_url: string | null;
 }
@@ -45,8 +53,37 @@ interface FlaggedListResponse {
 
 export function useFlaggedMessages(limit = 20) {
   const { session, loading } = useAuth();
+  const queryClient = useQueryClient();
+  const userId = session?.user?.id ?? null;
+
+  // Subscribe to thread_states changes on the external project and
+  // invalidate the query whenever a row for this user changes.
+  useEffect(() => {
+    if (!userId) return;
+    const client = getFlaggedRealtimeClient();
+    const channel = client
+      .channel(`flagged-thread-states-${userId}`)
+      .on(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        "postgres_changes" as any,
+        {
+          event: "*",
+          schema: "public",
+          table: "thread_states",
+          filter: `user_id=eq.${userId}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["flagged-messages"] });
+        },
+      )
+      .subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [userId, queryClient]);
+
   return useQuery<FlaggedMessage[]>({
-    queryKey: ["flagged-messages", limit, session?.user?.id ?? null],
+    queryKey: ["flagged-messages", limit, userId],
     enabled: !loading && !!session,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
@@ -88,4 +125,5 @@ export function useFlaggedMessages(limit = 20) {
     },
   });
 }
+
 
