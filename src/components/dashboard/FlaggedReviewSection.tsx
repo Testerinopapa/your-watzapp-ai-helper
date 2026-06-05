@@ -801,6 +801,17 @@ export default function FlaggedReviewSection() {
                           return supportDocs.find((d) => d.id === ds.supportDocId)?.title?.slice(0, 24) ?? null;
                         })()}
                         onDelete={(it) => {
+                          // Delete the whole deck for this contact, not just
+                          // the clicked card — otherwise sibling cards from
+                          // the same contact remain and the contact appears
+                          // un-deleted on the next render.
+                          const bases = Array.from(
+                            new Set(groupItems.map((g) => baseThreadId(g.thread_id))),
+                          );
+                          dismissThreads(bases);
+                          for (const g of groupItems) {
+                            unassignFromFolder(g.thread_id);
+                          }
                           void deepDeleteItem(it);
                           toast({
                             title: "Flagged message deleted",
