@@ -22,7 +22,6 @@ import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import {
-  toneFor,
   senderLabelForItem,
   APPOINTMENT_CATEGORIES,
   SUPPORT_CATEGORIES,
