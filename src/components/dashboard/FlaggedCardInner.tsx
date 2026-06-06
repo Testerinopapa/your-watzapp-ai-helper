@@ -35,6 +35,7 @@ export type FlaggedCardInnerProps = {
   footer?: React.ReactNode;
   elevated?: boolean;
   supportDocLabel?: string | null;
+  maskPhoneNumbers?: boolean;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -48,12 +49,15 @@ function maskPhone(raw: string): string {
   return `${cc}••• ••• ${last}`;
 }
 
-function presentSender(raw: string): { label: string; isUnknown: boolean } {
+function presentSender(
+  raw: string,
+  { mask }: { mask?: boolean } = {},
+): { label: string; isUnknown: boolean } {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return { label: "Unrecognized contact", isUnknown: true };
-  // If sender is essentially a phone number, mask it.
+  // If sender is essentially a phone number, optionally mask it.
   if (PHONE_RE.test(trimmed) && !/[A-Za-zÀ-ÿ]/.test(trimmed)) {
-    return { label: maskPhone(trimmed), isUnknown: false };
+    return { label: mask ? maskPhone(trimmed) : trimmed, isUnknown: false };
   }
   // Strip trailing phone embedded after a name ("Emma +447…")
   const stripped = trimmed.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim();
@@ -111,6 +115,7 @@ export default function FlaggedCardInner({
   footer,
   elevated,
   supportDocLabel,
+  maskPhoneNumbers,
 }: FlaggedCardInnerProps) {
   const cat = (item.intent_category ?? "").toLowerCase().trim();
   const isAppt = APPOINTMENT_CATEGORIES.has(cat);
@@ -119,7 +124,7 @@ export default function FlaggedCardInner({
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
 
   const rawSender = senderLabelForItem(item);
-  const { label: senderLabel, isUnknown } = presentSender(rawSender);
+  const { label: senderLabel, isUnknown } = presentSender(rawSender, { mask: maskPhoneNumbers });
 
   const itemWithBacklog = item as FlaggedMessage & {
     backlog_count?: number;
