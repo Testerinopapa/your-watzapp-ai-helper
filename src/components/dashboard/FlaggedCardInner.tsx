@@ -115,6 +115,7 @@ export default function FlaggedCardInner({
   footer,
   elevated,
   supportDocLabel,
+  maskPhoneNumbers,
 }: FlaggedCardInnerProps) {
   const cat = (item.intent_category ?? "").toLowerCase().trim();
   const isAppt = APPOINTMENT_CATEGORIES.has(cat);
