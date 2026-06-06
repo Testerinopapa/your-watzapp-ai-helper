@@ -15,15 +15,13 @@ import {
   FileText,
   AlertTriangle,
   Loader2,
-  Target,
-  Zap,
+  Info,
+  ChevronDown,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import {
-  toneFor,
-  toneStyles,
   senderLabelForItem,
   APPOINTMENT_CATEGORIES,
   SUPPORT_CATEGORIES,
@@ -39,6 +37,73 @@ export type FlaggedCardInnerProps = {
   supportDocLabel?: string | null;
 };
 
+// ── Helpers ──────────────────────────────────────────────────────────
+const PHONE_RE = /[+\d][\s\d\-+()]{6,}$/;
+
+function maskPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length < 6) return raw;
+  const last = digits.slice(-4);
+  const cc = digits.length > 10 ? `+${digits.slice(0, digits.length - 10)} ` : "";
+  return `${cc}••• ••• ${last}`;
+}
+
+function presentSender(raw: string): { label: string; isUnknown: boolean } {
+  const trimmed = (raw ?? "").trim();
+  if (!trimmed) return { label: "Unrecognized contact", isUnknown: true };
+  // If sender is essentially a phone number, mask it.
+  if (PHONE_RE.test(trimmed) && !/[A-Za-zÀ-ÿ]/.test(trimmed)) {
+    return { label: maskPhone(trimmed), isUnknown: false };
+  }
+  // Strip trailing phone embedded after a name ("Emma +447…")
+  const stripped = trimmed.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim();
+  return { label: stripped || trimmed, isUnknown: false };
+}
+
+function humanIntentTitle(item: FlaggedMessage): string {
+  const cat = (item.intent_category ?? "").toLowerCase();
+  const sub = (item.intent_subcategory ?? "").toLowerCase();
+  const blob = `${cat} ${sub}`;
+  if (APPOINTMENT_CATEGORIES.has(cat) || /appointment|booking|reservation/.test(blob)) {
+    if (/reschedul/.test(blob)) return "Reschedule request";
+    if (/cancel/.test(blob)) return "Cancellation request";
+    if (/confirm/.test(blob)) return "Appointment confirmation";
+    return "New appointment request";
+  }
+  if (COMPLAINT_CATEGORIES.has(cat) || /complaint|refund|negative/.test(blob)) {
+    if (/refund/.test(blob)) return "Refund request";
+    return "Complaint";
+  }
+  if (SUPPORT_CATEGORIES.has(cat) || /support|help|faq|question|inquiry/.test(blob)) {
+    return "Support question";
+  }
+  const fallback = item.intent_subcategory || item.intent_category;
+  if (!fallback) return "New message";
+  return fallback
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function shortSummary(item: FlaggedMessage): string | null {
+  const candidates = [
+    item.customer_goal,
+    item.business_action,
+    item.intent_review_reason,
+    item.intent_reason,
+  ];
+  for (const c of candidates) {
+    const t = (c ?? "").trim();
+    if (t) return t.length > 140 ? `${t.slice(0, 137)}…` : t;
+  }
+  // Last resort: latest message, stripped, single line.
+  const msg = (item.latest_message ?? item.preview ?? item.subject ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!msg) return null;
+  return msg.length > 140 ? `${msg.slice(0, 137)}…` : msg;
+}
+
 export default function FlaggedCardInner({
   item,
   trailing,
@@ -47,32 +112,24 @@ export default function FlaggedCardInner({
   elevated,
   supportDocLabel,
 }: FlaggedCardInnerProps) {
-  const isAppt = APPOINTMENT_CATEGORIES.has(
-    (item.intent_category ?? "").toLowerCase().trim(),
-  );
-  const isSupport = SUPPORT_CATEGORIES.has(
-    (item.intent_category ?? "").toLowerCase().trim(),
-  );
-  const isComplaint = COMPLAINT_CATEGORIES.has(
-    (item.intent_category ?? "").toLowerCase().trim(),
-  );
-  const tone = toneFor(item.updated_at);
-  const styles = toneStyles[tone];
-  const age = formatDistanceToNow(new Date(item.updated_at), {
-    addSuffix: true,
-  });
-  const senderLabel = senderLabelForItem(item) || "Unknown sender";
+  const cat = (item.intent_category ?? "").toLowerCase().trim();
+  const isAppt = APPOINTMENT_CATEGORIES.has(cat);
+  const isSupport = SUPPORT_CATEGORIES.has(cat);
+  const isComplaint = COMPLAINT_CATEGORIES.has(cat);
+  const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
+
+  const rawSender = senderLabelForItem(item);
+  const { label: senderLabel, isUnknown } = presentSender(rawSender);
+
   const itemWithBacklog = item as FlaggedMessage & {
     backlog_count?: number;
     backlog_items?: FlaggedMessage[];
   };
-  const backlog = itemWithBacklog.backlog_count ?? 0;
   const backlogItems = itemWithBacklog.backlog_items ?? [];
-  const [backlogOpen, setBacklogOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const allMessages = [item, ...backlogItems];
 
-  // "Analyzing conversation…" hint: a newer snapshot/scan landed but
-  // classify-intent hasn't written intent_classified_at yet.
   const lastIngestMs = Math.max(
     item.snapshot_captured_at ? +new Date(item.snapshot_captured_at) : 0,
     item.scan_captured_at ? +new Date(item.scan_captured_at) : 0,
@@ -82,276 +139,237 @@ export default function FlaggedCardInner({
     : 0;
   const classifying = lastIngestMs > 0 && classifiedMs < lastIngestMs;
 
+  const title = humanIntentTitle(item);
+  const summary = shortSummary(item);
   const urgency = (item.intent_urgency ?? "").toLowerCase();
-  const urgencyStyle =
-    urgency === "high"
-      ? "bg-red-400/10 text-red-400 border-red-400/20"
-      : urgency === "medium"
-        ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-        : urgency === "low"
-          ? "bg-muted text-muted-foreground border-border"
-          : null;
 
-  const intentLabel = item.intent_subcategory || item.intent_category;
+  // Accent classes — calm, single accent per type, no neon glow.
+  const accent = isComplaint
+    ? "border-l-red-500/70"
+    : isAppt
+      ? "border-l-amber-400/70"
+      : isSupport
+        ? "border-l-sky-400/70"
+        : "border-l-emerald-400/60";
+
+  const Icon = isComplaint
+    ? AlertTriangle
+    : isSupport
+      ? LifeBuoy
+      : isAppt
+        ? CalendarCheck
+        : MessageCircle;
+
+  const iconColor = isComplaint
+    ? "text-red-400"
+    : isSupport
+      ? "text-sky-400"
+      : isAppt
+        ? "text-amber-400"
+        : "text-emerald-400";
 
   return (
     <Card
       data-thread-id={item.thread_id}
       data-customer-name={senderLabel.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim()}
       className={cn(
-        "border-l-4 transition-colors",
-        isComplaint &&
-          tone === "fresh" &&
-          "animate-pulse",
-        isComplaint
-          ? "border-l-[#ef4444] bg-[#0a0a1a]/95 ring-1 ring-red-500/20 shadow-[0_8px_30px_-12px_rgba(239,68,68,0.25)]"
-          : isSupport
-            ? "border-l-[#3b82f6] bg-[#0a0a1a]/95 ring-1 ring-blue-500/20 shadow-[0_8px_30px_-12px_rgba(59,130,246,0.25)]"
-            : isAppt
-              ? "border-l-[#f59e0b] bg-[#0a0a1a]/95 ring-1 ring-amber-500/20 shadow-[0_8px_30px_-12px_rgba(245,158,11,0.25)]"
-              : styles.border,
-        elevated &&
-          !isAppt &&
-          !isSupport &&
-          !isComplaint &&
-          "border-l-[#2dd4a8] bg-[#0a0a1a]/95 ring-1 ring-[rgba(115,255,184,0.55)] shadow-[0_20px_50px_-15px_rgba(45,212,168,0.55)]",
-        elevated &&
-          isComplaint &&
-          "border-l-[#ef4444] ring-1 ring-red-500/40 shadow-[0_20px_50px_-15px_rgba(239,68,68,0.55)]",
-        elevated &&
-          isSupport &&
-          "border-l-[#3b82f6] ring-1 ring-blue-500/40 shadow-[0_20px_50px_-15px_rgba(59,130,246,0.55)]",
-        elevated &&
-          isAppt &&
-          "border-l-[#f59e0b] ring-1 ring-amber-500/40 shadow-[0_20px_50px_-15px_rgba(245,158,11,0.55)]",
+        "border-l-4 border border-border/60 bg-card/95 transition-colors",
+        accent,
+        elevated && "ring-1 ring-border shadow-md",
       )}
     >
-      <CardContent className="p-4 space-y-3">
+      <CardContent className="p-5 space-y-3">
+        {/* Top row: avatar + name + time */}
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1 flex items-start gap-2">
+          <div className="min-w-0 flex-1 flex items-center gap-3">
             {leading}
+            <div
+              className={cn(
+                "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted/60",
+                iconColor,
+              )}
+            >
+              <Icon size={16} />
+            </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 text-sm font-medium truncate">
-                {isComplaint ? (
-                  <AlertTriangle
-                    size={14}
-                    className="text-red-400 shrink-0"
-                  />
-                ) : isSupport ? (
-                  <LifeBuoy
-                    size={14}
-                    className="text-blue-400 shrink-0"
-                  />
-                ) : isAppt ? (
-                  <CalendarCheck
-                    size={14}
-                    className="text-amber-400 shrink-0"
-                  />
-                ) : (
-                  <MessageCircle
-                    size={14}
-                    className="text-muted-foreground shrink-0"
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className={cn(
+                    "truncate text-sm font-medium",
+                    isUnknown && "text-muted-foreground italic font-normal",
+                  )}
+                >
+                  {senderLabel}
+                </span>
+                {classifying && (
+                  <Loader2
+                    size={11}
+                    className="animate-spin text-muted-foreground/70 shrink-0"
                   />
                 )}
-                <span className="truncate">{senderLabel}</span>
-                {backlog > 0 && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setBacklogOpen(true);
-                    }}
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="ml-1 shrink-0 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    title={`View ${backlog} earlier message${backlog === 1 ? "" : "s"} from this sender`}
-                  >
-                    <Badge
-                      variant="secondary"
-                      className="h-5 px-1.5 text-[10px] font-semibold cursor-pointer hover:bg-secondary/70"
-                    >
-                      +{backlog}
-                    </Badge>
-                  </button>
-                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Clock size={10} />
+                <span>{age}</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {isSupport && supportDocLabel && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-blue-400/30 bg-blue-400/5 px-1.5 py-0.5 text-[10px] text-blue-400 shrink-0 max-w-[120px]">
-                <FileText size={10} />
-                <span className="truncate">{supportDocLabel}</span>
-              </span>
-            )}
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                isComplaint
-                  ? "bg-red-400/10 text-red-400 border-red-400/20"
-                  : isSupport
-                    ? "bg-blue-400/10 text-blue-400 border-blue-400/20"
-                    : isAppt
-                      ? "bg-amber-400/10 text-amber-400 border-amber-400/20"
-                      : styles.badge,
-              )}
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailsOpen(true);
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+              className="rounded-full p-1 text-muted-foreground/70 hover:text-foreground hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label="View details"
+              title="View details"
             >
-              <Clock size={11} />
-              {age}
-            </span>
+              <Info size={14} />
+            </button>
             {trailing}
           </div>
         </div>
 
-        <div className="space-y-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {intentLabel && (
-              <Badge
-                variant="outline"
-                data-intent-badge=""
-                className={cn(
-                  "text-[10px] uppercase tracking-wide",
-                  isComplaint &&
-                    "border-red-400/30 text-red-400 bg-red-400/5",
-                  isSupport &&
-                    "border-blue-400/30 text-blue-400 bg-blue-400/5",
-                  isAppt &&
-                    "border-amber-400/30 text-amber-400 bg-amber-400/5",
-                )}
-              >
-                {intentLabel}
-              </Badge>
-            )}
-            {urgencyStyle && (
-              <span
-                className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
-                  urgencyStyle,
-                )}
-                title={`Urgency: ${urgency}`}
-              >
-                <Zap size={9} />
-                {urgency}
-              </span>
-            )}
-            {typeof item.intent_confidence === "number" && item.intent_confidence > 0 && (
-              <span className="text-[10px] text-muted-foreground/70">
-                {Math.round(item.intent_confidence * 100)}% conf
-              </span>
-            )}
-            {classifying && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground italic">
-                <Loader2 size={10} className="animate-spin" />
-                Analyzing conversation…
-              </span>
-            )}
-          </div>
-          {isComplaint && (() => {
-            const cat = (item.intent_category ?? "").toLowerCase();
-            let riskLabel = "";
-            let riskColor = "border-red-400/20 bg-red-400/5 text-red-400";
-            if (cat.includes("high_risk")) { riskLabel = "High risk"; }
-            else if (cat.includes("medium_risk")) { riskLabel = "Medium risk"; riskColor = "border-orange-400/20 bg-orange-400/5 text-orange-400"; }
-            else if (cat.includes("low_risk")) { riskLabel = "Low risk"; riskColor = "border-amber-400/20 bg-amber-400/5 text-amber-400"; }
-            else if (cat.includes("refund")) { riskLabel = "Refund risk"; }
-            else { riskLabel = "Needs attention"; riskColor = "border-red-400/15 bg-red-400/[0.03] text-red-400/80"; }
-            return riskLabel ? (
-              <span className={cn("inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium", riskColor)}>
-                <AlertTriangle size={9} />
-                {riskLabel}
-              </span>
-            ) : null;
-          })()}
-          {isComplaint && item.intent_reason && (() => {
-            const reason = (item.intent_reason ?? "").toLowerCase();
-            let summary = "";
-            if (/frustrated|angry|upset|irritated|annoyed/i.test(reason)) summary = "Customer seems frustrated";
-            else if (/bad experience|disappointed|unhappy|terrible|awful|horrible|worst/i.test(reason)) summary = "Customer had a poor experience";
-            else if (/refund|charge|billed|payment/i.test(reason)) summary = "Refund or payment concern";
-            else summary = (item.intent_reason ?? "").slice(0, 80);
-            return summary ? (
-              <p className="text-[11px] text-red-300/70 italic">{summary}</p>
-            ) : null;
-          })()}
-          {(item.latest_message || item.preview || item.subject) && (
-            <p
-              className="text-xs text-foreground/90 line-clamp-3 whitespace-pre-wrap leading-relaxed"
-              title={
-                item.latest_message ??
-                item.preview ??
-                item.subject ??
-                undefined
-              }
-            >
-              "{item.latest_message ?? item.preview ?? item.subject}"
-            </p>
-          )}
-          {item.customer_goal && (
-            <p className="text-[11px] text-foreground/80 pt-1 flex items-start gap-1">
-              <Target size={11} className="mt-0.5 shrink-0 text-muted-foreground" />
-              <span><span className="text-muted-foreground">Customer goal:</span> {item.customer_goal}</span>
-            </p>
-          )}
-          {item.business_action && (
-            <p className="text-[11px] text-foreground/80 flex items-start gap-1">
-              <CalendarCheck size={11} className="mt-0.5 shrink-0 text-muted-foreground" />
-              <span><span className="text-muted-foreground">Next action:</span> {item.business_action}</span>
-            </p>
-          )}
-          {(item.intent_review_reason || item.intent_reason) && (
-            <p className="text-[11px] text-muted-foreground/80 italic line-clamp-3 pt-1">
-              {item.intent_review_reason ?? item.intent_reason}
+        {/* Middle: human-readable title + short summary */}
+        <div className="space-y-1.5 pl-12">
+          <h3 className="text-[15px] font-semibold leading-tight text-foreground">
+            {title}
+          </h3>
+          {summary && (
+            <p className="text-[13px] text-muted-foreground line-clamp-2 leading-snug">
+              {summary}
             </p>
           )}
         </div>
 
-
-        {footer}
+        {/* Bottom: primary action */}
+        {footer && <div className="pl-12 pt-1">{footer}</div>}
       </CardContent>
 
-      <Dialog open={backlogOpen} onOpenChange={setBacklogOpen}>
+      {/* Details / Debug dialog */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>
-              Messages from {senderLabel}
-              <span className="ml-2 text-xs font-normal text-muted-foreground">
-                {allMessages.length} total
-              </span>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon size={16} className={iconColor} />
+              <span>{senderLabel}</span>
+              <Badge variant="secondary" className="ml-1 text-[10px] font-normal">
+                {title}
+              </Badge>
             </DialogTitle>
           </DialogHeader>
-          <div className="max-h-[60vh] overflow-y-auto space-y-3 pr-1">
-            {allMessages.map((m, idx) => {
-              const text =
-                m.latest_message ?? m.preview ?? m.subject ?? "";
-              const when = m.updated_at
-                ? formatDistanceToNow(new Date(m.updated_at), {
-                    addSuffix: true,
-                  })
-                : "";
-              return (
-                <div
-                  key={`${m.thread_id}-${idx}`}
-                  className="rounded-md border border-border bg-muted/30 p-3 space-y-1"
-                >
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground/80">
-                      {idx === 0
-                        ? "Latest"
-                        : `#${allMessages.length - idx}`}
-                    </span>
-                    <span>{when}</span>
+
+          <div className="space-y-4 text-sm">
+            {supportDocLabel && (
+              <div className="flex items-center gap-2 text-xs text-sky-400">
+                <FileText size={12} />
+                <span>{supportDocLabel}</span>
+              </div>
+            )}
+
+            {item.customer_goal && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                  Customer goal
+                </div>
+                <p className="text-[13px] text-foreground/90">{item.customer_goal}</p>
+              </div>
+            )}
+
+            {item.business_action && (
+              <div>
+                <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1">
+                  Next action
+                </div>
+                <p className="text-[13px] text-foreground/90">{item.business_action}</p>
+              </div>
+            )}
+
+            <div>
+              <div className="text-[11px] uppercase tracking-wide text-muted-foreground mb-2">
+                Recent messages
+                <span className="ml-2 text-muted-foreground/60">
+                  {allMessages.length} total
+                </span>
+              </div>
+              <div className="max-h-[40vh] overflow-y-auto space-y-2 pr-1">
+                {allMessages.map((m, idx) => {
+                  const text = m.latest_message ?? m.preview ?? m.subject ?? "";
+                  const when = m.updated_at
+                    ? formatDistanceToNow(new Date(m.updated_at), { addSuffix: true })
+                    : "";
+                  return (
+                    <div
+                      key={`${m.thread_id}-${idx}`}
+                      className="rounded-md border border-border/60 bg-muted/30 p-3 space-y-1"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span className="font-medium text-foreground/80">
+                          {idx === 0 ? "Latest" : `#${allMessages.length - idx}`}
+                        </span>
+                        <span>{when}</span>
+                      </div>
+                      {text ? (
+                        <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
+                          {text}
+                        </p>
+                      ) : (
+                        <p className="text-xs italic text-muted-foreground">
+                          No preview available.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Debug details — collapsed */}
+            <div className="border-t border-border/60 pt-3">
+              <button
+                type="button"
+                onClick={() => setDebugOpen((o) => !o)}
+                className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown
+                  size={12}
+                  className={cn("transition-transform", debugOpen && "rotate-180")}
+                />
+                Debug details
+              </button>
+              {debugOpen && (
+                <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] font-mono text-muted-foreground">
+                  <div>category</div>
+                  <div className="text-foreground/80 truncate">{item.intent_category || "—"}</div>
+                  <div>subcategory</div>
+                  <div className="text-foreground/80 truncate">{item.intent_subcategory || "—"}</div>
+                  <div>confidence</div>
+                  <div className="text-foreground/80">
+                    {typeof item.intent_confidence === "number"
+                      ? `${Math.round(item.intent_confidence * 100)}%`
+                      : "—"}
                   </div>
-                  {text ? (
-                    <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">
-                      {text}
-                    </p>
-                  ) : (
-                    <p className="text-xs italic text-muted-foreground">
-                      No preview available.
-                    </p>
+                  <div>urgency</div>
+                  <div className="text-foreground/80">{urgency || "—"}</div>
+                  <div>source</div>
+                  <div className="text-foreground/80 truncate">{item.intent_source || "—"}</div>
+                  <div>thread_id</div>
+                  <div className="text-foreground/80 truncate" title={item.thread_id}>
+                    {item.thread_id}
+                  </div>
+                  {item.intent_reason && (
+                    <>
+                      <div>reason</div>
+                      <div className="text-foreground/80 col-span-1 break-words">
+                        {item.intent_reason}
+                      </div>
+                    </>
                   )}
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
