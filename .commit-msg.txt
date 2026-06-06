@@ -1,0 +1,9 @@
+Fix regex stripper: add "your" to meta-commentary prefix patterns
+
+"Here's your reply:" was missed — only "the", "a", and "my" were
+in the alternation. The English AI draft had:
+"Perfect! You're free at that time. Here's your reply:That works..."
+
+Now matches "Here's your reply:" as well.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
