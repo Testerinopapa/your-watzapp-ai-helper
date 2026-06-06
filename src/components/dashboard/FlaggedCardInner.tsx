@@ -35,6 +35,7 @@ export type FlaggedCardInnerProps = {
   footer?: React.ReactNode;
   elevated?: boolean;
   supportDocLabel?: string | null;
+  maskPhoneNumbers?: boolean;
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────
