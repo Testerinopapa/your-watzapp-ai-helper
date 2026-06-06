@@ -179,6 +179,7 @@ export default function DraggableFlaggedCard({
           footer={renderFooter?.(current)}
           elevated={liftActive || expanded}
           supportDocLabel={supportDocLabel}
+          maskPhoneNumbers={maskPhoneNumbers}
           trailing={
             <div className="flex items-center gap-1">
               {items.length > 1 && (
