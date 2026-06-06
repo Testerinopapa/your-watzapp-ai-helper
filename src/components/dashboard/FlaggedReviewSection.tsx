@@ -23,6 +23,8 @@ import {
   Inbox,
   X,
   Archive,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -113,6 +115,7 @@ export default function FlaggedReviewSection() {
   const [createOpen, setCreateOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [drafts, setDrafts] = useState<Record<string, DraftState>>({});
+  const [maskPhoneNumbers, setMaskPhoneNumbers] = useState(false);
   const draftsRef = useRef<Record<string, DraftState>>({});
 
   useEffect(() => {
