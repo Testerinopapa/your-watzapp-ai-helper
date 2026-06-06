@@ -116,7 +116,6 @@ export default function FlaggedCardInner({
   const isAppt = APPOINTMENT_CATEGORIES.has(cat);
   const isSupport = SUPPORT_CATEGORIES.has(cat);
   const isComplaint = COMPLAINT_CATEGORIES.has(cat);
-  const tone = toneFor(item.updated_at);
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
 
   const rawSender = senderLabelForItem(item);
