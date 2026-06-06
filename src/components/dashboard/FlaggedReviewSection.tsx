@@ -623,6 +623,19 @@ export default function FlaggedReviewSection() {
             />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setMaskPhoneNumbers((v) => !v)}
+            className="gap-1.5 text-muted-foreground hover:text-foreground"
+            title={maskPhoneNumbers ? "Show phone numbers" : "Mask phone numbers"}
+          >
+            {maskPhoneNumbers ? <Eye size={14} /> : <EyeOff size={14} />}
+            <span className="hidden sm:inline">
+              {maskPhoneNumbers ? "Show" : "Mask"}
+            </span>
+          </Button>
         </div>
 
         {/* Folder bar */}
@@ -743,6 +756,7 @@ export default function FlaggedReviewSection() {
                         items={groupItems}
                         folders={folders}
                         onMoveTo={moveToFolder}
+                        maskPhoneNumbers={maskPhoneNumbers}
                         supportDocLabel={(() => {
                           const ds = drafts[groupItems[0]?.thread_id];
                           if (!ds?.supportDocId || ds.supportDocId === "all") return null;
