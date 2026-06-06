@@ -124,7 +124,7 @@ export default function FlaggedCardInner({
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
 
   const rawSender = senderLabelForItem(item);
-  const { label: senderLabel, isUnknown } = presentSender(rawSender);
+  const { label: senderLabel, isUnknown } = presentSender(rawSender, { mask: maskPhoneNumbers });
 
   const itemWithBacklog = item as FlaggedMessage & {
     backlog_count?: number;
