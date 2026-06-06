@@ -60,13 +60,7 @@ import {
 } from "@/lib/flagged-utils";
 import { useFlaggedState } from "@/hooks/useFlaggedState";
 
-import {
-  createEnricher,
-  senderLabelForActivity,
-  textForActivity,
-  activityThreadId,
-  isFlaggedActivity,
-} from "@/lib/enrichment";
+import { createEnricher } from "@/lib/enrichment";
 import {
   needsCalendarContext,
   buildCalendarInstruction,
@@ -417,58 +411,9 @@ export default function FlaggedReviewSection() {
       });
     }
   }
-  // Build per-message cards from the Activity stream. We include BOTH
-  // explicitly-flagged activity rows AND any other recent activity rows
-  // whose sender matches a contact already surfaced in the flagged list
-  // — so e.g. "Maria" gets every recent message of hers stacked into
-  // her deck, not just the one row the flagged backend returns.
-  const flaggedContactKeys = new Set(
-    flaggedFromList.map((m) => contactKeyForItem(m)).filter(Boolean),
-  );
-  const flaggedFromActivity: FlaggedMessage[] = [];
-  for (const [index, r] of activityRows.entries()) {
-    const text = textForActivity(r);
-    const explicitThreadId = (r.thread_id ?? r.threadId ?? "").trim();
-    const activityId = activityThreadId(r);
-    const sender =
-      senderLabelForActivity(r) ||
-      senderFromThreadId(explicitThreadId || activityId);
-    const displaySender =
-      sender ||
-      senderFromThreadId(activityId) ||
-      cleanSenderLabel(r.subject) ||
-      "Unknown sender";
-    const ck = normalizeLookup(displaySender);
-    const matchesFlaggedContact = ck && flaggedContactKeys.has(ck);
-    if (!isFlaggedActivity(r) && !matchesFlaggedContact) continue;
-    // Unique per-message id so each inbound becomes its own card.
-    const cardId = explicitThreadId
-      ? `${explicitThreadId}#${r.createdAt}:${index}`
-      : `activity:${r.createdAt}:${index}`;
-    flaggedFromActivity.push(
-      withActivityPreview({
-        thread_id: cardId,
-        provider: "whatsapp",
-        sender: displaySender,
-        subject: cleanSenderLabel(r.subject) || null,
-        preview: text || r.preview,
-        latest_message: text || r.latestMessage,
-        intent_category: "misc",
-        intent_confidence: 1,
-        intent_reason: matchesFlaggedContact
-          ? "Earlier message from a flagged contact."
-          : "Needs review from the Activity stream.",
-        intent_source: "activity",
-        intent_classified_at: r.createdAt,
-        updated_at: r.createdAt,
-        thread_url: null,
-      }),
-    );
-  }
   const all: FlaggedMessage[] = [
     ...flaggedFromList,
     ...flaggedRecentMessageCards,
-    ...flaggedFromActivity,
   ];
   const recencyOf = (m: FlaggedMessage) => {
     const candidates = [
