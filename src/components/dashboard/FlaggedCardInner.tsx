@@ -49,12 +49,15 @@ function maskPhone(raw: string): string {
   return `${cc}••• ••• ${last}`;
 }
 
-function presentSender(raw: string): { label: string; isUnknown: boolean } {
+function presentSender(
+  raw: string,
+  { mask }: { mask?: boolean } = {},
+): { label: string; isUnknown: boolean } {
   const trimmed = (raw ?? "").trim();
   if (!trimmed) return { label: "Unrecognized contact", isUnknown: true };
-  // If sender is essentially a phone number, mask it.
+  // If sender is essentially a phone number, optionally mask it.
   if (PHONE_RE.test(trimmed) && !/[A-Za-zÀ-ÿ]/.test(trimmed)) {
-    return { label: maskPhone(trimmed), isUnknown: false };
+    return { label: mask ? maskPhone(trimmed) : trimmed, isUnknown: false };
   }
   // Strip trailing phone embedded after a name ("Emma +447…")
   const stripped = trimmed.replace(/[\s]*[+\d][\s\d\-+()]{6,}$/, "").trim();
