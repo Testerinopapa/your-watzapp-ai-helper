@@ -42,19 +42,13 @@ function classifyDraftIntent(
   const intentReschedule = looksLikeReschedule(intentTextForSignal);
   const intentCancel = looksLikeCancellation(intentTextForSignal);
 
-  // Priority: pill classification > draft inference > intent text
-  const cancelSignal = classifiedCancel
-    ? true
-    : classifiedReschedule
-      ? false
-      : draftReschedule
-        ? false
-        : draftCancel || intentCancel;
-  const rescheduleSignal = classifiedCancel
-    ? false
-    : classifiedReschedule
-      ? true
-      : !cancelSignal && (draftReschedule || intentReschedule);
+  // A replacement time makes this a reschedule even when the old slot is
+  // described as cancelled. Only delete when no reschedule signal exists.
+  const rescheduleSignal =
+    classifiedReschedule || draftReschedule || intentReschedule;
+  const cancelSignal =
+    !rescheduleSignal &&
+    (classifiedCancel || draftCancel || intentCancel);
 
   console.log(
     "[flagged] draft sent, isScheduling:",
@@ -453,7 +447,19 @@ function extractNewDateForReschedule(
   userInstruction: string,
   subject: string | null | undefined,
 ): ReturnType<typeof extractDateTime> {
-  // Step 1: try the portion of the draft after cancellation language.
+  // Step 1: prefer text after language that introduces the replacement slot.
+  for (const text of [draftText, incomingMessage, userInstruction]) {
+    const extracted = extractAfterRescheduleMarker(text);
+    if (extracted) {
+      console.log(
+        "[flagged][reschedule] extracted after reschedule marker",
+        { iso: extracted.date.toISOString(), source: extracted.source },
+      );
+      return extracted;
+    }
+  }
+
+  // Step 2: try the portion of the draft after cancellation language.
   const cancelEnd = findCancelClauseEnd(draftText);
   if (cancelEnd > 0) {
     const afterCancel = draftText.slice(cancelEnd).trim();
@@ -469,7 +475,7 @@ function extractNewDateForReschedule(
     }
   }
 
-  // Step 2: walk sentences from the end backwards.
+  // Step 3: walk sentences from the end backwards.
   const sentences = draftText.split(/[.!?]\s+/);
   for (let i = sentences.length - 1; i >= 0; i--) {
     const extracted = extractDateTime(sentences[i]);
@@ -482,7 +488,7 @@ function extractNewDateForReschedule(
     }
   }
 
-  // Step 3: standard extraction on the full draft.
+  // Step 4: standard extraction on the full draft.
   const extracted = extractDateTime(draftText, incomingMessage, userInstruction, subject);
   if (extracted) {
     console.log(
@@ -491,6 +497,32 @@ function extractNewDateForReschedule(
     );
   }
   return extracted;
+}
+
+function extractAfterRescheduleMarker(
+  text: string,
+): ReturnType<typeof extractDateTime> {
+  const markerPatterns = [
+    /\b(?:reschedul(?:e|ed|ing)|mov(?:e|ed|ing)|chang(?:e|ed|ing)|shift(?:ed|ing)?|push(?:ed|ing)?(?:\s+back)?)\b[^.!?\n]{0,100}?\b(?:to|for)\b/gi,
+    /\b(?:could|can|shall|would)\s+we\s+(?:do|make|try|use)\b/gi,
+    /\b(?:how|what)\s+about\b/gi,
+    /\b(?:new|another|different)\s+(?:time|date|day|slot)\b(?:\s+(?:at|on|for))?/gi,
+  ];
+  const markerEnds: number[] = [];
+
+  for (const pattern of markerPatterns) {
+    for (const match of text.matchAll(pattern)) {
+      markerEnds.push((match.index ?? 0) + match[0].length);
+    }
+  }
+
+  markerEnds.sort((a, b) => b - a);
+  for (const markerEnd of markerEnds) {
+    const extracted = extractDateTime(text.slice(markerEnd));
+    if (extracted) return extracted;
+  }
+
+  return null;
 }
 
 /** Find where the cancellation clause ends in a reschedule draft.

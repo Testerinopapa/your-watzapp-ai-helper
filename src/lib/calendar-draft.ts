@@ -144,15 +144,15 @@ export async function buildCalendarInstruction({
       : `CALENDAR CONTEXT — freshly synced from Google Calendar. User has no scheduled events (${tz}).`;
 
     const intentText = `${incomingMessage}\n${userInstruction}`;
-    const isCancellation = looksLikeCancellation(intentText);
-    const isReschedule =
-      !isCancellation && looksLikeReschedule(intentText);
+    const isReschedule = looksLikeReschedule(intentText);
+    const isCancellation =
+      !isReschedule && looksLikeCancellation(intentText);
 
     let calendarRules = "";
-    if (isCancellation) {
-      calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE the cancellation directly and empathetically in your reply.\n2. Confirm you've noted they want to cancel — mention specifically what's being cancelled (reference the appointment from CALENDAR CONTEXT if identifiable).\n3. Offer to reschedule if appropriate (e.g. "let me know if you'd like to set another time").\n4. Do NOT propose new times unless they explicitly ask to reschedule.`;
-    } else if (isReschedule) {
+    if (isReschedule) {
       calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. DO NOT say the contact's current appointment slot is "free" — it is occupied BY the appointment being moved (see YOUR APPOINTMENT WITH THIS CONTACT above). Say "your current appointment at [time] will be moved."\n2. Check the proposed new time only against OTHER SCHEDULED EVENTS — never against YOUR APPOINTMENT WITH THIS CONTACT.\n3. If the proposed new time does NOT overlap any OTHER SCHEDULED EVENTS, approve the reschedule. Example: "I can move your appointment to [new time]. The old slot at [old time] opens up."\n4. If no specific new time is proposed, suggest one based on gaps between OTHER SCHEDULED EVENTS.\n5. The customer's reschedule request is NOT itself a calendar event — do not block the new time because of it.`;
+    } else if (isCancellation) {
+      calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. ACKNOWLEDGE the cancellation directly and empathetically in your reply.\n2. Confirm you've noted they want to cancel — mention specifically what's being cancelled (reference the appointment from CALENDAR CONTEXT if identifiable).\n3. Offer to reschedule if appropriate (e.g. "let me know if you'd like to set another time").\n4. Do NOT propose new times unless they explicitly ask to reschedule.`;
     } else if (hasEvents) {
       calendarRules = `\n\nHARD RULES FOR THIS REPLY (must follow):\n1. NEVER confirm, accept, or propose any time that overlaps an event listed above — those slots are already booked.\n2. If the incoming message proposes a specific time, first check it against OTHER SCHEDULED EVENTS and YOUR APPOINTMENT WITH THIS CONTACT. If it conflicts with ANY event (even partially), DO NOT confirm. Politely say that slot is taken and offer the nearest free alternative.\n3. If unsure whether a slot is free, ask the contact for an alternative instead of guessing.\n4. Only confirm a time when you can verify it does NOT overlap any listed event.`;
     } else {

@@ -168,4 +168,47 @@ describe("calendar response mutations", () => {
       },
     });
   });
+
+  it("treats cancelling the old slot plus proposing a new slot as a reschedule", async () => {
+    state.rows = [
+      {
+        id: "event-1",
+        source_type: "google_calendar",
+        source_event_id: "google-event-1",
+        status: "confirmed",
+        title: "Appointment with Customer One",
+        contact_name: "Customer One",
+        start_time: "2027-06-10T14:00:00.000Z",
+        end_time: "2027-06-10T14:30:00.000Z",
+      },
+    ];
+
+    await handleCalendarAfterDraft({
+      item: appointment({
+        intent_reason:
+          "Customer cannot make the current appointment and wants to cancel",
+      }),
+      incomingMessage:
+        "I can't make June 10, 2027 at 2pm. Could we do June 12, 2027 at 3pm instead?",
+      userInstruction: "Handle the appointment and update Google Calendar.",
+      draftText:
+        "I've cancelled the June 10 slot and moved your appointment to June 12, 2027 at 3pm.",
+      toast: vi.fn(),
+    });
+
+    expect(state.operations.map((operation) => operation.kind)).toEqual([
+      "invoke",
+      "update",
+    ]);
+    expect(state.operations[0]).toMatchObject({
+      kind: "invoke",
+      payload: {
+        body: {
+          agenda_event_id: "event-1",
+          action: "upsert",
+          start_time: expect.stringContaining("2027-06-12"),
+        },
+      },
+    });
+  });
 });
