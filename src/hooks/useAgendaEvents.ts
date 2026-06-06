@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { AgendaEntry } from "./usePersonalAgenda";
+import { AGENDA_EVENTS_CHANGED } from "@/lib/agenda-events";
 
 /**
  * Loads synced/server-side agenda events (e.g. from Google Calendar) from the
@@ -49,7 +50,11 @@ export function useAgendaEvents() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    window.addEventListener(AGENDA_EVENTS_CHANGED, load);
+    return () => window.removeEventListener(AGENDA_EVENTS_CHANGED, load);
+  }, [load]);
 
   const remove = useCallback(async (id: string) => {
     const previous = entries.find((e) => e.id === id);

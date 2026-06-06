@@ -231,7 +231,7 @@ function extractDayNameDayMonthTime(
   const month = MONTHS[monthKey];
   if (month === undefined) return null;
 
-  const year = guessYear(month, now);
+  const year = explicitYear(match[0]) ?? guessYear(month, now);
   const base = startOfDay(new Date(year, month, day));
 
   // Sanity-check: the constructed date should match the stated day-of-week.
@@ -262,7 +262,7 @@ function extractDayMonthTime(
   const month = MONTHS[monthKey];
   if (month === undefined) return null;
 
-  const year = guessYear(month, now);
+  const year = explicitYear(match[0]) ?? guessYear(month, now);
   const base = startOfDay(new Date(year, month, day));
   const withTime = parseTime(match[3], base);
   if (!withTime) return null;
@@ -288,7 +288,7 @@ function extractMonthDayTime(
   const day = parseInt(match[2], 10);
   if (day < 1 || day > 31) return null;
 
-  const year = guessYear(month, now);
+  const year = explicitYear(match[0]) ?? guessYear(month, now);
   const base = startOfDay(new Date(year, month, day));
   const withTime = parseTime(match[3], base);
   if (!withTime) return null;
@@ -457,6 +457,11 @@ function extractRelativeDay(
 }
 
 /** Guess year: if the month is already past, assume next year. */
+function explicitYear(source: string): number | null {
+  const match = /\b(19\d{2}|20\d{2}|21\d{2})\b/.exec(source);
+  return match ? parseInt(match[1], 10) : null;
+}
+
 function guessYear(monthIndex: number, now: Date): number {
   const currentYear = now.getFullYear();
   const currentMonth = now.getMonth();

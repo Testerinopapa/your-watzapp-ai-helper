@@ -24,6 +24,8 @@ import {
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { notifyAgendaEventsChanged } from "@/lib/agenda-events";
+import { functionErrorCode } from "@/lib/function-error";
 import { cn } from "@/lib/utils";
 
 const MINT = "#73ffb8";
@@ -149,11 +151,6 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
       imported_at: existing?.imported_at ?? new Date().toISOString(),
       last_synced_at: new Date().toISOString(),
     };
-    upsert(entry);
-    logAppointmentSync("local agenda upserted", {
-      local_entry_id: entry.id,
-      final_status: finalStatus,
-    });
     if (nextStatus) setStatus(nextStatus);
 
     // If cancelling, also sync to the agenda_events DB row and Google Calendar
@@ -171,6 +168,14 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
           user_id: userData.user?.id ?? null,
           error: userErr?.message ?? null,
         });
+        if (!userData.user) {
+          toast({
+            title: "Cancellation not completed",
+            description: "Please sign in again, then retry.",
+            variant: "destructive",
+          });
+          return;
+        }
         if (userData.user) {
           // Pre-sync Google Calendar so source_event_id is fresh.
           try {
@@ -184,25 +189,39 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
 
           // 1) Try thread_id match first.
           let dbRow:
-            | { id: string; source_event_id: string | null; status: string | null; title: string | null }
+            | {
+                id: string;
+                source_type: string;
+                source_event_id: string | null;
+                status: string | null;
+                title: string | null;
+              }
             | null = null;
 
           if (item.thread_id) {
             const { data: byThread, error: threadErr } = await supabase
               .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time")
+              .select("id, source_type, source_event_id, status, title, start_time")
               .eq("user_id", userData.user.id)
               .eq("thread_id", item.thread_id)
               .neq("status", "cancelled")
-              .order("start_time", { ascending: true })
-              .limit(1);
+              .order("start_time", { ascending: true });
             logAppointmentSync("thread_id lookup completed", {
               thread_id: item.thread_id,
               count: byThread?.length ?? 0,
               rows: byThread ?? null,
               error: threadErr?.message ?? null,
             });
-            if (byThread && byThread.length > 0) dbRow = byThread[0];
+            if (byThread && byThread.length > 1) {
+              toast({
+                title: "Cancellation needs review",
+                description:
+                  "This thread is linked to multiple appointments. Choose the event from the Agenda panel.",
+                variant: "destructive",
+              });
+              return;
+            }
+            if (byThread && byThread.length === 1) dbRow = byThread[0];
           } else {
             logAppointmentSync("thread_id lookup skipped: no thread_id on item");
           }
@@ -210,46 +229,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
           // 2) Fallback: time-window match around composedStart (±14 days,
           //    very wide because composedStart often defaults to message
           //    recency, not the real appointment time).
-          if (!dbRow && composedStart) {
-            const target = new Date(composedStart).getTime();
-            const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
-            const lo = new Date(target - WINDOW_MS).toISOString();
-            const hi = new Date(target + WINDOW_MS).toISOString();
-            const { data: byTime, error: timeErr } = await supabase
-              .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time")
-              .eq("user_id", userData.user.id)
-              .neq("status", "cancelled")
-              .gte("start_time", lo)
-              .lte("start_time", hi)
-              .limit(100);
-            logAppointmentSync("time-window lookup completed", {
-              window_lo: lo,
-              window_hi: hi,
-              count: byTime?.length ?? 0,
-              rows: byTime ?? null,
-              error: timeErr?.message ?? null,
-            });
-            if (byTime && byTime.length > 0) {
-              const withGoogle = byTime.filter((r) => r.source_event_id);
-              const pool = withGoogle.length > 0 ? withGoogle : byTime;
-              const sorted = [...pool].sort(
-                (a, b) =>
-                  Math.abs(new Date(a.start_time!).getTime() - target) -
-                  Math.abs(new Date(b.start_time!).getTime() - target),
-              );
-              dbRow = sorted[0];
-              logAppointmentSync("time-window fallback matched", {
-                row_id: dbRow.id,
-                preferred_google_row: withGoogle.length > 0,
-              });
-            }
-          } else if (!dbRow) {
-            logAppointmentSync("time-window lookup skipped: no composedStart");
-          }
-
-
-          // 3) Contact-name fallback over next 180 days.
+          // 2) Contact-name fallback over next 180 days.
           if (!dbRow && item.sender) {
             const now = new Date().toISOString();
             const horizon = new Date(
@@ -257,7 +237,7 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
             ).toISOString();
             const { data: byContact, error: contactErr } = await supabase
               .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time, contact_name")
+              .select("id, source_type, source_event_id, status, title, start_time, contact_name")
               .eq("user_id", userData.user.id)
               .neq("status", "cancelled")
               .eq("contact_name", item.sender)
@@ -272,62 +252,23 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
               error: contactErr?.message ?? null,
             });
             if (byContact && byContact.length > 0) {
-              const withGoogle = byContact.filter((r) => r.source_event_id);
-              const pool = withGoogle.length > 0 ? withGoogle : byContact;
-              const target = composedStart
-                ? new Date(composedStart).getTime()
-                : Date.now();
-              const sorted = [...pool].sort(
-                (a, b) =>
-                  Math.abs(new Date(a.start_time!).getTime() - target) -
-                  Math.abs(new Date(b.start_time!).getTime() - target),
-              );
-              dbRow = sorted[0];
+              if (byContact.length > 1) {
+                toast({
+                  title: "Cancellation needs review",
+                  description:
+                    "More than one appointment matches this contact. Choose the event from the Agenda panel.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              dbRow = byContact[0];
               logAppointmentSync("contact-name fallback matched", {
                 row_id: dbRow.id,
-                preferred_google_row: withGoogle.length > 0,
               });
             }
           } else if (!dbRow) {
             logAppointmentSync("contact-name lookup skipped: no sender on item");
           }
-
-          // 4) Last-resort: ANY non-cancelled row with a source_event_id,
-          //    ignoring time/contact entirely. Defeats time divergence.
-          if (!dbRow) {
-            const { data: anyRow, error: anyErr } = await supabase
-              .from("agenda_events")
-              .select("id, source_event_id, status, title, start_time, contact_name, thread_id")
-              .eq("user_id", userData.user.id)
-              .neq("status", "cancelled")
-              .not("source_event_id", "is", null)
-              .order("start_time", { ascending: true })
-              .limit(500);
-            logAppointmentSync("any-row fallback completed", {
-              count: anyRow?.length ?? 0,
-              rows: anyRow ?? null,
-              error: anyErr?.message ?? null,
-            });
-            if (anyRow && anyRow.length > 0) {
-              const target = composedStart
-                ? new Date(composedStart).getTime()
-                : Date.now();
-              const sorted = [...anyRow].sort(
-                (a, b) =>
-                  Math.abs(new Date(a.start_time!).getTime() - target) -
-                  Math.abs(new Date(b.start_time!).getTime() - target),
-              );
-              dbRow = sorted[0];
-              logAppointmentSync("any-row fallback matched", {
-                row_id: dbRow.id,
-                row_thread_id: (dbRow as { thread_id?: string | null }).thread_id ?? null,
-                row_contact: (dbRow as { contact_name?: string | null }).contact_name ?? null,
-              });
-            }
-          }
-
-
-
 
           logAppointmentSync("agenda_events lookup completed", {
             found: Boolean(dbRow),
@@ -338,57 +279,79 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
           });
 
           if (dbRow && dbRow.status !== "cancelled") {
-            const { error: updateErr } = await supabase
-              .from("agenda_events")
-              .update({ status: "cancelled", source_event_id: null })
-              .eq("id", dbRow.id);
-
-            logAppointmentSync("agenda_events cancellation update completed", {
-              row_id: dbRow.id,
-              error: updateErr?.message ?? null,
-            });
-
-            if (dbRow.source_event_id) {
+            const googleEventId =
+              dbRow.source_type === "google_calendar"
+                ? dbRow.source_event_id
+                : null;
+            if (googleEventId) {
               const { data: pushData, error: pushErr } =
                 await supabase.functions.invoke("google-calendar-push", {
                   body: {
                     agenda_event_id: dbRow.id,
                     action: "delete",
-                    source_event_id: dbRow.source_event_id,
+                    source_event_id: googleEventId,
+                    mark_cancelled: true,
                   },
                 });
-              const errCode = (pushData as { error?: string } | null)?.error;
+              const errCode = await functionErrorCode(pushData, pushErr);
               logAppointmentSync("google calendar delete invoke completed", {
                 row_id: dbRow.id,
-                source_event_id: dbRow.source_event_id,
+                source_event_id: googleEventId,
                 push_data: pushData ?? null,
                 push_error: pushErr?.message ?? null,
                 function_error_code: errCode ?? null,
               });
               if (pushErr || errCode) {
                 toast({
-                  title: "Marked cancelled locally",
+                  title: "Cancellation not completed",
                   description:
                     errCode === "not_connected"
-                      ? "Connect Google Calendar to remove it there too."
-                      : "Google Calendar removal skipped.",
+                      ? "Reconnect Google Calendar, then retry."
+                      : "Google Calendar could not remove this event. Nothing was changed locally.",
+                  variant: "destructive",
                 });
                 return;
               }
+              const { error: updateErr } = await supabase
+                .from("agenda_events")
+                .update({
+                  status: "cancelled",
+                  source_event_id: null,
+                })
+                .eq("id", dbRow.id);
+              if (updateErr) throw updateErr;
+              upsert(entry);
+              notifyAgendaEventsChanged();
               toast({
                 title: "Cancelled & removed from Google Calendar",
                 description: `${dbRow.title || "Appointment"} has been cancelled.`,
               });
               return;
             }
-            logAppointmentSync("no source_event_id on matched row");
+            const { error: updateErr } = await supabase
+              .from("agenda_events")
+              .update({ status: "cancelled", source_event_id: null })
+              .eq("id", dbRow.id);
+            if (updateErr) throw updateErr;
+            upsert(entry);
+            notifyAgendaEventsChanged();
+            logAppointmentSync("local-only cancellation completed", {
+              row_id: dbRow.id,
+            });
             toast({
               title: "Marked cancelled locally",
-              description: "No Google Calendar event id on this row.",
+              description: "This appointment was not linked to a Google Calendar event.",
             });
             return;
           }
           logAppointmentSync("cancel sync skipped: no matching agenda_events row");
+          toast({
+            title: "Cancellation not completed",
+            description:
+              "No linked appointment was found. Nothing was removed from Google Calendar.",
+            variant: "destructive",
+          });
+          return;
         }
       } catch (e) {
         console.warn("[appointment-drawer] failed to cancel event", e);
@@ -402,6 +365,155 @@ export default function AppointmentDrawer({ item, open, onOpenChange }: Props) {
       }
     }
 
+    if (composedStart) {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (!userData.user) {
+          toast({
+            title: "Appointment not saved",
+            description: "Please sign in again, then retry.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const { data: matchingRows, error: lookupErr } = await supabase
+          .from("agenda_events")
+          .select("id, source_type, source_event_id, start_time, end_time")
+          .eq("user_id", userData.user.id)
+          .eq("thread_id", item.thread_id)
+          .neq("status", "cancelled")
+          .order("updated_at", { ascending: false });
+        if (lookupErr) throw lookupErr;
+
+        const googleRows = (matchingRows ?? []).filter(
+          (row) =>
+            row.source_type === "google_calendar" &&
+            Boolean(row.source_event_id),
+        );
+        if (googleRows.length > 1) {
+          toast({
+            title: "Appointment needs review",
+            description:
+              "This thread is linked to multiple Google Calendar events. Choose the event from the Agenda panel.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        let dbRow = googleRows[0] ?? matchingRows?.[0] ?? null;
+        let inserted = false;
+        const durationMs =
+          dbRow?.start_time && dbRow?.end_time
+            ? Math.max(
+                30 * 60 * 1000,
+                new Date(dbRow.end_time).getTime() -
+                  new Date(dbRow.start_time).getTime(),
+              )
+            : 30 * 60 * 1000;
+        const endTime = new Date(
+          new Date(composedStart).getTime() + durationMs,
+        ).toISOString();
+
+        if (!dbRow) {
+          const { data: created, error: createErr } = await supabase
+            .from("agenda_events")
+            .insert({
+              user_id: userData.user.id,
+              source_type: "whatsapp",
+              source_event_id: item.thread_id,
+              thread_id: item.thread_id,
+              contact_name: item.sender,
+              contact_channel: item.provider,
+              title: entry.title,
+              description: entry.description,
+              start_time: composedStart,
+              end_time: endTime,
+              timezone: entry.timezone,
+              status: finalStatus,
+              notes,
+              imported_at: entry.imported_at,
+            })
+            .select("id, source_type, source_event_id, start_time, end_time")
+            .single();
+          if (createErr) throw createErr;
+          dbRow = created;
+          inserted = true;
+        }
+
+        if (!dbRow) throw new Error("Could not create the appointment.");
+
+        const { data: pushData, error: pushErr } =
+          await supabase.functions.invoke("google-calendar-push", {
+            body: {
+              agenda_event_id: dbRow.id,
+              action: "upsert",
+              start_time: composedStart,
+              end_time: endTime,
+              timezone: entry.timezone,
+            },
+          });
+        const errCode = await functionErrorCode(pushData, pushErr);
+
+        if (pushErr || errCode) {
+          if (inserted) {
+            await supabase
+              .from("agenda_events")
+              .delete()
+              .eq("id", dbRow.id);
+          }
+          if (errCode === "not_connected") {
+            upsert(entry);
+            toast({
+              title: "Saved to personal agenda",
+              description:
+                "Connect Google Calendar to sync this appointment.",
+            });
+          } else {
+            toast({
+              title: "Google Calendar unchanged",
+              description:
+                "The appointment could not be synced, so the previous calendar event was left unchanged.",
+              variant: "destructive",
+            });
+          }
+          return;
+        }
+
+        const { error: updateErr } = await supabase
+          .from("agenda_events")
+          .update({
+            thread_id: item.thread_id,
+            contact_name: item.sender,
+            contact_channel: item.provider,
+            title: entry.title,
+            description: entry.description,
+            start_time: composedStart,
+            end_time: endTime,
+            timezone: entry.timezone,
+            status: finalStatus,
+            notes,
+          })
+          .eq("id", dbRow.id);
+        if (updateErr) throw updateErr;
+        notifyAgendaEventsChanged();
+      } catch (e) {
+        toast({
+          title: "Appointment not saved",
+          description:
+            (e as Error)?.message?.slice(0, 120) ??
+            "Could not update Google Calendar.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    upsert(entry);
+    logAppointmentSync("local agenda upserted", {
+      local_entry_id: entry.id,
+      final_status: finalStatus,
+    });
     toast({
       title: existing ? "Agenda entry updated" : "Added to personal agenda",
       description: composedStart ? format(new Date(composedStart), "PPP p") : "Time missing",

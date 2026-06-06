@@ -74,6 +74,7 @@ Deno.serve(async (req) => {
     const agendaId: string | undefined = body?.agenda_event_id;
     const action: "upsert" | "delete" = body?.action === "delete" ? "delete" : "upsert";
     const sourceEventId: string | null = body?.source_event_id ?? null;
+    const markCancelled = body?.mark_cancelled === true;
     if (!agendaId) return json({ error: "agenda_event_id required" }, 400);
 
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
@@ -81,7 +82,7 @@ Deno.serve(async (req) => {
     // For delete with explicit source_event_id we can skip row lookup
     // because the caller already removed the DB row.
     let row: any = null;
-    if (action !== "delete" || !sourceEventId) {
+    if (action !== "delete" || !sourceEventId || markCancelled) {
       const { data: rowData, error: rowErr } = await admin
         .from("agenda_events")
         .select("*")
@@ -143,6 +144,18 @@ Deno.serve(async (req) => {
         const t = await res.text();
         throw new Error(`Google delete failed: ${res.status} ${t}`);
       }
+      if (markCancelled && row) {
+        const { error: cancelErr } = await admin
+          .from("agenda_events")
+          .update({
+            status: "cancelled",
+            source_event_id: null,
+            last_synced_at: new Date().toISOString(),
+          })
+          .eq("id", agendaId)
+          .eq("user_id", userId);
+        if (cancelErr) throw cancelErr;
+      }
       return json({ ok: true });
     }
 
@@ -155,7 +168,9 @@ Deno.serve(async (req) => {
       row.source_type === "google_calendar" ? (row.source_event_id ?? null) : null;
 
     // Upsert
-    if (!row.start_time) return json({ error: "start_time_required" }, 400);
+    if (!body.start_time && !row.start_time) {
+      return json({ error: "start_time_required" }, 400);
+    }
 
     const startTime = body.start_time || row.start_time;
     const startDate = new Date(startTime as string);
@@ -164,8 +179,9 @@ Deno.serve(async (req) => {
     }
 
     let endDate: Date;
-    if (row.end_time) {
-      endDate = new Date(row.end_time as string);
+    const requestedEndTime = body.end_time || row.end_time;
+    if (requestedEndTime) {
+      endDate = new Date(requestedEndTime as string);
       if (isNaN(endDate.getTime())) endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
     } else {
       endDate = new Date(startDate.getTime() + 30 * 60 * 1000);
@@ -187,6 +203,8 @@ Deno.serve(async (req) => {
     console.log("google-calendar-push payload times", {
       raw_start: row.start_time,
       raw_end: row.end_time,
+      requested_start: body.start_time ?? null,
+      requested_end: body.end_time ?? null,
       tz,
       computed_start: startDate.toISOString(),
       computed_end: endDate.toISOString(),
@@ -245,15 +263,20 @@ Deno.serve(async (req) => {
       status: ev.status,
     });
 
+    const rowUpdate: Record<string, unknown> = {
+      source_type: "google_calendar",
+      source_event_id: ev.id ?? existingEventId,
+      html_link: ev.htmlLink ?? row.html_link ?? null,
+      last_synced_at: new Date().toISOString(),
+      status: row.status === "imported" ? "confirmed" : row.status,
+    };
+    if (body.start_time) rowUpdate.start_time = startDate.toISOString();
+    if (body.end_time) rowUpdate.end_time = endDate.toISOString();
+    if (body.timezone) rowUpdate.timezone = tz;
+
     const { error: updErr } = await admin
       .from("agenda_events")
-      .update({
-        source_type: "google_calendar",
-        source_event_id: ev.id ?? existingEventId,
-        html_link: ev.htmlLink ?? row.html_link ?? null,
-        last_synced_at: new Date().toISOString(),
-        status: row.status === "imported" ? "confirmed" : row.status,
-      })
+      .update(rowUpdate)
       .eq("id", agendaId);
     if (updErr) throw updErr;
 
