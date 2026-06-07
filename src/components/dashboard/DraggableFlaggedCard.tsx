@@ -108,6 +108,31 @@ export default function DraggableFlaggedCard({
 
   const liftActive = isHovered && !isDragging && !expanded;
 
+  const goNext = () => setActiveIndex((idx) => (idx + 1) % items.length);
+  const goPrev = () =>
+    setActiveIndex((idx) => (idx - 1 + items.length) % items.length);
+
+  // Keyboard arrow nav when the focused card (or anything inside) is focused.
+  useEffect(() => {
+    if (!expanded || items.length < 2) return;
+    const node = wrapperRef.current;
+    if (!node) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        target.closest("input, textarea, [contenteditable='true']")
+      )
+        return;
+      e.preventDefault();
+      if (e.key === "ArrowRight") goNext();
+      else goPrev();
+    };
+    node.addEventListener("keydown", onKey);
+    return () => node.removeEventListener("keydown", onKey);
+  }, [expanded, items.length]);
+
   return (
     <div
       ref={setRefs}
