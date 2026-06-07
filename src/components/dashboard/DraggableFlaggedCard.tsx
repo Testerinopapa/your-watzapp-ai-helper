@@ -9,7 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Folder, Trash2 } from "lucide-react";
+import { MoreVertical, Folder, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { FolderDef } from "@/lib/flagged-utils";
@@ -108,6 +108,31 @@ export default function DraggableFlaggedCard({
 
   const liftActive = isHovered && !isDragging && !expanded;
 
+  const goNext = () => setActiveIndex((idx) => (idx + 1) % items.length);
+  const goPrev = () =>
+    setActiveIndex((idx) => (idx - 1 + items.length) % items.length);
+
+  // Keyboard arrow nav when the focused card (or anything inside) is focused.
+  useEffect(() => {
+    if (!expanded || items.length < 2) return;
+    const node = wrapperRef.current;
+    if (!node) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        target.closest("input, textarea, [contenteditable='true']")
+      )
+        return;
+      e.preventDefault();
+      if (e.key === "ArrowRight") goNext();
+      else goPrev();
+    };
+    node.addEventListener("keydown", onKey);
+    return () => node.removeEventListener("keydown", onKey);
+  }, [expanded, items.length]);
+
   return (
     <div
       ref={setRefs}
@@ -183,12 +208,42 @@ export default function DraggableFlaggedCard({
           trailing={
             <div className="flex items-center gap-1">
               {items.length > 1 && (
-                <span
-                  className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground"
-                  title={`${activeIndex + 1} of ${items.length} from this sender`}
-                >
-                  {activeIndex + 1}/{items.length}
-                </span>
+                <div className="flex items-center gap-0.5" data-no-drag>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Previous message in stack"
+                    title="Previous (←)"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goPrev();
+                    }}
+                  >
+                    <ChevronLeft size={12} />
+                  </Button>
+                  <span
+                    className="text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground select-none"
+                    title={`${activeIndex + 1} of ${items.length} from this sender`}
+                  >
+                    {activeIndex + 1}/{items.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Next message in stack"
+                    title="Next (→)"
+                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      goNext();
+                    }}
+                  >
+                    <ChevronRight size={12} />
+                  </Button>
+                </div>
               )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
