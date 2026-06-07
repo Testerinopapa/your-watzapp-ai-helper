@@ -215,8 +215,16 @@ export default function FlaggedCardInner({
                     isUnknown && "text-muted-foreground italic font-normal",
                   )}
                 >
-                  {senderLabel}
+                  {isFromMe ? `You → ${senderLabel}` : senderLabel}
                 </span>
+                {isFromMe && (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-amber-300/40 bg-amber-300/10 text-amber-300 text-[10px] font-normal px-1.5 py-0"
+                  >
+                    Sent
+                  </Badge>
+                )}
                 {classifying && (
                   <Loader2
                     size={11}
