@@ -122,6 +122,7 @@ export default function FlaggedCardInner({
   const isAppt = APPOINTMENT_CATEGORIES.has(cat);
   const isSupport = SUPPORT_CATEGORIES.has(cat);
   const isComplaint = COMPLAINT_CATEGORIES.has(cat);
+  const isFromMe = !!(item as FlaggedMessage & { _fromMe?: boolean })._fromMe;
   const age = formatDistanceToNow(new Date(item.updated_at), { addSuffix: true });
 
   const rawSender = senderLabelForItem(item);
@@ -145,34 +146,41 @@ export default function FlaggedCardInner({
     : 0;
   const classifying = lastIngestMs > 0 && classifiedMs < lastIngestMs;
 
-  const title = humanIntentTitle(item);
+  const title = isFromMe ? "Your message" : humanIntentTitle(item);
   const summary = shortSummary(item);
   const urgency = (item.intent_urgency ?? "").toLowerCase();
 
   // Accent classes — calm, single accent per type, no neon glow.
-  const accent = isComplaint
-    ? "border-l-red-500/70"
-    : isAppt
-      ? "border-l-amber-400/70"
+  // Outgoing user messages get a distinct gold accent.
+  const accent = isFromMe
+    ? "border-l-amber-300"
+    : isComplaint
+      ? "border-l-red-500/70"
+      : isAppt
+        ? "border-l-amber-400/70"
+        : isSupport
+          ? "border-l-sky-400/70"
+          : "border-l-emerald-400/60";
+
+  const Icon = isFromMe
+    ? Send
+    : isComplaint
+      ? AlertTriangle
       : isSupport
-        ? "border-l-sky-400/70"
-        : "border-l-emerald-400/60";
+        ? LifeBuoy
+        : isAppt
+          ? CalendarCheck
+          : MessageCircle;
 
-  const Icon = isComplaint
-    ? AlertTriangle
-    : isSupport
-      ? LifeBuoy
-      : isAppt
-        ? CalendarCheck
-        : MessageCircle;
-
-  const iconColor = isComplaint
-    ? "text-red-400"
-    : isSupport
-      ? "text-sky-400"
-      : isAppt
-        ? "text-amber-400"
-        : "text-emerald-400";
+  const iconColor = isFromMe
+    ? "text-amber-300"
+    : isComplaint
+      ? "text-red-400"
+      : isSupport
+        ? "text-sky-400"
+        : isAppt
+          ? "text-amber-400"
+          : "text-emerald-400";
 
   return (
     <Card
