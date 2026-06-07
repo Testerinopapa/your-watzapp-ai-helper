@@ -108,9 +108,18 @@ export default function DraggableFlaggedCard({
 
   const liftActive = isHovered && !isDragging && !expanded;
 
-  const goNext = () => setActiveIndex((idx) => (idx + 1) % items.length);
+  const goNext = () =>
+    setActiveIndex((idx) => {
+      const next = (idx + 1) % items.length;
+      if (expanded) window.requestAnimationFrame(() => onActivate?.(items[next]));
+      return next;
+    });
   const goPrev = () =>
-    setActiveIndex((idx) => (idx - 1 + items.length) % items.length);
+    setActiveIndex((idx) => {
+      const next = (idx - 1 + items.length) % items.length;
+      if (expanded) window.requestAnimationFrame(() => onActivate?.(items[next]));
+      return next;
+    });
 
   // Keyboard arrow nav when the focused card (or anything inside) is focused.
   useEffect(() => {
