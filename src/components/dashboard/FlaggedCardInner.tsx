@@ -17,6 +17,7 @@ import {
   Loader2,
   Info,
   ChevronDown,
+  Send,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
