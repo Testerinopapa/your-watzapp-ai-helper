@@ -401,16 +401,22 @@ export default function FlaggedReviewSection() {
     for (const [index, message] of messages.entries()) {
       const text = (message.body ?? "").trim();
       const capturedAt = message.captured_at ?? item.updated_at;
-      if (!text || !capturedAt || message.from_me) continue;
+      if (!text || !capturedAt) continue;
+      const fromMe = !!message.from_me;
       flaggedRecentMessageCards.push({
         ...item,
-        thread_id: `${item.thread_id}#recent:${capturedAt}:${index}`,
+        thread_id: `${item.thread_id}#recent:${capturedAt}:${index}${fromMe ? ":me" : ""}`,
         preview: text,
         latest_message: text,
         updated_at: capturedAt,
         intent_classified_at: item.intent_classified_at ?? capturedAt,
         intent_reason:
-          item.intent_reason || "Earlier inbound message from this flagged thread.",
+          item.intent_reason ||
+          (fromMe
+            ? "Outbound message you sent in this flagged thread."
+            : "Earlier inbound message from this flagged thread."),
+        // Marker consumed by FlaggedCardInner to render the gold "your message" treatment.
+        ...({ _fromMe: fromMe } as Partial<FlaggedMessage>),
       });
     }
   }
