@@ -189,6 +189,8 @@ export default function FlaggedCardInner({
       className={cn(
         "border-l-4 border border-border/60 bg-card/95 transition-colors",
         accent,
+        isFromMe &&
+          "bg-gradient-to-br from-amber-500/[0.08] via-amber-400/[0.04] to-transparent border-amber-300/30 ring-1 ring-amber-300/20",
         elevated && "ring-1 ring-border shadow-md",
       )}
     >
