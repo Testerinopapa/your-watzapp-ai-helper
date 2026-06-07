@@ -9,7 +9,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { MoreVertical, Folder, Trash2 } from "lucide-react";
+import { MoreVertical, Folder, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { FolderDef } from "@/lib/flagged-utils";
