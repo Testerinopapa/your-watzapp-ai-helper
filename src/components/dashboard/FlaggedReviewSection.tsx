@@ -79,6 +79,7 @@ import FolderTile from "./FolderTile";
 import TrashDropZone from "./TrashDropZone";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
+import { useOutboundAppointmentMessages } from "@/hooks/useOutboundAppointmentMessages";
 
 // ── Main ──
 
@@ -94,6 +95,7 @@ export default function FlaggedReviewSection() {
 
   const enricher = createEnricher(activityRows);
   const { enrichedMessageFor, withActivityPreview } = enricher;
+  useOutboundAppointmentMessages(data, toast);
 
   // ── State ──
   // Folders / assignments / dismissals are cloud-backed (synced across browsers).
