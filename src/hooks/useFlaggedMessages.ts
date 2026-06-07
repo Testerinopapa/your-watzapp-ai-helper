@@ -35,6 +35,13 @@ export interface FlaggedMessage {
   intent_classified_at: string | null;
   updated_at: string;
   thread_url: string | null;
+  recent_messages?: Array<{
+    body: string | null;
+    from_me?: boolean | null;
+    captured_at: string | null;
+    msg_type?: string | null;
+    source?: string | null;
+  }>;
 }
 
 interface FlaggedListResponse {
