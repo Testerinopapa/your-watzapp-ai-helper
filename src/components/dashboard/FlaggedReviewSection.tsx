@@ -846,7 +846,11 @@ export default function FlaggedReviewSection() {
                           return (
                             <DraftReplyFooter
                               item={it}
-                              enrichedMessage={enrichedMessageFor(it)}
+                              enrichedMessage={
+                                it.thread_id.includes("#recent:")
+                                  ? null
+                                  : enrichedMessageFor(it)
+                              }
                               state={draftState}
                               onChange={(patch) =>
                                 updateDraft(it.thread_id, patch)
