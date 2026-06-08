@@ -72,7 +72,6 @@ import {
   buildSupportInstruction,
 } from "@/lib/support-draft";
 import { handleCalendarAfterDraft } from "@/lib/calendar-response";
-import { extractDateTime } from "@/lib/extractDateTime";
 import FlaggedCardInner from "./FlaggedCardInner";
 import DraftReplyFooter from "./DraftReplyFooter";
 import DraggableFlaggedCard from "./DraggableFlaggedCard";
