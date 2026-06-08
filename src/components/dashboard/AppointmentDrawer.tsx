@@ -27,10 +27,17 @@ import { supabase } from "@/integrations/supabase/client";
 import { notifyAgendaEventsChanged } from "@/lib/agenda-events";
 import { functionErrorCode } from "@/lib/function-error";
 import { cn } from "@/lib/utils";
+import { extractDateTime } from "@/lib/extractDateTime";
 
 const MINT = "#73ffb8";
 
 function recencyDate(m: FlaggedMessage): Date {
+  // 1) Prefer a date+time extracted from the actual message body — that's
+  //    the booking the customer asked for.
+  const body = (m.latest_message ?? m.preview ?? "").trim();
+  const extracted = body ? extractDateTime(body, m.subject) : null;
+  if (extracted && extracted.confidence === "high") return extracted.date;
+  // 2) Otherwise fall back to message recency timestamps.
   const c = [m.intent_classified_at, m.updated_at].filter(Boolean) as string[];
   return new Date(Math.max(...c.map((s) => new Date(s).getTime())));
 }
