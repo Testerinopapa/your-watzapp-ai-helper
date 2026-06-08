@@ -499,8 +499,13 @@ export default function FlaggedReviewSection() {
       });
     }
   }
+  const recentCardBaseIds = new Set(
+    flaggedRecentMessageCards.map((m) => baseThreadId(m.thread_id)),
+  );
   const all: FlaggedMessage[] = [
-    ...flaggedFromList,
+    ...flaggedFromList.filter(
+      (item) => !recentCardBaseIds.has(baseThreadId(item.thread_id)),
+    ),
     ...flaggedRecentMessageCards,
   ];
   const recencyOf = (m: FlaggedMessage) => {
@@ -840,7 +845,11 @@ export default function FlaggedReviewSection() {
                   }
                   return groupOrder.map((key) => {
 
-                    const groupItems = groupMap.get(key)!;
+                    const groupItems = [...groupMap.get(key)!].sort(
+                      (a, b) =>
+                        displayOrderOf(a) - displayOrderOf(b) ||
+                        a.thread_id.localeCompare(b.thread_id),
+                    );
                     const main = groupItems[0];
                     return (
                       <DraggableFlaggedCard
