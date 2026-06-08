@@ -167,13 +167,10 @@ export default function FlaggedReviewSection() {
     if (!incomingMessage || !userInstruction) return;
 
     let instruction = userInstruction;
-    // A clear date+time in the customer's message wins — even if the message
-    // is classified as support, a confident booking signal routes through the
-    // calendar pipeline so the agenda event + calendar push happen.
-    const bookingHit = extractDateTime(incomingMessage, item.subject);
-    const hasBookingDateTime = !!bookingHit && bookingHit.confidence === "high";
-
-    if (!hasBookingDateTime && needsSupportContext(item)) {
+    // intent_category is the authoritative signal — check it first so a
+    // "support" message that happens to mention scheduling words ("booking
+    // page isn't working") doesn't get pulled into the calendar pipeline.
+    if (needsSupportContext(item)) {
       const supportInstruction = await buildSupportInstruction({
         item,
         incomingMessage,
@@ -185,7 +182,6 @@ export default function FlaggedReviewSection() {
       if (supportInstruction === null) return;
       instruction = supportInstruction;
     } else if (
-      hasBookingDateTime ||
       needsCalendarContext(item, incomingMessage, userInstruction)
     ) {
       const calendarInstruction = await buildCalendarInstruction({
