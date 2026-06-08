@@ -394,6 +394,36 @@ export default function FlaggedReviewSection() {
 
   // ── Dedup / sort / group pipeline ──
 
+  // Picks the message's own send timestamp from common backend field names.
+  // WhatsApp/extension payloads sometimes use seconds-since-epoch (timestamp,
+  // t) and sometimes ISO strings (sent_at, message_timestamp). Returns an
+  // ISO string or null if no plausible value is present.
+  const pickSendTimestamp = (msg: Record<string, unknown>): string | null => {
+    const candidates: Array<unknown> = [
+      msg.message_timestamp,
+      msg.sent_at,
+      msg.timestamp,
+      msg.t,
+      msg.ts,
+      msg.send_ts,
+    ];
+    for (const v of candidates) {
+      if (v == null) continue;
+      if (typeof v === "string" && v.trim()) {
+        const d = new Date(v);
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+      }
+      if (typeof v === "number" && Number.isFinite(v)) {
+        // Heuristic: < 1e12 => seconds-since-epoch, else ms.
+        const ms = v < 1e12 ? v * 1000 : v;
+        const d = new Date(ms);
+        if (!Number.isNaN(d.getTime())) return d.toISOString();
+      }
+    }
+    return null;
+  };
+
+
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
