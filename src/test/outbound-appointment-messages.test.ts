@@ -92,4 +92,39 @@ describe("collectOutboundAppointmentMessages", () => {
 
     expect(collectOutboundAppointmentMessages([item])).toEqual([]);
   });
+
+  it("keeps structured extension calendar payloads with the outbound message", () => {
+    const item = flagged({
+      recent_messages: [
+        {
+          body: "Can we meet next Friday?",
+          from_me: false,
+          captured_at: "2026-06-07T12:00:00.000Z",
+        },
+        {
+          body: "Booked.",
+          from_me: true,
+          captured_at: "2026-06-07T12:01:00.000Z",
+          calendar_payload: {
+            intent: "confirmation",
+            start_time: "2027-06-12T15:00:00.000Z",
+            end_time: "2027-06-12T15:45:00.000Z",
+            timezone: "America/New_York",
+            title: "Consultation with Customer One",
+          },
+        },
+      ],
+    });
+
+    const [candidate] = collectOutboundAppointmentMessages([item]);
+
+    expect(candidate.calendarPayload).toEqual({
+      intent: "confirmation",
+      start_time: "2027-06-12T15:00:00.000Z",
+      end_time: "2027-06-12T15:45:00.000Z",
+      timezone: "America/New_York",
+      title: "Consultation with Customer One",
+      confidence: null,
+    });
+  });
 });

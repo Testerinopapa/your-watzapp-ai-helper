@@ -55,20 +55,24 @@ export function useOutboundAppointmentMessages(
 
     const candidates = collectOutboundAppointmentMessages(items);
     const stored = readReceipts(userId);
+    const receipts = stored ?? new Set<string>();
 
-    // First activation establishes a baseline. Replaying historical outbound
-    // confirmations or cancellations would mutate calendars unexpectedly.
     if (stored === null) {
-      writeReceipts(userId, new Set(candidates.map((candidate) => candidate.key)));
-      return;
+      // First activation still baselines plain text-only history, but
+      // structured extension-originated calendar payloads are actionable data.
+      // Those should flow through once even if the dashboard first sees them
+      // after the extension/backend already sent the WhatsApp reply.
+      for (const candidate of candidates) {
+        if (!candidate.calendarPayload) receipts.add(candidate.key);
+      }
+      writeReceipts(userId, receipts);
     }
 
-    const pending = candidates.filter((candidate) => !stored.has(candidate.key));
+    const pending = candidates.filter((candidate) => !receipts.has(candidate.key));
     if (pending.length === 0) return;
 
     runningRef.current = true;
     void (async () => {
-      const receipts = new Set(stored);
       try {
         for (const candidate of pending) {
           await handleCalendarAfterDraft({
@@ -76,6 +80,7 @@ export function useOutboundAppointmentMessages(
             incomingMessage: candidate.incomingMessage,
             userInstruction: "",
             draftText: candidate.text,
+            calendarPayload: candidate.calendarPayload,
             toast,
           });
           receipts.add(candidate.key);

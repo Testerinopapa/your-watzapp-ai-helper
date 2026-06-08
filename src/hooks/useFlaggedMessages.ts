@@ -42,6 +42,11 @@ export interface FlaggedMessage {
   snapshot_captured_at?: string | null;
   scan_captured_at?: string | null;
   needs_human_review?: boolean | null;
+  appointment_payload?: unknown;
+  calendar_payload?: unknown;
+  appointment?: unknown;
+  calendar?: unknown;
+  schedule?: unknown;
   updated_at: string;
   thread_url: string | null;
   recent_messages?: Array<{
@@ -50,6 +55,12 @@ export interface FlaggedMessage {
     captured_at: string | null;
     msg_type?: string | null;
     source?: string | null;
+    appointment_payload?: unknown;
+    calendar_payload?: unknown;
+    appointment?: unknown;
+    calendar?: unknown;
+    schedule?: unknown;
+    [key: string]: unknown;
   }>;
 }
 

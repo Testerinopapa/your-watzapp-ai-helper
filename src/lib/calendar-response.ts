@@ -7,6 +7,7 @@ import {
 } from "./flagged-utils";
 import {
   extractDateTime,
+  type ExtractedDateTime,
   looksLikeConfirmation,
   looksLikeCancellation,
   looksLikeReschedule,
@@ -15,6 +16,53 @@ import { functionErrorCode } from "./function-error";
 import { notifyAgendaEventsChanged } from "./agenda-events";
 
 // ── Intent classification ──
+
+export type CalendarMutationIntent =
+  | "confirmation"
+  | "cancellation"
+  | "reschedule"
+  | "none";
+
+export interface CalendarMutationPayload {
+  intent: CalendarMutationIntent;
+  start_time?: string | null;
+  end_time?: string | null;
+  timezone?: string | null;
+  title?: string | null;
+  confidence?: string | null;
+}
+
+function extractedFromPayload(
+  calendarPayload?: CalendarMutationPayload | null,
+): ExtractedDateTime | null {
+  if (!calendarPayload?.start_time) return null;
+  const date = new Date(calendarPayload.start_time);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    date,
+    source: "structured calendar payload",
+    confidence: "high",
+  };
+}
+
+function endDateFromPayload(
+  calendarPayload: CalendarMutationPayload | null | undefined,
+  startDate: Date | null,
+): Date | null {
+  if (!calendarPayload?.end_time) return null;
+  const date = new Date(calendarPayload.end_time);
+  if (Number.isNaN(date.getTime())) return null;
+  if (startDate && date.getTime() <= startDate.getTime()) return null;
+  return date;
+}
+
+function timezoneForPayload(calendarPayload?: CalendarMutationPayload | null) {
+  return (
+    calendarPayload?.timezone?.trim() ||
+    Intl.DateTimeFormat().resolvedOptions().timeZone ||
+    "UTC"
+  );
+}
 
 function classifyDraftIntent(
   item: FlaggedMessage,
@@ -554,6 +602,7 @@ async function rescheduleAppointment(
   userInstruction: string,
   draftText: string,
   reasonText: string,
+  calendarPayload: CalendarMutationPayload | null | undefined,
   toast: (opts: {
     title: string;
     description: string;
@@ -574,12 +623,14 @@ async function rescheduleAppointment(
     //    Reschedule drafts mention the OLD date first and the NEW date
     //    second. extractNewDateForReschedule handles this by looking past
     //    cancellation language and searching sentences from the end.
-    let extracted = extractNewDateForReschedule(
-      draftText,
-      incomingMessage,
-      userInstruction,
-      item.subject,
-    );
+    let extracted =
+      extractedFromPayload(calendarPayload) ??
+      extractNewDateForReschedule(
+        draftText,
+        incomingMessage,
+        userInstruction,
+        item.subject,
+      );
     console.log("[flagged][reschedule] pass 1 (draft, reschedule-aware)", {
       extracted: extracted
         ? {
@@ -618,8 +669,7 @@ async function rescheduleAppointment(
       return;
     }
 
-    const tz =
-      Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+    const tz = timezoneForPayload(calendarPayload);
 
     // 2. Find the event to reschedule
     let { data: existingRows } = await supabase
@@ -768,8 +818,11 @@ async function rescheduleAppointment(
         (item.sender
           ? `Appointment with ${item.sender}`
           : "Appointment");
+      const payloadEnd = endDateFromPayload(calendarPayload, extracted.date);
       const durationMs =
-        existingWithGoogle.start_time && existingWithGoogle.end_time
+        payloadEnd
+          ? payloadEnd.getTime() - extracted.date.getTime()
+          : existingWithGoogle.start_time && existingWithGoogle.end_time
           ? Math.max(
               30 * 60 * 1000,
               new Date(existingWithGoogle.end_time).getTime() -
@@ -777,9 +830,9 @@ async function rescheduleAppointment(
             )
           : 30 * 60 * 1000;
       const newStart = extracted.date.toISOString();
-      const newEnd = new Date(
-        extracted.date.getTime() + durationMs,
-      ).toISOString();
+      const newEnd =
+        payloadEnd?.toISOString() ??
+        new Date(extracted.date.getTime() + durationMs).toISOString();
 
       console.log(
         "[flagged][reschedule] calling google-calendar-push upsert (PATCH)",
@@ -867,14 +920,16 @@ async function rescheduleAppointment(
           "reschedule appointment",
     );
     const title =
+      calendarPayload?.title?.trim() ||
       bestExisting?.title?.trim() ||
       (item.sender
         ? `Appointment with ${item.sender}`
         : "Appointment");
     const newStart = extracted.date.toISOString();
-    const newEnd = new Date(
-      extracted.date.getTime() + 30 * 60 * 1000,
-    ).toISOString();
+    const payloadEnd = endDateFromPayload(calendarPayload, extracted.date);
+    const newEnd =
+      payloadEnd?.toISOString() ??
+      new Date(extracted.date.getTime() + 30 * 60 * 1000).toISOString();
 
     const newEvent = {
       user_id: userData.user.id,
@@ -989,6 +1044,7 @@ async function confirmAppointment(
   incomingMessage: string,
   userInstruction: string,
   draftText: string,
+  calendarPayload: CalendarMutationPayload | null | undefined,
   toast: (opts: {
     title: string;
     description: string;
@@ -996,14 +1052,16 @@ async function confirmAppointment(
   }) => void,
 ) {
   // Two-pass: contact message + instruction first, fall back to draft.
-  let extracted = extractDateTime(
-    incomingMessage,
-    userInstruction,
-  );
-  console.log(
-    "[flagged] confirmation pass 1 (contact+instruction)",
-    extracted,
-  );
+  let extracted = extractedFromPayload(calendarPayload);
+  if (extracted) {
+    console.log("[flagged] confirmation structured payload", extracted);
+  } else {
+    extracted = extractDateTime(incomingMessage, userInstruction);
+    console.log(
+      "[flagged] confirmation pass 1 (contact+instruction)",
+      extracted,
+    );
+  }
   if (!extracted) {
     extracted = extractDateTime(draftText, item.subject);
     console.log(
@@ -1015,13 +1073,17 @@ async function confirmAppointment(
     "[flagged] confirmation block entered, extracted:",
     extracted,
   );
-  const tz =
-    Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
+  const tz = timezoneForPayload(calendarPayload);
   const title =
+    calendarPayload?.title?.trim() ||
     item.subject?.trim() ||
     (item.sender
       ? `Appointment with ${item.sender}`
       : "Appointment");
+  const payloadEnd = endDateFromPayload(
+    calendarPayload,
+    extracted?.date ?? null,
+  );
 
   const eventRow: Record<string, unknown> = {
     source_type: "whatsapp",
@@ -1034,6 +1096,7 @@ async function confirmAppointment(
       item.latest_message ??
       null) as string | null,
     start_time: extracted?.date.toISOString() ?? null,
+    end_time: payloadEnd?.toISOString() ?? null,
     timezone: extracted ? tz : null,
     status: "confirmed",
     imported_at: new Date().toISOString(),
@@ -1044,23 +1107,59 @@ async function confirmAppointment(
     if (userData.user) {
       eventRow.user_id = userData.user.id;
 
-      const { data: inserted, error: insErr } = await supabase
+      const { data: existingRows, error: lookupErr } = await supabase
         .from("agenda_events")
-        .upsert(eventRow as never, {
-          onConflict: "user_id,source_type,source_event_id",
-          ignoreDuplicates: false,
-        })
-        .select("id")
-        .single();
+        .select("id, source_type, source_event_id, status")
+        .eq("thread_id", item.thread_id)
+        .eq("user_id", userData.user.id)
+        .neq("status", "cancelled")
+        .order("updated_at", { ascending: false })
+        .limit(1);
 
-      if (insErr) throw insErr;
+      if (lookupErr) throw lookupErr;
 
-      if (inserted?.id && extracted) {
+      const existing = (existingRows ?? [])[0] as
+        | { id: string; source_type?: string | null }
+        | undefined;
+      let agendaEventId = existing?.id ?? null;
+
+      if (existing) {
+        const updateRow = { ...eventRow };
+        delete updateRow.source_type;
+        delete updateRow.source_event_id;
+        if (!extracted) {
+          delete updateRow.start_time;
+          delete updateRow.end_time;
+          delete updateRow.timezone;
+        } else if (!payloadEnd) {
+          delete updateRow.end_time;
+        }
+        const { error: updErr } = await supabase
+          .from("agenda_events")
+          .update(updateRow as never)
+          .eq("id", existing.id);
+        if (updErr) throw updErr;
+      } else {
+        const { data: inserted, error: insErr } = await supabase
+          .from("agenda_events")
+          .upsert(eventRow as never, {
+            onConflict: "user_id,source_type,source_event_id",
+            ignoreDuplicates: false,
+          })
+          .select("id")
+          .single();
+
+        if (insErr) throw insErr;
+        agendaEventId = inserted?.id ?? null;
+      }
+
+      if (agendaEventId && extracted) {
         console.log(
           "[flagged][confirm] calling google-calendar-push upsert",
           {
-            agenda_event_id: inserted.id,
+            agenda_event_id: agendaEventId,
             start_time: extracted.date.toISOString(),
+            end_time: payloadEnd?.toISOString() ?? null,
             timezone: tz,
           },
         );
@@ -1069,9 +1168,10 @@ async function confirmAppointment(
             "google-calendar-push",
             {
               body: {
-                agenda_event_id: inserted.id,
+                agenda_event_id: agendaEventId,
                 action: "upsert",
                 start_time: extracted.date.toISOString(),
+                end_time: payloadEnd?.toISOString() ?? undefined,
                 timezone: tz,
               },
             },
@@ -1098,7 +1198,7 @@ async function confirmAppointment(
           });
           notifyAgendaEventsChanged();
         }
-      } else if (inserted?.id) {
+      } else if (agendaEventId) {
         toast({
           title: "Added to agenda (needs time)",
           description: `${title} — set a time in the Agenda panel to sync.`,
@@ -1127,24 +1227,36 @@ export async function handleCalendarAfterDraft({
   incomingMessage,
   userInstruction,
   draftText,
+  calendarPayload,
   toast,
 }: {
   item: FlaggedMessage;
   incomingMessage: string;
   userInstruction: string;
   draftText: string;
+  calendarPayload?: CalendarMutationPayload | null;
   toast: (opts: {
     title: string;
     description: string;
     variant?: "default" | "destructive";
   }) => void;
 }) {
-  const { cancel, reschedule } = classifyDraftIntent(
+  const classified = classifyDraftIntent(
     item,
     incomingMessage,
     userInstruction,
     draftText,
   );
+  const payloadIntent = calendarPayload?.intent ?? null;
+  const cancel =
+    payloadIntent === "cancellation" ||
+    (!payloadIntent && classified.cancel);
+  const reschedule =
+    payloadIntent === "reschedule" ||
+    (!payloadIntent && classified.reschedule);
+  const confirmation =
+    payloadIntent === "confirmation" ||
+    (!payloadIntent && looksLikeConfirmation(draftText));
   const reasonText = String(item.intent_reason ?? "");
 
   if (cancel) {
@@ -1161,14 +1273,16 @@ export async function handleCalendarAfterDraft({
       userInstruction,
       draftText,
       reasonText,
+      calendarPayload,
       toast,
     );
-  } else if (looksLikeConfirmation(draftText)) {
+  } else if (confirmation) {
     await confirmAppointment(
       item,
       incomingMessage,
       userInstruction,
       draftText,
+      calendarPayload,
       toast,
     );
   }
