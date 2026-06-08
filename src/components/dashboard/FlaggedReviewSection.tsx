@@ -405,40 +405,40 @@ export default function FlaggedReviewSection() {
       (message) => (message.body ?? "").trim() === latestText,
     );
     if (latestText && item.updated_at && !latestAlreadyInRecent) {
-      const latestRecent = [...messages]
-        .filter((message) => message.captured_at)
-        .sort(
-          (a, b) =>
-            new Date(b.captured_at ?? 0).getTime() -
-            new Date(a.captured_at ?? 0).getTime(),
-        )[0];
-      // Prefer matching latestText against a recent_messages entry by body —
-      // the most recently captured entry is not always the message that
-      // populated parent.latest_message, so using latestRecent.from_me blindly
-      // mispairs outbound/inbound on the synthesized card.
+      // The parent's latest_message and from_me are written together by the
+      // backend — they're paired by definition. Determine from_me strictly
+      // from (1) a body-match in recent_messages, or (2) the parent's own
+      // from_me. Do NOT fall back to "latest captured recent_message" — that
+      // may be a different message and produces a "You" label on the
+      // contact's text (or vice versa). If neither signal is present, skip
+      // synthesis rather than render a mispaired card.
       const bodyMatch = messages.find(
         (message) => (message.body ?? "").trim() === latestText,
       );
       const parentFromMe = (item as FlaggedMessage & { from_me?: boolean | null })
         .from_me;
-      const fromMe = !!(
-        bodyMatch?.from_me ??
-        parentFromMe ??
-        latestRecent?.from_me
-      );
-      flaggedRecentMessageCards.push({
-        ...item,
-        thread_id: `${item.thread_id}#recent:${item.updated_at}:latest${fromMe ? ":me" : ""}`,
-        preview: latestText,
-        latest_message: latestText,
-        intent_classified_at: item.intent_classified_at ?? item.updated_at,
-        intent_reason:
-          item.intent_reason ||
-          (fromMe
-            ? "Latest outbound message you sent in this flagged thread."
-            : "Latest message from this flagged thread."),
-        ...({ _fromMe: fromMe } as Partial<FlaggedMessage>),
-      });
+      const resolvedFromMe =
+        bodyMatch?.from_me ?? (parentFromMe ?? null);
+      if (resolvedFromMe === null) {
+        // Can't reliably attribute author — don't synthesize a card.
+        // The per-recent-message loop below will still surface any
+        // entries that did come through with explicit from_me.
+      } else {
+        const fromMe = !!resolvedFromMe;
+        flaggedRecentMessageCards.push({
+          ...item,
+          thread_id: `${item.thread_id}#recent:${item.updated_at}:latest${fromMe ? ":me" : ""}`,
+          preview: latestText,
+          latest_message: latestText,
+          intent_classified_at: item.intent_classified_at ?? item.updated_at,
+          intent_reason:
+            item.intent_reason ||
+            (fromMe
+              ? "Latest outbound message you sent in this flagged thread."
+              : "Latest message from this flagged thread."),
+          ...({ _fromMe: fromMe } as Partial<FlaggedMessage>),
+        });
+      }
     }
     for (const [index, message] of messages.entries()) {
       const text = (message.body ?? "").trim();
