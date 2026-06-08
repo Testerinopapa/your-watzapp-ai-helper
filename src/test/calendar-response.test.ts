@@ -45,6 +45,14 @@ vi.mock("@/integrations/supabase/client", () => {
             return { error: null };
           }),
         })),
+        upsert: vi.fn(() => ({
+          select: vi.fn(() => ({
+            single: vi.fn(async () => ({
+              data: { id: "upserted-1" },
+              error: null,
+            })),
+          })),
+        })),
         insert: vi.fn(() => ({
           select: vi.fn(() => ({
             single: vi.fn(async () => ({
@@ -207,6 +215,62 @@ describe("calendar response mutations", () => {
           agenda_event_id: "event-1",
           action: "upsert",
           start_time: expect.stringContaining("2027-06-12"),
+        },
+      },
+    });
+  });
+
+  it("uses structured confirmation payloads to update and sync an existing thread event", async () => {
+    state.rows = [
+      {
+        id: "event-1",
+        source_type: "google_calendar",
+        source_event_id: "google-event-1",
+        status: "confirmed",
+        title: "Old title",
+        contact_name: "Customer One",
+        start_time: "2027-06-10T14:00:00.000Z",
+        end_time: "2027-06-10T14:30:00.000Z",
+      },
+    ];
+
+    await handleCalendarAfterDraft({
+      item: appointment(),
+      incomingMessage: "Can we meet next Friday?",
+      userInstruction: "",
+      draftText: "Done.",
+      calendarPayload: {
+        intent: "confirmation",
+        start_time: "2027-06-12T15:00:00.000Z",
+        end_time: "2027-06-12T15:45:00.000Z",
+        timezone: "America/New_York",
+        title: "Consultation with Customer One",
+      },
+      toast: vi.fn(),
+    });
+
+    expect(state.operations.map((operation) => operation.kind)).toEqual([
+      "update",
+      "invoke",
+    ]);
+    expect(state.operations[0]).toMatchObject({
+      kind: "update",
+      payload: {
+        title: "Consultation with Customer One",
+        start_time: "2027-06-12T15:00:00.000Z",
+        end_time: "2027-06-12T15:45:00.000Z",
+        timezone: "America/New_York",
+      },
+    });
+    expect(state.operations[1]).toMatchObject({
+      kind: "invoke",
+      payload: {
+        body: {
+          agenda_event_id: "event-1",
+          action: "upsert",
+          start_time: "2027-06-12T15:00:00.000Z",
+          end_time: "2027-06-12T15:45:00.000Z",
+          timezone: "America/New_York",
         },
       },
     });
