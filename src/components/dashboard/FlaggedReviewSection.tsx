@@ -97,6 +97,9 @@ export default function FlaggedReviewSection() {
   const enricher = createEnricher(activityRows);
   const { enrichedMessageFor, withActivityPreview } = enricher;
   useOutboundAppointmentMessages(data, toast);
+  // Inbound (contact) messages with a clear, high-confidence date+time flow
+  // through the same calendar pipeline — option 1: auto-route + auto-write.
+  useInboundAppointmentMessages(data, toast);
 
   // ── State ──
   // Folders / assignments / dismissals are cloud-backed (synced across browsers).
