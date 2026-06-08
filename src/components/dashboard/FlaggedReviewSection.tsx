@@ -485,7 +485,10 @@ export default function FlaggedReviewSection() {
         preview: text,
         latest_message: text,
         updated_at: sendTs,
-        intent_classified_at: item.intent_classified_at ?? sendTs,
+        // Per-message cards must sort by the message's own WhatsApp order,
+        // not the parent thread's classification time. Otherwise every card
+        // in a stack shares the same recency and can appear out of order.
+        intent_classified_at: sendTs,
         intent_reason:
           item.intent_reason ||
           (fromMe
@@ -496,8 +499,13 @@ export default function FlaggedReviewSection() {
       });
     }
   }
+  const recentCardBaseIds = new Set(
+    flaggedRecentMessageCards.map((m) => baseThreadId(m.thread_id)),
+  );
   const all: FlaggedMessage[] = [
-    ...flaggedFromList,
+    ...flaggedFromList.filter(
+      (item) => !recentCardBaseIds.has(baseThreadId(item.thread_id)),
+    ),
     ...flaggedRecentMessageCards,
   ];
   const recencyOf = (m: FlaggedMessage) => {
@@ -516,10 +524,17 @@ export default function FlaggedReviewSection() {
     if (u === "low") return 1;
     return 0;
   };
+  const displayOrderOf = (m: FlaggedMessage) => {
+    const threadId = m.thread_id;
+    if (threadId.includes("#recent:")) {
+      return m.updated_at ? new Date(m.updated_at).getTime() : 0;
+    }
+    return recencyOf(m);
+  };
   const sorted = [...all].sort((a, b) => {
     const ur = urgencyRank(b) - urgencyRank(a);
     if (ur !== 0) return ur;
-    return recencyOf(b) - recencyOf(a);
+    return displayOrderOf(b) - displayOrderOf(a);
   });
   // Precompute the latest updated_at per base thread so a fresh inbound
   // on Maria's main thread re-surfaces every stacked recent-message card
@@ -830,7 +845,11 @@ export default function FlaggedReviewSection() {
                   }
                   return groupOrder.map((key) => {
 
-                    const groupItems = groupMap.get(key)!;
+                    const groupItems = [...groupMap.get(key)!].sort(
+                      (a, b) =>
+                        displayOrderOf(a) - displayOrderOf(b) ||
+                        a.thread_id.localeCompare(b.thread_id),
+                    );
                     const main = groupItems[0];
                     return (
                       <DraggableFlaggedCard
