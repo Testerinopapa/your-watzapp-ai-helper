@@ -72,7 +72,6 @@ import {
   buildSupportInstruction,
 } from "@/lib/support-draft";
 import { handleCalendarAfterDraft } from "@/lib/calendar-response";
-import { extractDateTime } from "@/lib/extractDateTime";
 import FlaggedCardInner from "./FlaggedCardInner";
 import DraftReplyFooter from "./DraftReplyFooter";
 import DraggableFlaggedCard from "./DraggableFlaggedCard";
@@ -81,7 +80,6 @@ import TrashDropZone from "./TrashDropZone";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
 import { useOutboundAppointmentMessages } from "@/hooks/useOutboundAppointmentMessages";
-import { useInboundAppointmentMessages } from "@/hooks/useInboundAppointmentMessages";
 
 // ── Main ──
 
@@ -98,9 +96,6 @@ export default function FlaggedReviewSection() {
   const enricher = createEnricher(activityRows);
   const { enrichedMessageFor, withActivityPreview } = enricher;
   useOutboundAppointmentMessages(data, toast);
-  // Inbound (contact) messages with a clear, high-confidence date+time flow
-  // through the same calendar pipeline — option 1: auto-route + auto-write.
-  useInboundAppointmentMessages(data, toast);
 
   // ── State ──
   // Folders / assignments / dismissals are cloud-backed (synced across browsers).
@@ -171,13 +166,10 @@ export default function FlaggedReviewSection() {
     if (!incomingMessage || !userInstruction) return;
 
     let instruction = userInstruction;
-    // A clear date+time in the customer's message wins — even if the message
-    // is classified as support, a confident booking signal routes through the
-    // calendar pipeline so the agenda event + calendar push happen.
-    const bookingHit = extractDateTime(incomingMessage, item.subject);
-    const hasBookingDateTime = !!bookingHit && bookingHit.confidence === "high";
-
-    if (!hasBookingDateTime && needsSupportContext(item)) {
+    // intent_category is the authoritative signal — check it first so a
+    // "support" message that happens to mention scheduling words ("booking
+    // page isn't working") doesn't get pulled into the calendar pipeline.
+    if (needsSupportContext(item)) {
       const supportInstruction = await buildSupportInstruction({
         item,
         incomingMessage,
@@ -189,7 +181,6 @@ export default function FlaggedReviewSection() {
       if (supportInstruction === null) return;
       instruction = supportInstruction;
     } else if (
-      hasBookingDateTime ||
       needsCalendarContext(item, incomingMessage, userInstruction)
     ) {
       const calendarInstruction = await buildCalendarInstruction({
