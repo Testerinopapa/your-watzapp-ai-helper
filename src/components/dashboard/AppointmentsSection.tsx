@@ -17,7 +17,6 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { formatDistanceToNow, format } from "date-fns";
 import { useFlaggedMessages, type FlaggedMessage } from "@/hooks/useFlaggedMessages";
-import { extractDateTime } from "@/lib/extractDateTime";
 import { usePersonalAgenda, type AgendaEntry } from "@/hooks/usePersonalAgenda";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
