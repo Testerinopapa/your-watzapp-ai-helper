@@ -29,7 +29,14 @@ import { supabase } from "@/integrations/supabase/client";
 
 
 function isAppointment(m: FlaggedMessage): boolean {
-  return APPOINTMENT_CATEGORIES.has((m.intent_category ?? "").toLowerCase().trim());
+  if (APPOINTMENT_CATEGORIES.has((m.intent_category ?? "").toLowerCase().trim())) return true;
+  // Also surface any flagged message whose body contains a high-confidence
+  // date+time — those flow through the same calendar pipeline regardless of
+  // backend classification.
+  const text = (m.latest_message ?? m.preview ?? "").trim();
+  if (!text) return false;
+  const extracted = extractDateTime(text, m.subject);
+  return !!extracted && extracted.confidence === "high";
 }
 
 const MINT = "#2dd4a8";
