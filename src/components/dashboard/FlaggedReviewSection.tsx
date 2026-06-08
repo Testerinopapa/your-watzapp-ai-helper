@@ -412,8 +412,18 @@ export default function FlaggedReviewSection() {
             new Date(b.captured_at ?? 0).getTime() -
             new Date(a.captured_at ?? 0).getTime(),
         )[0];
+      // Prefer matching latestText against a recent_messages entry by body —
+      // the most recently captured entry is not always the message that
+      // populated parent.latest_message, so using latestRecent.from_me blindly
+      // mispairs outbound/inbound on the synthesized card.
+      const bodyMatch = messages.find(
+        (message) => (message.body ?? "").trim() === latestText,
+      );
+      const parentFromMe = (item as FlaggedMessage & { from_me?: boolean | null })
+        .from_me;
       const fromMe = !!(
-        (item as FlaggedMessage & { from_me?: boolean | null }).from_me ??
+        bodyMatch?.from_me ??
+        parentFromMe ??
         latestRecent?.from_me
       );
       flaggedRecentMessageCards.push({
