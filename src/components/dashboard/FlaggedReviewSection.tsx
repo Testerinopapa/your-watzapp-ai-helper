@@ -400,6 +400,36 @@ export default function FlaggedReviewSection() {
   const flaggedRecentMessageCards: FlaggedMessage[] = [];
   for (const item of flaggedFromList) {
     const messages = item.recent_messages ?? [];
+    const latestText = (item.latest_message ?? item.preview ?? "").trim();
+    const latestAlreadyInRecent = messages.some(
+      (message) => (message.body ?? "").trim() === latestText,
+    );
+    if (latestText && item.updated_at && !latestAlreadyInRecent) {
+      const latestRecent = [...messages]
+        .filter((message) => message.captured_at)
+        .sort(
+          (a, b) =>
+            new Date(b.captured_at ?? 0).getTime() -
+            new Date(a.captured_at ?? 0).getTime(),
+        )[0];
+      const fromMe = !!(
+        (item as FlaggedMessage & { from_me?: boolean | null }).from_me ??
+        latestRecent?.from_me
+      );
+      flaggedRecentMessageCards.push({
+        ...item,
+        thread_id: `${item.thread_id}#recent:${item.updated_at}:latest${fromMe ? ":me" : ""}`,
+        preview: latestText,
+        latest_message: latestText,
+        intent_classified_at: item.intent_classified_at ?? item.updated_at,
+        intent_reason:
+          item.intent_reason ||
+          (fromMe
+            ? "Latest outbound message you sent in this flagged thread."
+            : "Latest message from this flagged thread."),
+        ...({ _fromMe: fromMe } as Partial<FlaggedMessage>),
+      });
+    }
     for (const [index, message] of messages.entries()) {
       const text = (message.body ?? "").trim();
       const capturedAt = message.captured_at ?? item.updated_at;
