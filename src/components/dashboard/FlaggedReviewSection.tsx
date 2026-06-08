@@ -81,7 +81,6 @@ import TrashDropZone from "./TrashDropZone";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
 import { useOutboundAppointmentMessages } from "@/hooks/useOutboundAppointmentMessages";
-import { useInboundAppointmentMessages } from "@/hooks/useInboundAppointmentMessages";
 
 // ── Main ──
 
