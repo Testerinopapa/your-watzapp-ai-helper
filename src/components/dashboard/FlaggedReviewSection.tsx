@@ -444,14 +444,18 @@ export default function FlaggedReviewSection() {
       const text = (message.body ?? "").trim();
       const capturedAt = message.captured_at ?? item.updated_at;
       if (!text || !capturedAt) continue;
+      // Prefer the message's own send timestamp over captured_at so re-scans
+      // of an older WhatsApp thread don't reshuffle the stack out of send
+      // order. Tries common backend field names; falls back to captured_at.
+      const sendTs = pickSendTimestamp(message) ?? capturedAt;
       const fromMe = !!message.from_me;
       flaggedRecentMessageCards.push({
         ...item,
         thread_id: `${item.thread_id}#recent:${capturedAt}:${index}${fromMe ? ":me" : ""}`,
         preview: text,
         latest_message: text,
-        updated_at: capturedAt,
-        intent_classified_at: item.intent_classified_at ?? capturedAt,
+        updated_at: sendTs,
+        intent_classified_at: item.intent_classified_at ?? sendTs,
         intent_reason:
           item.intent_reason ||
           (fromMe
