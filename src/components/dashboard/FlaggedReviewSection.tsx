@@ -539,8 +539,13 @@ export default function FlaggedReviewSection() {
   // Precompute the latest updated_at per base thread so a fresh inbound
   // on Maria's main thread re-surfaces every stacked recent-message card
   // even though each card carries its own (older) captured_at timestamp.
+  // IMPORTANT: derive this from the raw parent threads (flaggedFromList),
+  // because synthetic recent-message cards in `all` have their `updated_at`
+  // rewritten to the message's own (often older) captured_at. Using `all`
+  // here causes previously-dismissed threads to stay hidden forever even
+  // after a new inbound updates the parent thread.
   const latestUpdateByBase = new Map<string, number>();
-  for (const m of all) {
+  for (const m of flaggedFromList) {
     const base = baseThreadId(m.thread_id);
     const ts = m.updated_at ? new Date(m.updated_at).getTime() : 0;
     const prev = latestUpdateByBase.get(base) ?? 0;
