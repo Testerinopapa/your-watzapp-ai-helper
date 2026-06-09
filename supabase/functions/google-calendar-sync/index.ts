@@ -91,7 +91,20 @@ Deno.serve(async (req) => {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const refreshed = await refreshAccessToken(tok.refresh_token);
+      let refreshed;
+      try {
+        refreshed = await refreshAccessToken(tok.refresh_token);
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        if (msg.includes("invalid_grant")) {
+          await admin.from("google_oauth_tokens").delete().eq("user_id", userId);
+          return jsonResponse({
+            error: "reauth_required",
+            message: "Google Calendar access has expired. Please reconnect Google Calendar.",
+          }, 409);
+        }
+        throw e;
+      }
       accessToken = refreshed.access_token;
       if (refreshed.scope && !hasCalendarScope(refreshed.scope)) {
         await admin.from("google_oauth_tokens").delete().eq("user_id", userId);
