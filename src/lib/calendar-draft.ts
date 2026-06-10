@@ -10,8 +10,55 @@ import {
   looksLikeReschedule,
 } from "./extractDateTime";
 
-const CALENDAR_CONTEXT_RE =
-  /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/;
+// Matches scheduling-related text across English, Portuguese, Italian, and Spanish.
+// Grouped by language for maintainability — each | clause is one language's lexicon.
+const CALENDAR_CONTEXT_RE = new RegExp(
+  [
+    // ── English ──
+    "appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot",
+    "available|availability|confirm|confirmed|tomorrow|today",
+    "monday|tuesday|wednesday|thursday|friday|saturday|sunday",
+
+    // ── Portuguese ──
+    // Days (full + abbreviated)
+    "segunda[- ]feira|terça[- ]feira|quarta[- ]feira|quinta[- ]feira|sexta[- ]feira",
+    "\\bsábado\\b|\\bdomingo\\b",
+    "\\bsegunda\\b|\\bterça\\b|\\bquarta\\b|\\bquinta\\b|\\bsexta\\b|\\bsabado\\b",
+    // Scheduling verbs / nouns
+    "\\bmarcar\\b|\\bmarcado\\b|\\bremarcar\\b|\\bagendar\\b|\\bagendado\\b|\\bagendamento\\b",
+    "\\bconfirmar\\b|\\bconfirmado\\b|\\bconfirmação\\b|\\bconfirmacao\\b",
+    "\\breservar\\b|\\breservado\\b|\\breserva\\b",
+    "\\bdispon[íi]vel\\b|\\bdisponibilidade\\b",
+    "\\bfunciona\\b|\\bcombinar\\b|\\bcombinado\\b",
+    "\\bconsulta\\b|\\bconsultas\\b",
+
+    // ── Italian ──
+    "luned[ìi']|marted[ìi']|mercoled[ìi']|gioved[ìi']|venerd[ìi']",
+    "\\bsabato\\b|\\bdomenica\\b",
+    "\\bappuntamento\\b|\\bprenotare\\b|\\bprenotato\\b|\\bprenotazione\\b",
+    "\\bconfermare\\b|\\bconfermato\\b|\\bdisponibile\\b|\\bdisponibilit[àa]\\b",
+    "\\bspostare\\b|\\brinviare\\b|\\bannullare\\b|\\bannullamento\\b",
+
+    // ── Spanish ──
+    "\\blunes\\b|\\bmartes\\b|\\bmi[eé]rcoles\\b|\\bjueves\\b|\\bviernes\\b",
+    "\\bs[aá]bado\\b|\\bdomingo\\b",
+    "\\bcita\\b|\\bcitas\\b|\\breservar\\b|\\breservado\\b|\\breservaci[oó]n\\b",
+    "\\bconfirmar\\b|\\bconfirmado\\b|\\bconfirmaci[oó]n\\b",
+    "\\bdisponible\\b|\\bdisponibilidad\\b|\\bagendar\\b|\\bagendado\\b",
+    "\\breprogramar\\b|\\bcancelar\\b|\\bcancelaci[oó]n\\b",
+
+    // ── Multi-language time formats ──
+    // English-style: 10am, 2:30pm, 10 AM
+    "\\b\\d{1,2}(:\\d{2})?\\s?(am|pm)\\b",
+    // Portuguese/Italian/Spanish: 5h30, 17h, às 5h, alle 10:00
+    "\\b\\d{1,2}[h:]\\d{2}\\b",
+    "\\bàs?\\s+\\d{1,2}[h:]",
+    "\\balle?\\s+\\d{1,2}[:h]",
+    // Numeric date: 04/06, 4/6, 11-06
+    "\\b\\d{1,2}[/-]\\d{1,2}\\b",
+  ].join("|"),
+  "i",
+);
 
 export function needsCalendarContext(
   item: FlaggedMessage,

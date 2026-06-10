@@ -70,23 +70,21 @@ export function useOutboundAppointmentMessages(
     });
 
     if (stored === null) {
-      // First activation still baselines plain text-only history, but
-      // structured extension-originated calendar payloads are actionable data.
-      // Those should flow through once even if the dashboard first sees them
-      // after the extension/backend already sent the WhatsApp reply.
+      // First activation: baseline structured-payload messages (they may have
+      // already been acted on by the backend). Text-only calendar candidates are
+      // NOT baselined — the collector now filters with needsCalendarContext, so
+      // every text candidate we see is a legitimate calendar action that should
+      // flow through at least once.
       let baselineStructured = 0;
-      let baselineText = 0;
       for (const candidate of candidates) {
-        if (!candidate.calendarPayload) {
+        if (candidate.calendarPayload) {
           receipts.add(candidate.key);
-          baselineText += 1;
-        } else {
           baselineStructured += 1;
         }
       }
       console.log("[flagged][outbound-hook] first activation baseline", {
         baseline_structured: baselineStructured,
-        baseline_text: baselineText,
+        text_kept_for_processing: candidates.length - baselineStructured,
         total: candidates.length,
       });
       writeReceipts(userId, receipts);
