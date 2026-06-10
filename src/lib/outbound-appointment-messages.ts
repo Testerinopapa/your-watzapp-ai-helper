@@ -1,5 +1,6 @@
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import type { CalendarMutationPayload } from "@/lib/calendar-response";
+import { needsCalendarContext } from "./calendar-draft";
 
 export interface OutboundAppointmentMessage {
   key: string;
@@ -220,6 +221,16 @@ export function collectOutboundAppointmentMessages(
       const calendarPayload =
         extractCalendarMutationPayload(message) ??
         extractCalendarMutationPayload(item);
+
+      // Text-only fallback: when no structured payload exists, check if the
+      // outbound message reads like a calendar action (confirmation, reschedule,
+      // etc.) so plain-text "booked for Thursday" replies still update the agenda.
+      const textLooksCalendar =
+        !calendarPayload &&
+        needsCalendarContext(item, text, latestInbound);
+
+      if (!calendarPayload && !textLooksCalendar) continue;
+
       candidates.push({
         key: messageKey(item, text, message.captured_at, calendarPayload),
         item,
