@@ -10,6 +10,9 @@ import {
   looksLikeReschedule,
 } from "./extractDateTime";
 
+const CALENDAR_CONTEXT_RE =
+  /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/;
+
 export function needsCalendarContext(
   item: FlaggedMessage,
   incomingMessage: string,
@@ -17,9 +20,18 @@ export function needsCalendarContext(
 ) {
   const text =
     `${item.intent_category ?? ""} ${incomingMessage} ${userInstruction}`.toLowerCase();
-  return /appointment|calendar|schedule|scheduled|booking|booked|meeting|meet|call|slot|available|availability|confirm|confirmed|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}[/-]\d{1,2}\b/.test(
-    text,
-  );
+  const matches = CALENDAR_CONTEXT_RE.test(text);
+  if (!matches) {
+    console.log("[flagged][calendar-context] needsCalendarContext → false", {
+      thread_id: item.thread_id,
+      sender: item.sender,
+      intent_category: item.intent_category,
+      incoming_preview: incomingMessage.slice(0, 200),
+      instruction_preview: userInstruction.slice(0, 200),
+      combined_preview: text.slice(0, 300),
+    });
+  }
+  return matches;
 }
 
 export async function buildCalendarInstruction({

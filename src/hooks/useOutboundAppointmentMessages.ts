@@ -57,18 +57,57 @@ export function useOutboundAppointmentMessages(
     const stored = readReceipts(userId);
     const receipts = stored ?? new Set<string>();
 
+    console.log("[flagged][outbound-hook] collected candidates", {
+      candidate_count: candidates.length,
+      candidate_keys: candidates.map((c) => ({
+        key: c.key.slice(0, 120),
+        has_payload: !!c.calendarPayload,
+        text_preview: c.text.slice(0, 80),
+      })),
+      stored_is_null: stored === null,
+      receipt_count: receipts.size,
+      running_ref: runningRef.current,
+    });
+
     if (stored === null) {
       // First activation still baselines plain text-only history, but
       // structured extension-originated calendar payloads are actionable data.
       // Those should flow through once even if the dashboard first sees them
       // after the extension/backend already sent the WhatsApp reply.
+      let baselineStructured = 0;
+      let baselineText = 0;
       for (const candidate of candidates) {
-        if (!candidate.calendarPayload) receipts.add(candidate.key);
+        if (!candidate.calendarPayload) {
+          receipts.add(candidate.key);
+          baselineText += 1;
+        } else {
+          baselineStructured += 1;
+        }
       }
+      console.log("[flagged][outbound-hook] first activation baseline", {
+        baseline_structured: baselineStructured,
+        baseline_text: baselineText,
+        total: candidates.length,
+      });
       writeReceipts(userId, receipts);
     }
 
     const pending = candidates.filter((candidate) => !receipts.has(candidate.key));
+
+    if (candidates.length > 0) {
+      const skippedCount = candidates.length - pending.length;
+      console.log("[flagged][outbound-hook] receipt filter result", {
+        total_candidates: candidates.length,
+        skipped: skippedCount,
+        pending: pending.length,
+        pending_keys: pending.map((c) => ({
+          text_preview: c.text.slice(0, 80),
+          has_payload: !!c.calendarPayload,
+          payload_intent: c.calendarPayload?.intent ?? null,
+        })),
+      });
+    }
+
     if (pending.length === 0) return;
 
     runningRef.current = true;

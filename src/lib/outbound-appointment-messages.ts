@@ -229,7 +229,21 @@ export function collectOutboundAppointmentMessages(
         !calendarPayload &&
         needsCalendarContext(item, text, latestInbound);
 
-      if (!calendarPayload && !textLooksCalendar) continue;
+      const collected = !!(calendarPayload || textLooksCalendar);
+      console.log("[flagged][outbound-collect] from_me message", {
+        thread_id: item.thread_id,
+        sender: item.sender,
+        intent_category: item.intent_category,
+        has_calendar_payload: !!calendarPayload,
+        payload_intent: calendarPayload?.intent ?? null,
+        payload_start_time: calendarPayload?.start_time ?? null,
+        text_preview: text.slice(0, 200),
+        latest_inbound_preview: latestInbound.slice(0, 200),
+        text_looks_calendar: textLooksCalendar,
+        collected,
+      });
+
+      if (!collected) continue;
 
       candidates.push({
         key: messageKey(item, text, message.captured_at, calendarPayload),

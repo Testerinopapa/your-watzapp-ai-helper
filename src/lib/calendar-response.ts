@@ -1257,6 +1257,24 @@ export async function handleCalendarAfterDraft({
   const confirmation =
     payloadIntent === "confirmation" ||
     (!payloadIntent && looksLikeConfirmation(draftText));
+
+  console.log("[flagged][calendar-response] intent routing decision", {
+    thread_id: item.thread_id,
+    sender: item.sender,
+    has_payload: !!calendarPayload,
+    payload_intent: payloadIntent,
+    classified_cancel: classified.cancel,
+    classified_reschedule: classified.reschedule,
+    classified_confirm: confirmation,
+    chosen_cancel: cancel,
+    chosen_reschedule: reschedule,
+    chosen_confirm: confirmation,
+    chosen_none: !cancel && !reschedule && !confirmation,
+    draft_preview: draftText.slice(0, 200),
+    incoming_preview: incomingMessage.slice(0, 200),
+    user_instruction_preview: userInstruction.slice(0, 100),
+  });
+
   const reasonText = String(item.intent_reason ?? "");
 
   if (cancel) {
