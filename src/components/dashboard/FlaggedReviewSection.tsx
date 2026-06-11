@@ -59,6 +59,7 @@ import {
   senderFromThreadId,
   baseThreadId,
   isVoiceStub,
+  VOICE_ENVELOPE_RE,
   type FolderDef,
   type DraftState,
 } from "@/lib/flagged-utils";
@@ -492,18 +493,34 @@ export default function FlaggedReviewSection() {
     }
     for (const [index, message] of messages.entries()) {
       const rawText = (message.body ?? "").trim();
-      // Strip the voice-message envelope so "[Voice message 0:15] I need to reschedule"
-      // exposes just the transcript text. Bare stubs like "[voice message]" or
-      // "[Voice message 0:15]" become empty and are skipped.
-      const text = rawText.replace(/^\[Voice message[^\]]*\]\s*/i, "").trim();
-      if (!text || isVoiceStub(text)) continue;
+      if (!rawText) continue;
+
       const capturedAt = message.captured_at ?? item.updated_at;
       if (!capturedAt) continue;
+
       // Prefer the message's own send timestamp over captured_at so re-scans
       // of an older WhatsApp thread don't reshuffle the stack out of send
       // order. Tries common backend field names; falls back to captured_at.
       const sendTs = pickSendTimestamp(message) ?? capturedAt;
       const fromMe = !!message.from_me;
+
+      let text: string;
+      if (VOICE_ENVELOPE_RE.test(rawText)) {
+        // Strip the voice envelope — "[Voice message 0:15] transcript…" / "[ptt 0:15] transcript…"
+        // exposes just the transcript. Bare stubs get a readable label so they aren't
+        // skipped and don't suppress the rest of the sender's deck.
+        const stripped = rawText.replace(VOICE_ENVELOPE_RE, "").trim();
+        if (stripped) {
+          text = stripped;
+        } else {
+          // Bare stub — extract the duration for a clean label.
+          const dur = rawText.match(/(\d+:\d{2})/);
+          text = dur ? `Voice message · ${dur[1]}` : "Voice message";
+        }
+      } else {
+        text = rawText;
+      }
+
       flaggedRecentMessageCards.push({
         ...item,
         thread_id: `${item.thread_id}#recent:${capturedAt}:${index}${fromMe ? ":me" : ""}`,

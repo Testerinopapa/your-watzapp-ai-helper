@@ -171,11 +171,26 @@ export function baseThreadId(id: string | null | undefined): string {
   return i >= 0 ? s.slice(0, i) : s;
 }
 
+/** Matches "[Voice message 0:15]", "[ptt]", "[PTT 0:15]",
+ *  "[audio message 0:15]", "[voice note 0:15]",
+ *  "[messaggio vocale 0:15]", "[mensaje de voz 0:15]",
+ *  "[message vocal 0:15]", and similar. Also matches
+ *  bare "[voice message]" / "[ptt]" with no duration. */
 export function isVoiceStub(text: string | null | undefined) {
   const t = (text ?? "").trim();
   if (!t) return true;
-  return /^\[voice message[^\]]*\]\s*(\d+×|x\d+)?\s*$/i.test(t);
+  // Groups:
+  //  [1] keyword block: voice message | voice note | voice |
+  //                     ptt | audio message | audio |
+  //                     messaggio vocale | mensaje de voz | message vocal
+  //  [2] optional duration / extra inside brackets
+  //  [3] optional multiplier suffix (3×, x3)
+  return /^\[(voice(?:\s+(?:message|note))?|ptt|audio(?:\s+message)?|messaggio\s+vocale|mensaje\s+de\s+voz|message\s+vocal)([^\]]*)\]\s*(?:\d+×|x\d+)?\s*$/i.test(t);
 }
+
+/** Voice-envelope prefix shared by isVoiceStub and the transcript-extraction regex.
+ *  Keep the two in sync so stripping and detection agree on what gets removed. */
+export const VOICE_ENVELOPE_RE = /^\[(?:voice(?:\s+(?:message|note))?|ptt|audio(?:\s+message)?|messaggio\s+vocale|mensaje\s+de\s+voz|message\s+vocal)[^\]]*\]\s*(?:\d+×|x\d+)?\s*/i;
 
 // ── localStorage loaders ──
 
