@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { handleCalendarAfterDraft } from "@/lib/calendar-response";
 import { collectOutboundAppointmentMessages } from "@/lib/outbound-appointment-messages";
@@ -108,10 +109,49 @@ export function useOutboundAppointmentMessages(
 
     if (pending.length === 0) return;
 
+    // Guard against duplicate calendar events: if an outbound scheduling
+    // message was already acted on in a prior session (or on another device),
+    // the thread will have an active (non-cancelled) agenda_event. Query once
+    // for all pending threads and skip the ones that already have coverage.
     runningRef.current = true;
     void (async () => {
       try {
-        for (const candidate of pending) {
+        const uniqueThreads = [...new Set(pending.map((c) => c.item.thread_id))];
+        const { data: existingEvents } = await supabase
+          .from("agenda_events")
+          .select("id, thread_id, status, start_time")
+          .eq("user_id", userId)
+          .in("thread_id", uniqueThreads)
+          .neq("status", "cancelled")
+          .limit(uniqueThreads.length + 1); // +1 so we know if result overflows
+
+        const threadsWithEvents = new Set(
+          (existingEvents ?? []).map((e) => e.thread_id),
+        );
+
+        const alreadyHandled =
+          threadsWithEvents.size > 0
+            ? pending.filter((c) => threadsWithEvents.has(c.item.thread_id))
+            : [];
+        const trulyPending = pending.filter(
+          (c) => !threadsWithEvents.has(c.item.thread_id),
+        );
+
+        if (alreadyHandled.length > 0) {
+          console.log(
+            "[flagged][outbound-hook] skipping threads with existing agenda_events",
+            {
+              skipped_threads: [...new Set(alreadyHandled.map((c) => c.item.thread_id))],
+              skipped_count: alreadyHandled.length,
+              remaining: trulyPending.length,
+            },
+          );
+          // Add to receipts so they don't incur this DB query again.
+          for (const c of alreadyHandled) receipts.add(c.key);
+          writeReceipts(userId, receipts);
+        }
+
+        for (const candidate of trulyPending) {
           await handleCalendarAfterDraft({
             item: candidate.item,
             incomingMessage: candidate.incomingMessage,
