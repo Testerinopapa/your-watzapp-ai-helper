@@ -106,7 +106,6 @@ export function useFlaggedMessages(limit = 20) {
     enabled: !loading && !!session,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
-    refetchInterval: 15_000,
     retry: (failureCount, error) => {
       // Don't spam retries on auth errors
       if (/unauthorized|not signed in/i.test(String(error?.message))) return false;
