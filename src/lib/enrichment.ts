@@ -203,6 +203,28 @@ export function createEnricher(activityRows: SendSmartUsageRecent[]) {
       bestText = dur ? `Voice message · ${dur[1]}` : "Voice message";
     }
 
+    // ── ENRICHMENT TRACE ──────────────────────────────────────────────
+    const changed =
+      enriched !== null ||
+      (hasVoiceEnvelope && bestText !== rawLatest) ||
+      activityCreatedAt > 0;
+    if (changed) {
+      console.log(
+        "%c🔧 withActivityPreview modified item%c %s | %s",
+        "color:#f59e0b;font-weight:bold",
+        "color:inherit",
+        item.thread_id,
+        item.sender ?? "?",
+      );
+      console.log("  raw latest_message:", JSON.stringify(item.latest_message));
+      console.log("  raw preview:", JSON.stringify(item.preview));
+      console.log("  hasVoiceEnvelope:", hasVoiceEnvelope);
+      console.log("  enriched (from activity):", JSON.stringify(enriched));
+      console.log("  bestText:", JSON.stringify(bestText));
+      console.log("  recent_messages count:", (item.recent_messages ?? []).length);
+    }
+    // ── END ENRICHMENT TRACE ──────────────────────────────────────────
+
     return {
       ...item,
       preview: bestText || item.preview,

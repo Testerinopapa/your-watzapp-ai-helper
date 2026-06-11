@@ -145,7 +145,46 @@ export function useFlaggedMessages(limit = 20) {
       }
 
       const body = (await res.json()) as FlaggedListResponse;
-      return body.items ?? [];
+      const items = body.items ?? [];
+
+      // ── RAW RESPONSE DUMP ──────────────────────────────────────────
+      if (items.length > 0) {
+        console.group(
+          `%c📦 Flagged-List Raw Response — ${items.length} items`,
+          "color:#f59e0b;font-weight:bold",
+        );
+        for (const item of items) {
+          const recent = item.recent_messages ?? [];
+          if (recent.length === 0) continue;
+          console.group(
+            `thread ${item.thread_id} | ${item.sender ?? "?"} | cat=${item.intent_category}`,
+          );
+          console.log("latest_message:", JSON.stringify(item.latest_message));
+          console.log("preview:", JSON.stringify(item.preview));
+          console.log(`recent_messages (${recent.length}):`);
+          console.table(
+            recent.map((m, i) => {
+              const raw = { ...(m as Record<string, unknown>) };
+              return {
+                i,
+                msg_type: m.msg_type ?? "—",
+                body: String(raw.body ?? "").slice(0, 50),
+                transcription: String(raw.transcription ?? "—").slice(0, 50),
+                normalized_body: String(raw.normalized_body ?? "—").slice(0, 30),
+                raw_body: String(raw.raw_body ?? "—").slice(0, 30),
+                caption: String(raw.caption ?? "—").slice(0, 30),
+                from_me: m.from_me ?? "—",
+                allKeys: Object.keys(raw).join(", "),
+              };
+            }),
+          );
+          console.groupEnd();
+        }
+        console.groupEnd();
+      }
+      // ── END RAW RESPONSE DUMP ──────────────────────────────────────
+
+      return items;
     },
   });
 }
