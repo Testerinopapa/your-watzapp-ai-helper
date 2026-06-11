@@ -8,6 +8,7 @@ import {
   normalizePhone,
   threadContactKey,
   isVoiceStub,
+  VOICE_ENVELOPE_RE,
 } from "./flagged-utils";
 
 // ── Lookup key builders ──
@@ -43,8 +44,13 @@ export const buildActivityKeyList = (r: SendSmartUsageRecent) => {
 
 // ── Activity helpers ──
 
-export const textForActivity = (r: SendSmartUsageRecent) =>
-  (r.latestMessage ?? r.preview ?? "").trim();
+export const textForActivity = (r: SendSmartUsageRecent) => {
+  const raw = (r.latestMessage ?? r.preview ?? "").trim();
+  // Strip voice-message envelope so "[Voice message 0:05] I need to reschedule"
+  // becomes "I need to reschedule" in the enrichment map. Bare stubs like
+  // "[Voice message 0:05]" become "" and are skipped by the caller.
+  return raw.replace(VOICE_ENVELOPE_RE, "").trim();
+};
 
 export const activityThreadId = (r: SendSmartUsageRecent) =>
   (
@@ -157,11 +163,16 @@ export function createEnricher(activityRows: SendSmartUsageRecent[]) {
     const current = (item.latest_message ?? item.preview ?? "").trim();
     const candidate = activityCandidateFor(item);
     if (!candidate) return null;
-    if (isVoiceStub(current) && !isVoiceStub(candidate.text)) {
-      return candidate.text;
+    // candidate.text was already stripped by textForActivity, but strip
+    // again here as a belt-and-suspenders in case a non-activity source
+    // stores tagged text in the map in the future.
+    const cleanCandidate = candidate.text.replace(VOICE_ENVELOPE_RE, "").trim();
+    if (!cleanCandidate) return null;
+    if (isVoiceStub(current) && cleanCandidate !== current) {
+      return cleanCandidate;
     }
-    if (!isVoiceStub(candidate.text) && candidate.text !== current) {
-      return candidate.text;
+    if (cleanCandidate !== current) {
+      return cleanCandidate;
     }
     return null;
   };
@@ -170,11 +181,32 @@ export function createEnricher(activityRows: SendSmartUsageRecent[]) {
     const enriched = enrichedMessageFor(item);
     const activityCreatedAt =
       activityCandidateFor(item)?.createdAt ?? 0;
-    if (!enriched && !activityCreatedAt) return item;
+
+    const rawLatest = (item.latest_message ?? item.preview ?? "").trim();
+    const hasVoiceEnvelope = VOICE_ENVELOPE_RE.test(rawLatest);
+
+    // No enrichment match, no activity timestamp, and no voice envelope
+    // to clean up — return the item as-is (hot path for normal text messages).
+    if (!enriched && !activityCreatedAt && !hasVoiceEnvelope) {
+      return item;
+    }
+
+    // Strip any voice envelope from the best available text.
+    // "enriched" is already clean (textForActivity strips it); rawLatest
+    // may still carry the envelope flag.
+    let bestText = (enriched ?? rawLatest).replace(VOICE_ENVELOPE_RE, "").trim();
+
+    // If stripping left us with nothing but there WAS a voice envelope,
+    // produce a readable label so the card isn't blank.
+    if (!bestText && hasVoiceEnvelope) {
+      const dur = rawLatest.match(/(\d+:\d{2})/);
+      bestText = dur ? `Voice message · ${dur[1]}` : "Voice message";
+    }
+
     return {
       ...item,
-      preview: enriched ?? item.preview,
-      latest_message: enriched ?? item.latest_message,
+      preview: bestText || item.preview,
+      latest_message: bestText || item.latest_message,
       updated_at: activityCreatedAt
         ? new Date(
             Math.max(
