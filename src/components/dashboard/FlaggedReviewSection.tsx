@@ -454,7 +454,7 @@ export default function FlaggedReviewSection() {
     const latestAlreadyInRecent = messages.some(
       (message) => (message.body ?? "").trim() === latestText,
     );
-    if (latestText && item.updated_at && !latestAlreadyInRecent) {
+    if (latestText && item.updated_at && !latestAlreadyInRecent && !isVoiceStub(latestText)) {
       // The parent's latest_message and from_me are written together by the
       // backend — they're paired by definition. Determine from_me strictly
       // from (1) a body-match in recent_messages, or (2) the parent's own
@@ -491,9 +491,14 @@ export default function FlaggedReviewSection() {
       }
     }
     for (const [index, message] of messages.entries()) {
-      const text = (message.body ?? "").trim();
+      const rawText = (message.body ?? "").trim();
+      // Strip the voice-message envelope so "[Voice message 0:15] I need to reschedule"
+      // exposes just the transcript text. Bare stubs like "[voice message]" or
+      // "[Voice message 0:15]" become empty and are skipped.
+      const text = rawText.replace(/^\[Voice message[^\]]*\]\s*/i, "").trim();
+      if (!text || isVoiceStub(text)) continue;
       const capturedAt = message.captured_at ?? item.updated_at;
-      if (!text || !capturedAt) continue;
+      if (!capturedAt) continue;
       // Prefer the message's own send timestamp over captured_at so re-scans
       // of an older WhatsApp thread don't reshuffle the stack out of send
       // order. Tries common backend field names; falls back to captured_at.
