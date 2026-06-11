@@ -59,6 +59,7 @@ import {
   senderFromThreadId,
   baseThreadId,
   isVoiceStub,
+  VOICE_ENVELOPE_RE,
   bestTextForMessage,
   type FolderDef,
   type DraftState,
@@ -448,6 +449,79 @@ export default function FlaggedReviewSection() {
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
+
+  // ── PIPELINE TRACE LOGGING ──────────────────────────────────────────────
+  // Logs every entry at each stage of the card pipeline so we can see:
+  //   1. Raw API shape (does flagged-list include transcription?)
+  //   2. Post-enrichment shape (did withActivityPreview clean voice stubs?)
+  //   3. Per-message gate (why does each message get skipped or kept?)
+  // Remove this block once the root cause is confirmed.
+  if ((data ?? []).length > 0) {
+    console.group(
+      `%c🔍 Flagged Pipeline Trace — ${data!.length} items`,
+      "color:#2dd4a8;font-weight:bold",
+    );
+    const voiceRe = VOICE_ENVELOPE_RE;
+    for (const raw of data!) {
+      const base = baseThreadId(raw.thread_id);
+      const recent = raw.recent_messages ?? [];
+      const hasAnyVoice = recent.some(
+        (m) => (m.msg_type === "ptt" || m.msg_type === "audio") || (m.body && voiceRe.test(m.body)),
+      );
+      if (!hasAnyVoice && recent.length === 0 && !voiceRe.test(raw.latest_message ?? raw.preview ?? "")) continue;
+
+      console.group(`Thread ${base}`);
+      console.log("sender:", raw.sender);
+      console.log("latest_message:", JSON.stringify(raw.latest_message));
+      console.log("preview:", JSON.stringify(raw.preview));
+
+      // Show the full shape of each recent_messages entry
+      if (recent.length > 0) {
+        console.log(`recent_messages (${recent.length}):`);
+        console.table(
+          recent.map((m, i) => ({
+            i,
+            msg_type: m.msg_type ?? "—",
+            body: (m.body ?? "").slice(0, 60),
+            transcription: (m as Record<string, unknown>).transcription ?? "—",
+            normalized_body: (m as Record<string, unknown>).normalized_body ?? "—",
+            raw_body: (m as Record<string, unknown>).raw_body ?? "—",
+            caption: (m as Record<string, unknown>).caption ?? "—",
+            from_me: m.from_me ?? "—",
+            captured_at: m.captured_at?.slice(0, 19) ?? "—",
+          })),
+        );
+      } else {
+        console.log("recent_messages: [] (empty)");
+      }
+
+      // Now log what withActivityPreview did
+      const enriched = withActivityPreview(raw);
+      console.log("after enrichment:");
+      console.log("  latest_message:", JSON.stringify(enriched.latest_message));
+      console.log("  preview:", JSON.stringify(enriched.preview));
+      console.log("  is latest_message a voice stub?", voiceRe.test(enriched.latest_message ?? ""));
+      console.log("  is latest_message empty?", !(enriched.latest_message ?? "").trim());
+
+      // Simulate what happens in the per-message loop
+      for (const [i, m] of recent.entries()) {
+        const bt = bestTextForMessage(m as Parameters<typeof bestTextForMessage>[0]);
+        const reason = !bt
+          ? "SKIPPED: no text from bestTextForMessage"
+          : !(m.captured_at ?? raw.updated_at)
+            ? "SKIPPED: no captured_at"
+            : "→ card";
+        console.log(
+          `  recent[${i}] bestTextForMessage: ${JSON.stringify(bt)} — ${reason}`,
+        );
+      }
+
+      console.groupEnd();
+    }
+    console.groupEnd();
+  }
+  // ── END PIPELINE TRACE ──────────────────────────────────────────────────
+
   const flaggedRecentMessageCards: FlaggedMessage[] = [];
   for (const item of flaggedFromList) {
     const messages = item.recent_messages ?? [];
