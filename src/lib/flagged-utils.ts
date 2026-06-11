@@ -171,6 +171,57 @@ export function baseThreadId(id: string | null | undefined): string {
   return i >= 0 ? s.slice(0, i) : s;
 }
 
+/**
+ * Extract the best display text for a message entry, mirroring the body
+ * rendering rules documented in the contacts payload:
+ *   1. PTT/audio with Whisper transcript → transcript
+ *   2. First non-empty of body / normalized_body / raw_body / caption
+ *   3. Media placeholder → "[{msg_type}{ · mime}"
+ *   4. Fallback → "[{msg_type}]" or "[message]"
+ *
+ * IMPORTANT: keep this in sync with the rendering rules in contacts-payload.md.
+ */
+export function bestTextForMessage(msg: {
+  msg_type?: string | null;
+  transcription?: string | null;
+  body?: string | null;
+  normalized_body?: string | null;
+  raw_body?: string | null;
+  caption?: string | null;
+  has_media?: boolean | null;
+  mime_type?: string | null;
+}): string | null {
+  const mt = (msg.msg_type ?? "").toLowerCase().trim();
+
+  // 1. PTT / audio with Whisper transcript → use transcript directly
+  if ((mt === "ptt" || mt === "audio") && msg.transcription) {
+    return msg.transcription.trim();
+  }
+
+  // 2. First non-empty plaintext body field
+  const plaintext =
+    msg.body?.trim() ||
+    msg.normalized_body?.trim() ||
+    msg.raw_body?.trim() ||
+    msg.caption?.trim();
+  if (plaintext) return plaintext;
+
+  // 3. Media without caption: placeholder
+  if (msg.has_media) {
+    const mime = msg.mime_type?.trim();
+    return mime ? `[${mt} · ${mime}]` : `[${mt}]`;
+  }
+
+  // 4. Unknown type — structured placeholder
+  if (mt) return `[${mt}]`;
+
+  return null;
+}
+
+/** Minimal shape for the per-message entry used in the flagged-card pipeline.
+ *  Matches the subset of ScanMessage fields that bestTextForMessage reads. */
+export type PerMessageEntry = Parameters<typeof bestTextForMessage>[0];
+
 /** Matches "[Voice message 0:15]", "[ptt]", "[PTT 0:15]",
  *  "[audio message 0:15]", "[voice note 0:15]",
  *  "[messaggio vocale 0:15]", "[mensaje de voz 0:15]",

@@ -54,6 +54,12 @@ export interface FlaggedMessage {
     from_me?: boolean | null;
     captured_at: string | null;
     msg_type?: string | null;
+    transcription?: string | null;
+    normalized_body?: string | null;
+    raw_body?: string | null;
+    caption?: string | null;
+    has_media?: boolean | null;
+    mime_type?: string | null;
     source?: string | null;
     appointment_payload?: unknown;
     calendar_payload?: unknown;

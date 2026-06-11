@@ -59,7 +59,7 @@ import {
   senderFromThreadId,
   baseThreadId,
   isVoiceStub,
-  VOICE_ENVELOPE_RE,
+  bestTextForMessage,
   type FolderDef,
   type DraftState,
 } from "@/lib/flagged-utils";
@@ -453,7 +453,7 @@ export default function FlaggedReviewSection() {
     const messages = item.recent_messages ?? [];
     const latestText = (item.latest_message ?? item.preview ?? "").trim();
     const latestAlreadyInRecent = messages.some(
-      (message) => (message.body ?? "").trim() === latestText,
+      (message) => (bestTextForMessage(message) ?? "") === latestText,
     );
     if (latestText && item.updated_at && !latestAlreadyInRecent && !isVoiceStub(latestText)) {
       // The parent's latest_message and from_me are written together by the
@@ -464,7 +464,7 @@ export default function FlaggedReviewSection() {
       // contact's text (or vice versa). If neither signal is present, skip
       // synthesis rather than render a mispaired card.
       const bodyMatch = messages.find(
-        (message) => (message.body ?? "").trim() === latestText,
+        (message) => (bestTextForMessage(message) ?? "") === latestText,
       );
       const parentFromMe = (item as FlaggedMessage & { from_me?: boolean | null })
         .from_me;
@@ -492,7 +492,7 @@ export default function FlaggedReviewSection() {
       }
     }
     for (const [index, message] of messages.entries()) {
-      const rawText = (message.body ?? "").trim();
+      const rawText = bestTextForMessage(message);
       if (!rawText) continue;
 
       const capturedAt = message.captured_at ?? item.updated_at;
@@ -504,22 +504,7 @@ export default function FlaggedReviewSection() {
       const sendTs = pickSendTimestamp(message) ?? capturedAt;
       const fromMe = !!message.from_me;
 
-      let text: string;
-      if (VOICE_ENVELOPE_RE.test(rawText)) {
-        // Strip the voice envelope — "[Voice message 0:15] transcript…" / "[ptt 0:15] transcript…"
-        // exposes just the transcript. Bare stubs get a readable label so they aren't
-        // skipped and don't suppress the rest of the sender's deck.
-        const stripped = rawText.replace(VOICE_ENVELOPE_RE, "").trim();
-        if (stripped) {
-          text = stripped;
-        } else {
-          // Bare stub — extract the duration for a clean label.
-          const dur = rawText.match(/(\d+:\d{2})/);
-          text = dur ? `Voice message · ${dur[1]}` : "Voice message";
-        }
-      } else {
-        text = rawText;
-      }
+      const text = rawText;
 
       flaggedRecentMessageCards.push({
         ...item,
