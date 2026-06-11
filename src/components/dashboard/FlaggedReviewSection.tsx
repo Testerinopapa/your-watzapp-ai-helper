@@ -85,6 +85,8 @@ import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
 import { useOutboundAppointmentMessages } from "@/hooks/useOutboundAppointmentMessages";
 import { useCalendarWritePermission } from "@/hooks/useCalendarWritePermission";
+import { useContactsScanMessages } from "@/hooks/useContactsScanMessages";
+import type { ScanMessage } from "@/hooks/useContactsScanMessages";
 
 // ── Main ──
 
@@ -95,6 +97,8 @@ export default function FlaggedReviewSection() {
     useFlaggedMessages(20);
   const { data: usageData, refetch: refetchUsage } =
     useSendSmartUsage();
+  const { byThread: contactsByThread } =
+    useContactsScanMessages();
 
   const calendarWrite = useCalendarWritePermission();
 
@@ -449,6 +453,89 @@ export default function FlaggedReviewSection() {
   const flaggedFromList: FlaggedMessage[] = (data ?? []).map(
     withActivityPreview,
   );
+
+  // ── CONTACTS PTT MERGE ────────────────────────────────────────────────
+  // The flagged-list endpoint does NOT forward transcription or include PTT
+  // entries in recent_messages (confirmed via logs — allKeys never includes
+  // "transcription"). We cross-reference with message-batches?view=contacts
+  // which returns full ScanMessage objects including the Whisper transcript.
+  //
+  // For each flagged thread we inject any PTT/audio messages from the
+  // contacts endpoint that aren't already represented in recent_messages.
+  if (contactsByThread.size > 0) {
+    const ptlInjected: string[] = [];
+
+    for (const item of flaggedFromList) {
+      const base = baseThreadId(item.thread_id);
+      const contactsMsgs = contactsByThread.get(base);
+      if (!contactsMsgs || contactsMsgs.length === 0) continue;
+
+      const recent = (item.recent_messages ?? []) as Array<
+        FlaggedMessage["recent_messages"] extends (infer A)[] | undefined
+          ? A
+          : Record<string, unknown>
+      >;
+      // Build a set of "already covered" timestamps so we don't duplicate
+      const coveredTs = new Set<number>();
+      for (const rm of recent) {
+        const ts = rm?.captured_at ? new Date(rm.captured_at).getTime() : 0;
+        if (ts) coveredTs.add(ts);
+      }
+
+      const toInject: typeof recent = [];
+
+      for (const cm of contactsMsgs) {
+        const mt = (cm.msg_type ?? "").toLowerCase();
+        if (mt !== "ptt" && mt !== "audio") continue;
+        const transcript = (cm.transcription ?? "").trim();
+        if (!transcript) continue;
+
+        // Convert msg_timestamp (Unix seconds) to ms and compare
+        const cmMs = cm.msg_timestamp ? cm.msg_timestamp * 1000 : 0;
+        // Check if any recent_messages entry is within 500ms of this
+        // contacts message — if so, it's already covered
+        const alreadyCovered = cmMs > 0 && Array.from(coveredTs).some(
+          (t) => Math.abs(t - cmMs) < 500,
+        );
+        if (alreadyCovered) continue;
+
+        // Create a synthetic recent_messages entry carrying the transcript
+        const capturedAt = cmMs
+          ? new Date(cmMs).toISOString()
+          : item.updated_at;
+        toInject.push({
+          body: transcript,
+          from_me: cm.from_me,
+          captured_at: capturedAt,
+          msg_type: cm.msg_type,
+          transcription: transcript,
+          normalized_body: cm.normalized_body,
+          raw_body: cm.raw_body,
+          caption: cm.caption,
+          has_media: cm.has_media,
+          mime_type: cm.mime_type,
+        } as typeof recent[number]);
+        if (cmMs) coveredTs.add(cmMs);
+      }
+
+      if (toInject.length > 0) {
+        // Prepend so transcript entries sort before older chat entries
+        item.recent_messages = [...toInject, ...recent];
+        ptlInjected.push(
+          `${item.sender ?? base} (+${toInject.length} PTT)`,
+        );
+      }
+    }
+
+    if (ptlInjected.length > 0) {
+      console.log(
+        "%c📞 Injected PTT transcripts from contacts endpoint:",
+        "color:#3b82f6;font-weight:bold",
+        ptlInjected,
+      );
+    }
+  }
+  // ── END CONTACTS PTT MERGE ────────────────────────────────────────────
 
   // ── PIPELINE TRACE LOGGING ──────────────────────────────────────────────
   // Logs every entry at each stage of the card pipeline so we can see:
