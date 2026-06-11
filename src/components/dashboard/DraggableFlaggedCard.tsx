@@ -40,6 +40,7 @@ export default function DraggableFlaggedCard({
   onMoveTo,
   onDelete,
   onActivate,
+  onDeactivate,
   isExpanded,
   renderFooter,
   supportDocLabel,
@@ -50,6 +51,7 @@ export default function DraggableFlaggedCard({
   onMoveTo: (threadId: string, folderId: string) => void;
   onDelete?: (item: FlaggedMessage) => void;
   onActivate?: (item: FlaggedMessage) => void;
+  onDeactivate?: (item: FlaggedMessage) => void;
   isExpanded?: (item: FlaggedMessage) => boolean;
   renderFooter?: (item: FlaggedMessage) => React.ReactNode;
   supportDocLabel?: string | null;
@@ -111,13 +113,19 @@ export default function DraggableFlaggedCard({
   const goNext = () =>
     setActiveIndex((idx) => {
       const next = (idx + 1) % items.length;
-      if (expanded) window.requestAnimationFrame(() => onActivate?.(items[next]));
+      if (expanded) {
+        onDeactivate?.(items[idx]);
+        window.requestAnimationFrame(() => onActivate?.(items[next]));
+      }
       return next;
     });
   const goPrev = () =>
     setActiveIndex((idx) => {
       const next = (idx - 1 + items.length) % items.length;
-      if (expanded) window.requestAnimationFrame(() => onActivate?.(items[next]));
+      if (expanded) {
+        onDeactivate?.(items[idx]);
+        window.requestAnimationFrame(() => onActivate?.(items[next]));
+      }
       return next;
     });
 

@@ -219,7 +219,7 @@ export default function FlaggedReviewSection() {
             Authorization: `Bearer ${session.access_token}`,
           },
           body: JSON.stringify({
-            thread_id: item.thread_id,
+            thread_id: baseThreadId(item.thread_id),
             provider,
             incomingMessage,
             incoming_message: incomingMessage,
@@ -836,7 +836,13 @@ export default function FlaggedReviewSection() {
                     const items = threadMap.get(key)!;
                     const ck = contactKeyForItem(items[0]);
                     let groupKey: string;
-                    if (senderToGroup.has(ck)) {
+                    // Guard: a blank contact key means no sender label AND
+                    // no phone digits in thread_id. Do NOT merge — each
+                    // such thread stays in its own deck to prevent wrong-chat
+                    // sends when generating drafts.
+                    if (!ck) {
+                      groupKey = key;
+                    } else if (senderToGroup.has(ck)) {
                       groupKey = senderToGroup.get(ck)!;
                     } else {
                       groupKey = ck;
@@ -845,6 +851,31 @@ export default function FlaggedReviewSection() {
                     if (!groupMap.has(groupKey)) {
                       groupMap.set(groupKey, []);
                       groupOrder.push(groupKey);
+                    } else {
+                      // When a contact key maps to an existing group but the
+                      // thread_id differs, the sender label matched across
+                      // distinct chats. Log so operators can investigate.
+                      const existingItems = groupMap.get(groupKey)!;
+                      const existingThreads = new Set(
+                        existingItems.map((m) => baseThreadId(m.thread_id)),
+                      );
+                      const incomingBase = baseThreadId(items[0].thread_id);
+                      if (
+                        !existingThreads.has(incomingBase) &&
+                        ck
+                      ) {
+                        console.log(
+                          "[flagged][grouping] merging distinct threads by sender",
+                          {
+                            contact_key: ck.slice(0, 40),
+                            existing_threads: [...existingThreads].map((t) =>
+                              t.slice(0, 40),
+                            ),
+                            incoming_thread: incomingBase.slice(0, 40),
+                            sender: items[0].sender,
+                          },
+                        );
+                      }
                     }
                     groupMap.get(groupKey)!.push(...items);
                   }
@@ -921,6 +952,12 @@ export default function FlaggedReviewSection() {
                                   : isSupport
                                     ? "Answer using the support knowledge base. Only use documented information."
                                     : ""),
+                          });
+                        }}
+                        onDeactivate={(it) => {
+                          updateDraft(it.thread_id, {
+                            open: false,
+                            error: null,
                           });
                         }}
                         renderFooter={(it) => {
