@@ -68,16 +68,14 @@ export function needsCalendarContext(
   const text =
     `${item.intent_category ?? ""} ${incomingMessage} ${userInstruction}`.toLowerCase();
   const matches = CALENDAR_CONTEXT_RE.test(text);
-  if (!matches) {
-    console.log("[flagged][calendar-context] needsCalendarContext → false", {
-      thread_id: item.thread_id,
-      sender: item.sender,
-      intent_category: item.intent_category,
-      incoming_preview: incomingMessage.slice(0, 200),
-      instruction_preview: userInstruction.slice(0, 200),
-      combined_preview: text.slice(0, 300),
-    });
-  }
+  console.log(
+    `[flagged][calendar-context] ${matches ? "✓ MATCH" : "✗ SKIP "}` +
+    ` | thread=${item.thread_id?.slice(0, 24) ?? "?"}` +
+    ` | cat=${item.intent_category ?? "?"}` +
+    ` | sender=${(item.sender ?? "?").slice(0, 20)}` +
+    ` | inbound=${incomingMessage.slice(0, 80).replace(/\n/g, " ")}` +
+    ` | instr=${userInstruction.slice(0, 80).replace(/\n/g, " ")}`,
+  );
   return matches;
 }
 

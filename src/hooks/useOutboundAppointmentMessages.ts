@@ -4,7 +4,7 @@ import type { FlaggedMessage } from "@/hooks/useFlaggedMessages";
 import { handleCalendarAfterDraft } from "@/lib/calendar-response";
 import { collectOutboundAppointmentMessages } from "@/lib/outbound-appointment-messages";
 
-const RECEIPTS_KEY = "calendar.outbound-you.receipts.v1";
+const RECEIPTS_KEY = "calendar.outbound-you.receipts.v2";
 const MAX_RECEIPTS = 500;
 
 type Toast = (opts: {
