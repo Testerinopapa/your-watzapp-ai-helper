@@ -15,6 +15,19 @@ import {
 import { functionErrorCode } from "./function-error";
 import { notifyAgendaEventsChanged } from "./agenda-events";
 
+const CALENDAR_WRITE_KEY = "settings.ai-calendar-writes-enabled";
+
+/** Returns true unless the user has explicitly disabled AI calendar writes. */
+function isCalendarWriteEnabled(): boolean {
+  try {
+    const raw = localStorage.getItem(CALENDAR_WRITE_KEY);
+    if (raw === null) return true;
+    return raw === "true";
+  } catch {
+    return true;
+  }
+}
+
 // ── Intent classification ──
 
 export type CalendarMutationIntent =
@@ -1247,6 +1260,22 @@ export async function handleCalendarAfterDraft({
     userInstruction,
     draftText,
   );
+
+  // Gate: if the user has disabled AI calendar writes, bail before any
+  // mutation. Calendar reads (for draft context) still work — this only
+  // blocks the create/update/cancel/delete path.
+  if (!isCalendarWriteEnabled()) {
+    console.log(
+      "[flagged][calendar-response] calendar writes disabled — skipping",
+      { thread_id: item.thread_id, sender: item.sender },
+    );
+    toast({
+      title: "Reply sent (calendar unchanged)",
+      description:
+        "AI calendar writes are disabled. Enable them in the Flagged Messages header to auto-sync.",
+    });
+    return;
+  }
   const payloadIntent = calendarPayload?.intent ?? null;
   const cancel =
     payloadIntent === "cancellation" ||

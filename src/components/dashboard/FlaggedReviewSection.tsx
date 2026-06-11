@@ -25,6 +25,8 @@ import {
   Archive,
   Eye,
   EyeOff,
+  CalendarCheck,
+  CalendarX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -80,6 +82,7 @@ import TrashDropZone from "./TrashDropZone";
 import { useAgendaEvents } from "@/hooks/useAgendaEvents";
 import { useSupportKnowledge } from "@/hooks/useSupportKnowledge";
 import { useOutboundAppointmentMessages } from "@/hooks/useOutboundAppointmentMessages";
+import { useCalendarWritePermission } from "@/hooks/useCalendarWritePermission";
 
 // ── Main ──
 
@@ -90,6 +93,8 @@ export default function FlaggedReviewSection() {
     useFlaggedMessages(20);
   const { data: usageData, refetch: refetchUsage } =
     useSendSmartUsage();
+
+  const calendarWrite = useCalendarWritePermission();
 
   const activityRows = usageData?.recent ?? [];
 
@@ -363,8 +368,19 @@ export default function FlaggedReviewSection() {
 
 
     // 3. If linked to an agenda_event, delete it and push delete to Google.
+    //    Respect the AI calendar writes toggle — if disabled, only remove
+    //    the local DB row, don't touch Google Calendar.
     const dbEvent = agendaByThread.get(threadId);
     if (dbEvent) {
+      const calendarWritesEnabled = (() => {
+        try {
+          const raw = localStorage.getItem("settings.ai-calendar-writes-enabled");
+          if (raw === null) return true;
+          return raw === "true";
+        } catch {
+          return true;
+        }
+      })();
       const sourceEventId = dbEvent.source_event_id;
       const sourceType = dbEvent.source_type;
       try {
@@ -372,7 +388,11 @@ export default function FlaggedReviewSection() {
       } catch (e) {
         console.warn("agenda_events delete failed (continuing)", e);
       }
-      if (sourceType === "google_calendar" && sourceEventId) {
+      if (
+        sourceType === "google_calendar" &&
+        sourceEventId &&
+        calendarWritesEnabled
+      ) {
         supabase.functions
           .invoke("google-calendar-push", {
             body: {
@@ -724,6 +744,27 @@ export default function FlaggedReviewSection() {
               className={isFetching ? "animate-spin" : ""}
             />
             <span className="hidden sm:inline">Refresh</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={calendarWrite.toggle}
+            className="gap-1.5"
+            title={
+              calendarWrite.enabled
+                ? "AI can create/update/cancel calendar events"
+                : "AI calendar writes are blocked"
+            }
+          >
+            {calendarWrite.enabled ? (
+              <CalendarCheck size={14} className="text-[#2dd4a8]" />
+            ) : (
+              <CalendarX size={14} className="text-muted-foreground" />
+            )}
+            <span className="hidden sm:inline">
+              {calendarWrite.enabled ? "Calendar auto" : "Calendar off"}
+            </span>
           </Button>
 
           <Button
